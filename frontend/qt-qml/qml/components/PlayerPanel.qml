@@ -23,6 +23,7 @@ ColumnLayout {
     property color amberColor: "#f2c86b"
 
     readonly property bool hasSong: Boolean(root.song && root.song.song_id)
+    readonly property bool hasLyrics: String(root.song && root.song.lyrics || "").trim().length > 0
     readonly property bool hasQueue: root.queue && root.queue.length > 0
     readonly property int currentIndex: {
         if (!root.queue) {
@@ -44,7 +45,7 @@ ColumnLayout {
     signal volumeRequested(real value)
     signal editMetadataRequested()
 
-    spacing: 18
+    spacing: 20
 
     RowLayout {
         Layout.fillWidth: true
@@ -55,22 +56,51 @@ ColumnLayout {
             spacing: 4
 
             RowLayout {
-                spacing: 10
+                spacing: 12
 
-                Label {
-                    text: "NekoTune"
-                    color: root.textStrongColor
-                    font.pixelSize: 34
-                    font.weight: Font.Black
+                Rectangle {
+                    Layout.preferredWidth: 44
+                    Layout.preferredHeight: 44
+                    Layout.alignment: Qt.AlignVCenter
+                    radius: 14
+                    color: root.mintColor
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "N"
+                        color: "#10201b"
+                        font.pixelSize: 22
+                        font.weight: Font.Black
+                    }
+                }
+
+                ColumnLayout {
+                    spacing: 0
+
+                    Label {
+                        text: "NEKOTUNE"
+                        color: root.textStrongColor
+                        font.pixelSize: 25
+                        font.weight: Font.Black
+                        font.letterSpacing: 2.4
+                    }
+
+                    Label {
+                        text: "LOCAL MUSIC PLAYER"
+                        color: root.textMutedColor
+                        font.pixelSize: 9
+                        font.weight: Font.DemiBold
+                        font.letterSpacing: 1.5
+                    }
                 }
 
                 Rectangle {
                     Layout.alignment: Qt.AlignVCenter
                     width: connectionText.implicitWidth + 18
-                    height: 26
-                    radius: 13
-                    color: root.connected ? "#16362f" : "#35251f"
-                    border.color: root.connected ? "#285b50" : "#674136"
+                    height: 28
+                    radius: 14
+                    color: root.connected ? "#15342f" : "#35251f"
+                    border.color: root.connected ? "#2e6a5b" : "#674136"
 
                     Label {
                         id: connectionText
@@ -79,7 +109,7 @@ ColumnLayout {
                               ? i18n.text("connected", i18n.language)
                               : i18n.text("offline", i18n.language)
                         color: root.connected ? root.mintColor : "#ffad9f"
-                        font.pixelSize: 12
+                        font.pixelSize: 11
                         font.weight: Font.DemiBold
                     }
                 }
@@ -92,7 +122,7 @@ ColumnLayout {
                          : i18n.text("ready", i18n.language))
                       : i18n.text("no_track_selected", i18n.language)
                 color: root.textMutedColor
-                font.pixelSize: 13
+                font.pixelSize: 12
                 font.weight: Font.DemiBold
             }
         }
@@ -106,6 +136,7 @@ ColumnLayout {
         TextButton {
             text: i18n.language === "zh" ? "English" : "中文"
             implicitWidth: 76
+            subtle: true
             onClicked: i18n.language = i18n.language === "zh" ? "en" : "zh"
         }
     }
@@ -113,19 +144,19 @@ ColumnLayout {
     Rectangle {
         Layout.fillWidth: true
         Layout.fillHeight: true
-        radius: 10
-        color: root.panelColor
+        radius: 20
+        color: "#141b21"
         border.color: root.lineColor
         border.width: 1
 
         RowLayout {
             anchors.fill: parent
-            anchors.margins: 34
-            spacing: 34
+            anchors.margins: 38
+            spacing: 38
 
             AlbumArt {
                 Layout.fillHeight: true
-                Layout.preferredWidth: Math.min(360, Math.max(280, parent.width * 0.38))
+                Layout.preferredWidth: Math.min(380, Math.max(280, parent.width * 0.40))
 
                 hasSong: Boolean(root.song.title)
                 playbackState: root.playbackState
@@ -137,7 +168,7 @@ ColumnLayout {
             ColumnLayout {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                spacing: 22
+                spacing: 24
 
                 Item {
                     Layout.fillWidth: true
@@ -147,14 +178,23 @@ ColumnLayout {
                         anchors.left: parent.left
                         anchors.right: parent.right
                         anchors.verticalCenter: parent.verticalCenter
-                        spacing: 10
+                        spacing: 12
+
+                        Label {
+                            Layout.fillWidth: true
+                            text: root.hasSong ? i18n.text("now_playing", i18n.language).toUpperCase() : i18n.text("ready", i18n.language).toUpperCase()
+                            color: root.hasSong ? root.mintColor : root.textMutedColor
+                            font.pixelSize: 11
+                            font.weight: Font.Black
+                            font.letterSpacing: 1.8
+                        }
 
                         Label {
                             Layout.fillWidth: true
                             text: root.song.title || i18n.text("no_track_loaded", i18n.language)
                             color: root.textStrongColor
                             elide: Text.ElideRight
-                            font.pixelSize: 34
+                            font.pixelSize: 38
                             font.weight: Font.Black
                         }
 
@@ -169,11 +209,23 @@ ColumnLayout {
                             font.weight: Font.DemiBold
                         }
 
-                        LrcLyrics {
+                        Rectangle {
                             Layout.fillWidth: true
-                            Layout.preferredHeight: visible ? 190 : 0
-                            lyrics: String(root.song.lyrics || "")
-                            position: root.position
+                            Layout.preferredHeight: root.hasLyrics ? 190 : 0
+                            radius: 14
+                            color: Qt.rgba(0.07, 0.11, 0.13, 0.70)
+                            border.color: Qt.rgba(0.48, 0.88, 0.78, 0.10)
+                            visible: root.hasLyrics
+
+                            LrcLyrics {
+                                id: lyricsView
+                                anchors.fill: parent
+                                anchors.margins: 16
+                                lyrics: String(root.song.lyrics || "")
+                                position: root.position
+                                activeColor: root.textStrongColor
+                                inactiveColor: root.textMutedColor
+                            }
                         }
                     }
                 }
@@ -261,6 +313,7 @@ ColumnLayout {
                     TextButton {
                         text: i18n.text("edit_info", i18n.language)
                         implicitWidth: 94
+                        subtle: true
                         enabled: Boolean(root.song.song_id)
                         onClicked: root.editMetadataRequested()
                     }

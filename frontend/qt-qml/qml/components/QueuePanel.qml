@@ -24,35 +24,36 @@ Rectangle {
     readonly property bool isPlaying: root.playbackState === "playing"
     property string playbackState: "stopped"
 
-    radius: 10
-    color: panelColor
+    radius: 20
+    color: "#141b21"
     border.color: lineColor
     border.width: 1
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 18
-        spacing: 14
+        anchors.margins: 20
+        spacing: 16
 
         RowLayout {
             Layout.fillWidth: true
-            spacing: 12
+            spacing: 14
 
             ColumnLayout {
                 Layout.fillWidth: true
-                spacing: 3
+                spacing: 4
 
                 Label {
                     text: i18n.text("queue", i18n.language)
                     color: root.textStrongColor
-                    font.pixelSize: 25
+                    font.pixelSize: 24
                     font.weight: Font.Bold
+                    font.letterSpacing: 0.3
                 }
 
                 Label {
                     text: i18n.countText("tracks", root.queue.length, i18n.language)
                     color: root.textMutedColor
-                    font.pixelSize: 12
+                    font.pixelSize: 11
                     font.weight: Font.DemiBold
                 }
             }
@@ -85,6 +86,7 @@ Rectangle {
             Layout.fillWidth: true
             height: 1
             color: root.lineColor
+            opacity: 0.75
         }
 
         ListView {
@@ -93,36 +95,55 @@ Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
-            spacing: 8
+            spacing: 10
             model: root.queue
 
             delegate: Rectangle {
                 required property var modelData
 
                 width: queueList.width
-                height: 70
-                radius: 8
-                color: modelData.state === "current" ? "#23322f" : "#20242a"
-                border.color: modelData.state === "current" ? root.mintColor : "#2a3037"
+                id: delegateRoot
+                height: 74
+                radius: 14
+                property bool hoveredRow: false
+                color: modelData.state === "current" ? "#1d3833" : (hoveredRow ? "#202b34" : "#1a2229")
+                border.color: modelData.state === "current" ? root.mintColor : (hoveredRow ? "#3a4d59" : "#27323b")
                 border.width: 1
+
+                Behavior on color { ColorAnimation { duration: 130 } }
+                Behavior on border.color { ColorAnimation { duration: 130 } }
+
+                HoverHandler {
+                    onHoveredChanged: delegateRoot.hoveredRow = hovered
+                }
+
+                Rectangle {
+                    visible: modelData.state === "current"
+                    anchors.left: parent.left
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    width: 3
+                    radius: 2
+                    color: root.mintColor
+                }
 
                 RowLayout {
                     anchors.fill: parent
-                    anchors.leftMargin: 11
-                    anchors.rightMargin: 9
-                    spacing: 10
+                    anchors.leftMargin: 14
+                    anchors.rightMargin: 10
+                    spacing: 12
 
                     Rectangle {
-                        Layout.preferredWidth: 42
-                        Layout.preferredHeight: 42
-                        radius: 8
-                        color: modelData.state === "current" ? root.mintColor : "#2c3239"
+                        Layout.preferredWidth: 44
+                        Layout.preferredHeight: 44
+                        radius: 12
+                        color: modelData.state === "current" ? root.mintColor : "#25303a"
 
                         Text {
                             anchors.centerIn: parent
                             text: modelData.state === "current" ? "♪" : String(Number(modelData.position || 0) + 1)
                             color: modelData.state === "current" ? "#10201b" : root.textSoftColor
-                            font.pixelSize: modelData.state === "current" ? 19 : 13
+                            font.pixelSize: modelData.state === "current" ? 19 : 12
                             font.weight: Font.Black
                         }
                     }
@@ -136,7 +157,7 @@ Rectangle {
                             text: modelData.title || i18n.text("untitled", i18n.language)
                             color: root.textStrongColor
                             elide: Text.ElideRight
-                            font.pixelSize: 14
+                            font.pixelSize: 13
                             font.weight: Font.DemiBold
                         }
 
@@ -148,7 +169,7 @@ Rectangle {
                                   + (modelData.path || "")
                             color: root.textMutedColor
                             elide: Text.ElideMiddle
-                            font.pixelSize: 11
+                            font.pixelSize: 10
                         }
                     }
 
@@ -159,10 +180,10 @@ Rectangle {
                                      : i18n.text("play_this_track", i18n.language)
                         implicitWidth: 34
                         implicitHeight: 34
-                        fillColor: "#25302d"
-                        hoverColor: "#2e3b37"
-                        pressedColor: "#374844"
-                        borderColor: "#3d5750"
+                        fillColor: "#20332f"
+                        hoverColor: "#2b4941"
+                        pressedColor: "#35564d"
+                        borderColor: "#3b665b"
                         labelColor: root.mintColor
                         onClicked: modelData.state === "current"
                                    ? root.togglePlayPauseRequested()
@@ -174,10 +195,10 @@ Rectangle {
                         tooltipText: i18n.text("remove", i18n.language)
                         implicitWidth: 34
                         implicitHeight: 34
-                        fillColor: "#2b2223"
-                        hoverColor: "#37292a"
-                        pressedColor: "#442f30"
-                        borderColor: "#50383a"
+                        fillColor: "#292124"
+                        hoverColor: "#3c292d"
+                        pressedColor: "#4b3137"
+                        borderColor: "#583a40"
                         labelColor: root.coralColor
                         onClicked: root.removeRequested(Number(modelData.id))
                     }
@@ -188,7 +209,7 @@ Rectangle {
                 anchors.centerIn: parent
                 visible: root.queue.length === 0
                 text: i18n.text("drop_tracks", i18n.language)
-                color: "#777f7a"
+                color: "#7e8b91"
                 font.pixelSize: 14
                 font.weight: Font.DemiBold
             }

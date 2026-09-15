@@ -7,13 +7,13 @@ Slider {
     property color activeColor: "#f2c86b"
     property color baseColor: "#343840"
 
-    implicitHeight: 28
+    implicitHeight: 30
 
     background: Rectangle {
         x: slider.leftPadding
         y: slider.topPadding + slider.availableHeight / 2 - height / 2
         width: slider.availableWidth
-        height: 5
+        height: 6
         radius: 3
         color: slider.baseColor
 
@@ -28,11 +28,11 @@ Slider {
     handle: Rectangle {
         x: slider.leftPadding + slider.visualPosition * (slider.availableWidth - width)
         y: slider.topPadding + slider.availableHeight / 2 - height / 2
-        width: slider.pressed ? 18 : 14
+        width: slider.pressed ? 19 : 15
         height: width
         radius: width / 2
-        color: "#fff2c2"
-        border.color: "#1a1710"
+        color: "#fff4cf"
+        border.color: "#14201f"
         border.width: 2
     }
 }

@@ -13,20 +13,29 @@ Item {
     Rectangle {
         id: albumFrame
         anchors.centerIn: parent
-        width: Math.min(parent.width, parent.height, 360)
+        width: Math.min(parent.width, parent.height, 380)
         height: width
-        radius: 14
-        color: "#24282f"
-        border.color: "#3b424c"
+        radius: 22
+        color: "#1b252b"
+        border.color: "#34444b"
         border.width: 1
 
         Rectangle {
             anchors.fill: parent
-            anchors.margins: 16
+            anchors.margins: 1
+            radius: parent.radius - 1
+            color: "transparent"
+            border.color: Qt.rgba(0.48, 0.88, 0.78, 0.14)
+            border.width: 1
+        }
+
+        Rectangle {
+            anchors.fill: parent
+            anchors.margins: 18
             radius: width / 2
-            color: "#101214"
-            border.color: "#303842"
-            border.width: 2
+            color: "#0d1216"
+            border.color: "#27323a"
+            border.width: 3
 
             Repeater {
                 model: 6
@@ -47,13 +56,13 @@ Item {
                 width: parent.width * 0.42
                 height: width
                 radius: width / 2
-                color: root.hasSong ? root.mintColor : "#454b50"
+                color: root.hasSong ? root.mintColor : "#4a555d"
 
                 Text {
                     anchors.centerIn: parent
                     text: root.hasSong ? "N" : "+"
                     color: "#101214"
-                    font.pixelSize: Math.max(44, parent.width * 0.42)
+                    font.pixelSize: Math.max(44, parent.width * 0.38)
                     font.weight: Font.Black
                 }
             }
@@ -63,21 +72,25 @@ Item {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.bottom: parent.bottom
-            height: 70
-            radius: 14
-            color: Qt.rgba(0.08, 0.09, 0.1, 0.88)
+            height: 76
+            radius: 22
+            gradient: Gradient {
+                GradientStop { position: 0.0; color: Qt.rgba(0.04, 0.06, 0.07, 0.15) }
+                GradientStop { position: 1.0; color: Qt.rgba(0.04, 0.06, 0.07, 0.95) }
+            }
 
             Label {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
-                anchors.leftMargin: 18
-                anchors.rightMargin: 18
-                text: i18n.text(root.playbackState, i18n.language).toUpperCase()
+                anchors.leftMargin: 22
+                anchors.rightMargin: 22
+                text: (root.hasSong ? "•  " : "+  ") + i18n.text(root.playbackState, i18n.language).toUpperCase()
                 color: root.hasSong ? root.amberColor : root.textMutedColor
                 elide: Text.ElideRight
-                font.pixelSize: 12
+                font.pixelSize: 11
                 font.weight: Font.Black
+                font.letterSpacing: 1.2
             }
         }
     }

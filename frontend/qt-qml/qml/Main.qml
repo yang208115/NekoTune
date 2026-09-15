@@ -7,10 +7,10 @@ import "components"
 ApplicationWindow {
     id: root
 
-    width: 1120
-    height: 720
-    minimumWidth: 900
-    minimumHeight: 600
+    width: 1280
+    height: 800
+    minimumWidth: 980
+    minimumHeight: 640
     visible: true
     title: "NekoTune"
     color: bg
@@ -23,15 +23,15 @@ ApplicationWindow {
     readonly property string playbackState: String(ipcClient.status.state || "stopped")
     readonly property string databasePath: String(ipcClient.status.database_path || "")
 
-    readonly property color bg: "#101113"
-    readonly property color panel: "#191b1f"
-    readonly property color line: "#30343b"
-    readonly property color textStrong: "#f4f0e8"
-    readonly property color textSoft: "#c5beb2"
-    readonly property color textMuted: "#8e938f"
-    readonly property color mint: "#7adfc6"
-    readonly property color amber: "#f2c86b"
-    readonly property color coral: "#f0948e"
+    readonly property color bg: "#0b0e12"
+    readonly property color panel: "#151a20"
+    readonly property color line: "#2a333c"
+    readonly property color textStrong: "#f7f4ed"
+    readonly property color textSoft: "#c8c9c3"
+    readonly property color textMuted: "#89929a"
+    readonly property color mint: "#7be0c7"
+    readonly property color amber: "#f4c96d"
+    readonly property color coral: "#f39a91"
 
     FileDialog {
         id: fileDialog
@@ -72,16 +72,16 @@ ApplicationWindow {
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
         background: Rectangle {
-            radius: 8
-            color: root.panel
+            radius: 18
+            color: "#171d23"
             border.color: root.line
             border.width: 1
         }
 
         ColumnLayout {
             anchors.fill: parent
-            anchors.margins: 22
-            spacing: 14
+            anchors.margins: 28
+            spacing: 16
 
             RowLayout {
                 Layout.fillWidth: true
@@ -90,15 +90,15 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     text: i18n.text("edit_track_info", i18n.language)
                     color: root.textStrong
-                    font.pixelSize: 22
+                    font.pixelSize: 24
                     font.weight: Font.Bold
                 }
 
                 IconButton {
                     text: "×"
                     tooltipText: i18n.text("close", i18n.language)
-                    implicitWidth: 34
-                    implicitHeight: 34
+                    implicitWidth: 38
+                    implicitHeight: 38
                     onClicked: metadataEditor.close()
                 }
             }
@@ -122,6 +122,14 @@ ApplicationWindow {
                 placeholderTextColor: root.textMuted
                 selectionColor: root.mint
                 selectedTextColor: "#10201b"
+                leftPadding: 14
+                rightPadding: 14
+                background: Rectangle {
+                    radius: 11
+                    color: "#10161b"
+                    border.color: titleField.activeFocus ? root.mint : root.line
+                    border.width: titleField.activeFocus ? 2 : 1
+                }
             }
 
             TextField {
@@ -132,6 +140,14 @@ ApplicationWindow {
                 placeholderTextColor: root.textMuted
                 selectionColor: root.mint
                 selectedTextColor: "#10201b"
+                leftPadding: 14
+                rightPadding: 14
+                background: Rectangle {
+                    radius: 11
+                    color: "#10161b"
+                    border.color: artistField.activeFocus ? root.mint : root.line
+                    border.width: artistField.activeFocus ? 2 : 1
+                }
             }
 
             TextArea {
@@ -144,6 +160,13 @@ ApplicationWindow {
                 placeholderTextColor: root.textMuted
                 selectionColor: root.mint
                 selectedTextColor: "#10201b"
+                padding: 14
+                background: Rectangle {
+                    radius: 11
+                    color: "#10161b"
+                    border.color: lyricsField.activeFocus ? root.mint : root.line
+                    border.width: lyricsField.activeFocus ? 2 : 1
+                }
             }
 
             RowLayout {
@@ -156,6 +179,7 @@ ApplicationWindow {
                 TextButton {
                     text: i18n.text("cancel", i18n.language)
                     implicitWidth: 90
+                    subtle: true
                     onClicked: metadataEditor.close()
                 }
 
@@ -183,21 +207,39 @@ ApplicationWindow {
             anchors.fill: parent
             gradient: Gradient {
                 orientation: Gradient.Horizontal
-                GradientStop { position: 0.0; color: "#111315" }
-                GradientStop { position: 0.58; color: "#15171b" }
-                GradientStop { position: 1.0; color: "#191714" }
+                GradientStop { position: 0.0; color: "#0c1015" }
+                GradientStop { position: 0.56; color: "#111820" }
+                GradientStop { position: 1.0; color: "#17151a" }
             }
+        }
+
+        Rectangle {
+            width: 420
+            height: 420
+            x: parent.width - 250
+            y: -170
+            radius: width / 2
+            color: Qt.rgba(0.48, 0.88, 0.78, 0.055)
+        }
+
+        Rectangle {
+            width: 300
+            height: 300
+            x: -150
+            y: parent.height - 90
+            radius: width / 2
+            color: Qt.rgba(0.96, 0.68, 0.32, 0.035)
         }
 
         RowLayout {
             anchors.fill: parent
-            anchors.margins: 24
-            spacing: 20
+            anchors.margins: 26
+            spacing: 22
 
             QueuePanel {
                 Layout.fillHeight: true
-                Layout.preferredWidth: 356
-                Layout.minimumWidth: 320
+                Layout.preferredWidth: 370
+                Layout.minimumWidth: 330
 
                 queue: root.queue
                 playbackState: root.playbackState

@@ -8,6 +8,8 @@ Item {
     property real position: 0
     property var parsedLines: []
     property int activeIndex: -1
+    property color activeColor: "#f7f4ed"
+    property color inactiveColor: "#89929a"
 
     visible: root.lyrics.trim().length > 0
     clip: true
@@ -28,12 +30,13 @@ Item {
         onCountChanged: Qt.callLater(root.scrollToActive)
 
         delegate: Text {
+            required property int index
             required property var modelData
 
             width: lyricsList.width
             text: modelData.text
-            color: "#ffffff"
-            opacity: index === root.activeIndex ? 1.0 : 0.75
+            color: index === root.activeIndex ? root.activeColor : root.inactiveColor
+            opacity: index === root.activeIndex ? 1.0 : 0.72
             elide: Text.ElideRight
             horizontalAlignment: Text.AlignHCenter
             font.pixelSize: index === root.activeIndex ? 18 : 15

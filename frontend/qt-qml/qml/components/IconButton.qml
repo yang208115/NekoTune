@@ -5,15 +5,15 @@ Button {
     id: button
 
     property string tooltipText: ""
-    property color fillColor: "#262a30"
-    property color hoverColor: "#30353c"
-    property color pressedColor: "#3a4048"
-    property color borderColor: "#3b414a"
+    property color fillColor: "#202831"
+    property color hoverColor: "#2a3540"
+    property color pressedColor: "#34424e"
+    property color borderColor: "#35414c"
     property color labelColor: "#f4f0e8"
 
     hoverEnabled: true
     implicitWidth: 42
-    implicitHeight: 38
+    implicitHeight: 40
     leftPadding: 0
     rightPadding: 0
     font.pixelSize: 15
@@ -32,7 +32,7 @@ Button {
     }
 
     background: Rectangle {
-        radius: 8
+        radius: 12
         color: !button.enabled ? "#1b1e22" : button.down ? button.pressedColor : button.hovered ? button.hoverColor : button.fillColor
         border.color: button.enabled ? button.borderColor : "#272b30"
         border.width: 1
