@@ -1,0 +1,251 @@
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Dialogs
+import QtQuick.Layouts
+import "components"
+
+ApplicationWindow {
+    id: root
+
+    width: 1120
+    height: 720
+    minimumWidth: 900
+    minimumHeight: 600
+    visible: true
+    title: "NekoTune"
+    color: bg
+
+    readonly property var song: ipcClient.status.song || ({})
+    readonly property var queue: ipcClient.status.queue || []
+    readonly property real duration: Number(ipcClient.status.duration || 0)
+    readonly property real position: Number(ipcClient.status.position || 0)
+    readonly property real volume: Number(ipcClient.status.volume || 0.8)
+    readonly property string playbackState: String(ipcClient.status.state || "stopped")
+    readonly property string databasePath: String(ipcClient.status.database_path || "")
+
+    readonly property color bg: "#101113"
+    readonly property color panel: "#191b1f"
+    readonly property color line: "#30343b"
+    readonly property color textStrong: "#f4f0e8"
+    readonly property color textSoft: "#c5beb2"
+    readonly property color textMuted: "#8e938f"
+    readonly property color mint: "#7adfc6"
+    readonly property color amber: "#f2c86b"
+    readonly property color coral: "#f0948e"
+
+    FileDialog {
+        id: fileDialog
+        title: i18n.text("open_music", i18n.language)
+        fileMode: FileDialog.OpenFiles
+        nameFilters: [i18n.text("audio_files", i18n.language) + " (*.mp3 *.m4a *.aac *.wav *.flac *.ogg)",
+                      i18n.text("all_files", i18n.language) + " (*)"]
+        onAccepted: {
+            for (let index = 0; index < selectedFiles.length; index += 1) {
+                if (index === 0) {
+                    ipcClient.playPath(selectedFiles[index])
+                } else {
+                    ipcClient.addPath(selectedFiles[index])
+                }
+            }
+        }
+    }
+
+    Popup {
+        id: metadataEditor
+
+        property int songId: 0
+
+        function openForSong(song) {
+            songId = Number(song.song_id || 0)
+            titleField.text = song.custom_title || song.title || ""
+            artistField.text = song.artist || ""
+            lyricsField.text = song.lyrics || ""
+            open()
+        }
+
+        modal: true
+        focus: true
+        width: Math.min(root.width - 80, 620)
+        height: Math.min(root.height - 80, 560)
+        anchors.centerIn: parent
+        padding: 0
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+
+        background: Rectangle {
+            radius: 8
+            color: root.panel
+            border.color: root.line
+            border.width: 1
+        }
+
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 22
+            spacing: 14
+
+            RowLayout {
+                Layout.fillWidth: true
+
+                Label {
+                    Layout.fillWidth: true
+                    text: i18n.text("edit_track_info", i18n.language)
+                    color: root.textStrong
+                    font.pixelSize: 22
+                    font.weight: Font.Bold
+                }
+
+                IconButton {
+                    text: "×"
+                    tooltipText: i18n.text("close", i18n.language)
+                    implicitWidth: 34
+                    implicitHeight: 34
+                    onClicked: metadataEditor.close()
+                }
+            }
+
+            Label {
+                Layout.fillWidth: true
+                text: root.databasePath
+                      ? (i18n.text("database", i18n.language) + ": " + root.databasePath)
+                      : i18n.text("database_unavailable", i18n.language)
+                color: root.textMuted
+                elide: Text.ElideMiddle
+                font.pixelSize: 11
+                font.weight: Font.DemiBold
+            }
+
+            TextField {
+                id: titleField
+                Layout.fillWidth: true
+                placeholderText: i18n.text("custom_title", i18n.language)
+                color: root.textStrong
+                placeholderTextColor: root.textMuted
+                selectionColor: root.mint
+                selectedTextColor: "#10201b"
+            }
+
+            TextField {
+                id: artistField
+                Layout.fillWidth: true
+                placeholderText: i18n.text("artist_author", i18n.language)
+                color: root.textStrong
+                placeholderTextColor: root.textMuted
+                selectionColor: root.mint
+                selectedTextColor: "#10201b"
+            }
+
+            TextArea {
+                id: lyricsField
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                placeholderText: i18n.text("lyrics", i18n.language)
+                wrapMode: TextEdit.Wrap
+                color: root.textStrong
+                placeholderTextColor: root.textMuted
+                selectionColor: root.mint
+                selectedTextColor: "#10201b"
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+
+                Item {
+                    Layout.fillWidth: true
+                }
+
+                TextButton {
+                    text: i18n.text("cancel", i18n.language)
+                    implicitWidth: 90
+                    onClicked: metadataEditor.close()
+                }
+
+                TextButton {
+                    text: i18n.text("save", i18n.language)
+                    implicitWidth: 90
+                    enabled: metadataEditor.songId > 0
+                    onClicked: {
+                        ipcClient.updateSongMetadata(metadataEditor.songId,
+                                                     titleField.text,
+                                                     artistField.text,
+                                                     lyricsField.text)
+                        metadataEditor.close()
+                    }
+                }
+            }
+        }
+    }
+
+    Rectangle {
+        anchors.fill: parent
+        color: root.bg
+
+        Rectangle {
+            anchors.fill: parent
+            gradient: Gradient {
+                orientation: Gradient.Horizontal
+                GradientStop { position: 0.0; color: "#111315" }
+                GradientStop { position: 0.58; color: "#15171b" }
+                GradientStop { position: 1.0; color: "#191714" }
+            }
+        }
+
+        RowLayout {
+            anchors.fill: parent
+            anchors.margins: 24
+            spacing: 20
+
+            QueuePanel {
+                Layout.fillHeight: true
+                Layout.preferredWidth: 356
+                Layout.minimumWidth: 320
+
+                queue: root.queue
+                playbackState: root.playbackState
+                panelColor: root.panel
+                lineColor: root.line
+                textStrongColor: root.textStrong
+                textSoftColor: root.textSoft
+                textMutedColor: root.textMuted
+                mintColor: root.mint
+                amberColor: root.amber
+                coralColor: root.coral
+
+                onAddRequested: fileDialog.open()
+                onClearRequested: ipcClient.clearQueue()
+                onPlayRequested: queueId => ipcClient.playQueueItem(queueId)
+                onTogglePlayPauseRequested: ipcClient.togglePlayPause()
+                onRemoveRequested: queueId => ipcClient.removeQueueItem(queueId)
+            }
+
+            PlayerPanel {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+
+                song: root.song
+                queue: root.queue
+                duration: root.duration
+                position: root.position
+                volume: root.volume
+                playbackState: root.playbackState
+                connected: ipcClient.connected
+                errorText: ipcClient.error
+
+                panelColor: root.panel
+                lineColor: root.line
+                textStrongColor: root.textStrong
+                textSoftColor: root.textSoft
+                textMutedColor: root.textMuted
+                mintColor: root.mint
+                amberColor: root.amber
+
+                onAddRequested: fileDialog.open()
+                onTogglePlayPauseRequested: ipcClient.togglePlayPause()
+                onNextRequested: ipcClient.next()
+                onPreviousRequested: ipcClient.previous()
+                onSeekRequested: positionMs => ipcClient.seek(positionMs)
+                onVolumeRequested: value => ipcClient.setVolume(value)
+                onEditMetadataRequested: metadataEditor.openForSong(root.song)
+            }
+        }
+    }
+}

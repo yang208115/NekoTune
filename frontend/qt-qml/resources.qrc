@@ -1,0 +1,14 @@
+<RCC>
+    <qresource prefix="/">
+        <file>i18n/en.json</file>
+        <file>i18n/zh.json</file>
+        <file>qml/Main.qml</file>
+        <file>qml/components/AlbumArt.qml</file>
+        <file>qml/components/IconButton.qml</file>
+        <file>qml/components/LrcLyrics.qml</file>
+        <file>qml/components/PlayerPanel.qml</file>
+        <file>qml/components/PlayerSlider.qml</file>
+        <file>qml/components/QueuePanel.qml</file>
+        <file>qml/components/TextButton.qml</file>
+    </qresource>
+</RCC>
