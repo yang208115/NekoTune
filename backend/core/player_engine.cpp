@@ -218,6 +218,7 @@ QJsonObject PlayerEngine::addToQueue(const QString &path)
     }
 
     m_queue.add(file.absoluteFilePath(), *metadata);
+    persistQueue();
     broadcastQueueChanged();
     return ok(queueStatus());
 }
@@ -244,6 +245,7 @@ QJsonObject PlayerEngine::removeFromQueue(int queueId)
     const bool shouldContinue = m_state == PlayerState::Playing || m_state == PlayerState::Loading;
 
     m_queue.removeAt(index);
+    persistQueue();
 
     if (removingCurrent) {
         m_player.stop();
@@ -271,6 +273,7 @@ QJsonObject PlayerEngine::removeFromQueue(int queueId)
         if (shouldContinue) {
             m_player.play();
         }
+        persistQueue();
         return ok(status());
     }
 
@@ -282,6 +285,8 @@ QJsonObject PlayerEngine::clearQueue()
 {
     m_player.stop();
     m_queue.clear();
+    m_player.setSource(QUrl());
+    persistQueue();
     setState(PlayerState::Stopped);
     broadcastTrackChanged();
     broadcastQueueChanged();
@@ -384,6 +389,14 @@ void PlayerEngine::handleErrorChanged()
     }
 
     setState(PlayerState::Error);
+    const int failedIndex = m_queue.currentIndex();
+    if (failedIndex >= 0 && failedIndex < m_queue.size()) {
+        m_queue.removeAt(failedIndex);
+        m_player.setSource(QUrl());
+        persistQueue();
+        broadcastTrackChanged();
+        broadcastQueueChanged();
+    }
     emit eventReady({
         {QStringLiteral("event"), QStringLiteral("player.error")},
         {QStringLiteral("message"), m_player.errorString()},
@@ -425,6 +438,7 @@ bool PlayerEngine::playQueueIndex(int index)
     }
 
     m_queue.setCurrentIndex(index);
+    persistQueue();
     if (!loadCurrent()) {
         return false;
     }
@@ -477,16 +491,23 @@ void PlayerEngine::broadcastTrackChanged()
 
 void PlayerEngine::restoreQueueFromStore()
 {
-    for (const auto &metadata : m_songStore.songs()) {
-        if (!metadata.firstPath.isEmpty()) {
-            m_queue.add(metadata.firstPath, metadata);
+    const auto snapshot = m_songStore.loadQueue();
+    for (const auto &record : snapshot.items) {
+        const auto metadata = m_songStore.songById(record.songId);
+        if (metadata && !record.path.isEmpty()) {
+            m_queue.add(record.path, *metadata);
         }
     }
 
     if (!m_queue.isEmpty()) {
-        m_queue.setCurrentIndex(0);
+        m_queue.setCurrentIndex(qBound(0, snapshot.currentIndex, m_queue.size() - 1));
         m_queue.markCurrent();
     }
+}
+
+void PlayerEngine::persistQueue()
+{
+    m_songStore.saveQueue({m_queue.records(), m_queue.currentIndex()});
 }
 
 } // namespace nekotune

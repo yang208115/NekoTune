@@ -45,6 +45,8 @@ cmake --build build
 
 开发环境默认 SQLite 数据库位于 `build/nekotune.sqlite3`，避免写入用户数据目录。可以通过 `NEKOTUNE_DB_PATH=/path/to/nekotune.sqlite3` 显式指定数据库位置。
 
+队列会和歌曲资料一起保存在 SQLite 中，重启后恢复上次的队列顺序、重复项和当前项。清空队列后，历史歌曲资料仍会保留，但不会再次自动进入队列。
+
 前端支持中文和英文国际化，默认跟随系统语言；也可以在界面右上角直接切换，或通过 `NEKOTUNE_LANGUAGE=zh` / `NEKOTUNE_LANGUAGE=en` 在启动时指定语言。
 
 ## 路线图

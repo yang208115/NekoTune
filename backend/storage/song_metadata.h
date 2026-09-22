@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QString>
+#include <QVector>
 
 namespace nekotune {
 
@@ -11,6 +12,16 @@ struct SongMetadata {
     QString customTitle;
     QString artist;
     QString lyrics;
+};
+
+struct QueueRecord {
+    QString path;
+    int songId = 0;
+};
+
+struct QueueSnapshot {
+    QVector<QueueRecord> items;
+    int currentIndex = -1;
 };
 
 } // namespace nekotune

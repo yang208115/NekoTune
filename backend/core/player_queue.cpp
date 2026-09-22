@@ -166,4 +166,26 @@ QJsonArray PlayerQueue::toArray() const
     return items;
 }
 
+QVector<QueueRecord> PlayerQueue::records() const
+{
+    QVector<QueueRecord> records;
+    records.reserve(m_items.size());
+    for (const auto &item : m_items) {
+        records.append({item.path, item.metadata.id});
+    }
+    return records;
+}
+
+void PlayerQueue::restore(const QVector<QueueItem> &items, int currentIndex)
+{
+    m_items = items;
+    m_currentIndex = -1;
+    m_nextQueueId = 1;
+    for (const auto &item : m_items) {
+        m_nextQueueId = qMax(m_nextQueueId, item.id + 1);
+    }
+    setCurrentIndex(currentIndex);
+    markCurrent();
+}
+
 } // namespace nekotune

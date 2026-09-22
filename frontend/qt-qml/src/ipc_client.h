@@ -6,6 +6,7 @@
 #include <QObject>
 #include <QTimer>
 #include <QVariantMap>
+#include <QHash>
 
 class IpcClient final : public QObject {
     Q_OBJECT
@@ -64,4 +65,5 @@ private:
     QVariantMap m_status;
     QString m_error;
     int m_nextId = 1;
+    QHash<int, QString> m_pendingRequests;
 };

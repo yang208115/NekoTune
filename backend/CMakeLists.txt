@@ -2,6 +2,7 @@ set(NEKOTUNE_BACKEND_SOURCES
     core/player_engine.cpp
     core/player_queue.cpp
     ipc/ipc_server.cpp
+    ipc/ipc_router.cpp
     storage/song_store.cpp
 )
 
@@ -10,6 +11,7 @@ set(NEKOTUNE_BACKEND_HEADERS
     core/player_queue.h
     core/player_state.h
     ipc/ipc_server.h
+    ipc/ipc_router.h
     storage/song_metadata.h
     storage/song_store.h
 )

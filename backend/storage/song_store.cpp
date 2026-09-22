@@ -216,7 +216,82 @@ bool SongStore::migrate()
         return false;
     }
 
+    if (!query.exec(QStringLiteral(
+            "CREATE TABLE IF NOT EXISTS queue_items ("
+            "position INTEGER PRIMARY KEY,"
+            "path TEXT NOT NULL,"
+            "song_id INTEGER NOT NULL,"
+            "current_index INTEGER NOT NULL DEFAULT -1"
+            ")"))) {
+        setError(query.lastError().text());
+        return false;
+    }
+
     return true;
+}
+
+bool SongStore::saveQueue(const QueueSnapshot &snapshot)
+{
+    if (!m_ready) {
+        return false;
+    }
+
+    if (!m_db.transaction()) {
+        setError(m_db.lastError().text());
+        return false;
+    }
+
+    QSqlQuery query(m_db);
+    if (!query.exec(QStringLiteral("DELETE FROM queue_items"))) {
+        setError(query.lastError().text());
+        m_db.rollback();
+        return false;
+    }
+
+    query.prepare(QStringLiteral(
+        "INSERT INTO queue_items (position, path, song_id, current_index) "
+        "VALUES (:position, :path, :song_id, :current_index)"));
+    for (int index = 0; index < snapshot.items.size(); ++index) {
+        const auto &item = snapshot.items.at(index);
+        query.bindValue(QStringLiteral(":position"), index);
+        query.bindValue(QStringLiteral(":path"), item.path);
+        query.bindValue(QStringLiteral(":song_id"), item.songId);
+        query.bindValue(QStringLiteral(":current_index"), snapshot.currentIndex);
+        if (!query.exec()) {
+            setError(query.lastError().text());
+            m_db.rollback();
+            return false;
+        }
+    }
+
+    if (!m_db.commit()) {
+        setError(m_db.lastError().text());
+        return false;
+    }
+    return true;
+}
+
+QueueSnapshot SongStore::loadQueue() const
+{
+    QueueSnapshot snapshot;
+    if (!m_ready) {
+        return snapshot;
+    }
+
+    QSqlQuery query(m_db);
+    if (!query.exec(QStringLiteral(
+            "SELECT path, song_id, current_index FROM queue_items ORDER BY position ASC"))) {
+        return snapshot;
+    }
+
+    while (query.next()) {
+        snapshot.items.append({query.value(0).toString(), query.value(1).toInt()});
+        snapshot.currentIndex = query.value(2).toInt();
+    }
+    if (snapshot.items.isEmpty()) {
+        snapshot.currentIndex = -1;
+    }
+    return snapshot;
 }
 
 std::optional<SongMetadata> SongStore::songByHash(const QString &hash) const

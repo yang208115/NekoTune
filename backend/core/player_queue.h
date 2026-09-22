@@ -35,6 +35,8 @@ public:
 
     QJsonObject currentSongObject() const;
     QJsonArray toArray() const;
+    QVector<QueueRecord> records() const;
+    void restore(const QVector<QueueItem> &items, int currentIndex);
 
 private:
     QList<QueueItem> m_items;

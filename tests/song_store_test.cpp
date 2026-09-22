@@ -12,6 +12,7 @@ class SongStoreTest final : public QObject {
 private slots:
     void usesBuildDatabasePathInDevelopment();
     void storesAndUpdatesSongMetadata();
+    void storesAndRestoresQueue();
 };
 
 void SongStoreTest::usesBuildDatabasePathInDevelopment()
@@ -20,6 +21,28 @@ void SongStoreTest::usesBuildDatabasePathInDevelopment()
              QFileInfo(QDir(QCoreApplication::applicationDirPath())
                            .filePath(QStringLiteral("../nekotune.sqlite3")))
                  .absoluteFilePath());
+}
+
+void SongStoreTest::storesAndRestoresQueue()
+{
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+    nekotune::SongStore store(tempDir.filePath(QStringLiteral("queue.sqlite3")));
+    QVERIFY(store.isReady());
+
+    const auto song = store.getOrCreateSong(QStringLiteral("queue-hash"),
+                                             QStringLiteral("/music/queue.mp3"));
+    QVERIFY(song.has_value());
+    QVERIFY(store.saveQueue({
+        {{QStringLiteral("/music/queue.mp3"), song->id},
+         {QStringLiteral("/music/queue-copy.mp3"), song->id}},
+        1,
+    }));
+
+    const auto snapshot = store.loadQueue();
+    QCOMPARE(snapshot.items.size(), 2);
+    QCOMPARE(snapshot.items.at(1).path, QStringLiteral("/music/queue-copy.mp3"));
+    QCOMPARE(snapshot.currentIndex, 1);
 }
 
 void SongStoreTest::storesAndUpdatesSongMetadata()

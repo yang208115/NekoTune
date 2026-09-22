@@ -31,6 +31,8 @@ public:
                                                const QString &customTitle,
                                                const QString &artist,
                                                const QString &lyrics);
+    bool saveQueue(const QueueSnapshot &snapshot);
+    QueueSnapshot loadQueue() const;
 
     static QString defaultDatabasePath();
 

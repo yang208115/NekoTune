@@ -24,6 +24,8 @@ IpcClient::IpcClient(QObject *parent)
         refreshStatus();
     });
     connect(&m_socket, &QLocalSocket::disconnected, this, [this]() {
+        m_buffer.clear();
+        m_pendingRequests.clear();
         emit connectedChanged();
         if (!m_reconnectTimer.isActive()) {
             m_reconnectTimer.start();
@@ -211,6 +213,7 @@ void IpcClient::sendRequest(const QString &method, const QJsonObject &params)
         {QStringLiteral("method"), method},
         {QStringLiteral("params"), params},
     };
+    m_pendingRequests.insert(m_nextId - 1, method);
     m_socket.write(QJsonDocument(payload).toJson(QJsonDocument::Compact));
     m_socket.write("\n");
     m_socket.flush();
@@ -245,6 +248,11 @@ void IpcClient::handlePayload(const QJsonObject &payload)
             setError(payload.value(QStringLiteral("message")).toString());
         }
         return;
+    }
+
+    const auto id = payload.value(QStringLiteral("id"));
+    if (id.isDouble()) {
+        m_pendingRequests.remove(id.toInt());
     }
 
     if (payload.value(QStringLiteral("status")).toString() == QStringLiteral("error")) {

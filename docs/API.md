@@ -33,6 +33,8 @@ NekoTune 使用基于换行分隔的 JSON 协议，通过 Unix domain socket 进
 {"id":1,"status":"error","message":"No song loaded"}
 ```
 
+请求必须以换行结束。服务端支持一次读取多个请求，也支持一个请求分多次写入；带有 `id` 的请求会在响应中原样返回该 ID。缺少 `method`、`path`、数值参数或队列项 `id` 时，服务端返回带 ID 的参数错误，不会执行操作。
+
 ## 事件
 
 后端会向所有已连接客户端广播事件：
@@ -168,6 +170,8 @@ NekoTune 使用基于换行分隔的 JSON 协议，通过 Unix domain socket 进
 ```json
 {"id":13,"method":"queue.status","params":{}}
 ```
+
+队列会保存到当前 SQLite 数据库，包含顺序、重复项、文件路径和当前索引。后端重启后恢复最近一次队列；歌曲资料表中的历史歌曲不会自动重新加入队列。
 
 ### `song.metadata`
 

@@ -55,6 +55,7 @@ private:
     void broadcastQueueChanged();
     void broadcastTrackChanged();
     void restoreQueueFromStore();
+    void persistQueue();
 
     QMediaPlayer m_player;
     QAudioOutput m_audioOutput;

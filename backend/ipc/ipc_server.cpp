@@ -9,6 +9,7 @@ namespace nekotune {
 IpcServer::IpcServer(PlayerEngine &player, QObject *parent)
     : QObject(parent)
     , m_player(player)
+    , m_router(player)
     , m_serverName(defaultServerName())
 {
     connect(&m_server, &QLocalServer::newConnection, this, &IpcServer::acceptConnection);
@@ -17,8 +18,22 @@ IpcServer::IpcServer(PlayerEngine &player, QObject *parent)
 
 bool IpcServer::listen()
 {
-    QLocalServer::removeServer(m_serverName);
-    return m_server.listen(m_serverName);
+    if (m_server.listen(m_serverName)) {
+        return true;
+    }
+
+    if (m_server.serverError() != QAbstractSocket::AddressInUseError) {
+        return false;
+    }
+
+    QLocalSocket probe;
+    probe.connectToServer(m_serverName);
+    if (!probe.waitForConnected(150)) {
+        QLocalServer::removeServer(m_serverName);
+        return m_server.listen(m_serverName);
+    }
+    m_error = QStringLiteral("NekoTune backend is already running");
+    return false;
 }
 
 QString IpcServer::serverName() const
@@ -28,7 +43,7 @@ QString IpcServer::serverName() const
 
 QString IpcServer::errorString() const
 {
-    return m_server.errorString();
+    return m_error.isEmpty() ? m_server.errorString() : m_error;
 }
 
 void IpcServer::acceptConnection()
@@ -75,7 +90,7 @@ void IpcServer::readClient()
             continue;
         }
 
-        send(client, dispatch(document.object()));
+        send(client, m_router.dispatch(document.object()));
     }
 }
 
@@ -106,64 +121,6 @@ QString IpcServer::defaultServerName()
     }
 
     return QStringLiteral("nekotune");
-}
-
-QJsonObject IpcServer::dispatch(const QJsonObject &request)
-{
-    const auto id = request.value(QStringLiteral("id"));
-    const auto method = request.value(QStringLiteral("method")).toString();
-    const auto params = request.value(QStringLiteral("params")).toObject();
-
-    QJsonObject result;
-    if (method == QStringLiteral("player.play")) {
-        result = m_player.play(params);
-    } else if (method == QStringLiteral("player.toggle_play_pause")) {
-        result = m_player.togglePlayPause();
-    } else if (method == QStringLiteral("player.pause")) {
-        result = m_player.pause();
-    } else if (method == QStringLiteral("player.stop")) {
-        result = m_player.stop();
-    } else if (method == QStringLiteral("player.next")) {
-        result = m_player.next();
-    } else if (method == QStringLiteral("player.previous")) {
-        result = m_player.previous();
-    } else if (method == QStringLiteral("player.seek")) {
-        result = m_player.seek(static_cast<qint64>(params.value(QStringLiteral("position")).toDouble()));
-    } else if (method == QStringLiteral("player.set_volume")) {
-        result = m_player.setVolume(params.value(QStringLiteral("volume")).toDouble());
-    } else if (method == QStringLiteral("player.status")) {
-        result = {
-            {QStringLiteral("status"), QStringLiteral("ok")},
-            {QStringLiteral("data"), m_player.status()},
-        };
-    } else if (method == QStringLiteral("queue.add")) {
-        result = m_player.addToQueue(params.value(QStringLiteral("path")).toString());
-    } else if (method == QStringLiteral("queue.play")) {
-        result = m_player.playQueueItem(params.value(QStringLiteral("id")).toInt());
-    } else if (method == QStringLiteral("queue.remove")) {
-        result = m_player.removeFromQueue(params.value(QStringLiteral("id")).toInt());
-    } else if (method == QStringLiteral("queue.clear")) {
-        result = m_player.clearQueue();
-    } else if (method == QStringLiteral("queue.status")) {
-        result = {
-            {QStringLiteral("status"), QStringLiteral("ok")},
-            {QStringLiteral("data"), m_player.queueStatus()},
-        };
-    } else if (method == QStringLiteral("song.metadata")) {
-        result = m_player.songMetadata(params);
-    } else if (method == QStringLiteral("song.update_metadata")) {
-        result = m_player.updateSongMetadata(params);
-    } else {
-        result = {
-            {QStringLiteral("status"), QStringLiteral("error")},
-            {QStringLiteral("message"), QStringLiteral("Unknown method: %1").arg(method)},
-        };
-    }
-
-    if (!id.isUndefined()) {
-        result.insert(QStringLiteral("id"), id);
-    }
-    return result;
 }
 
 void IpcServer::send(QLocalSocket *client, const QJsonObject &payload)

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/player_engine.h"
+#include "ipc/ipc_router.h"
 
 #include <QHash>
 #include <QJsonObject>
@@ -30,12 +31,13 @@ private slots:
 private:
     static QString defaultServerName();
 
-    QJsonObject dispatch(const QJsonObject &request);
     void send(QLocalSocket *client, const QJsonObject &payload);
 
     PlayerEngine &m_player;
+    IpcRouter m_router;
     QLocalServer m_server;
     QString m_serverName;
+    QString m_error;
     QHash<QLocalSocket *, QByteArray> m_buffers;
 };
 
