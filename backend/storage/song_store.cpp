@@ -2,6 +2,9 @@
 
 #include <QCoreApplication>
 #include <QJsonDocument>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QSet>
 #include <QDir>
 #include <QFileInfo>
 #include <QProcessEnvironment>
@@ -228,17 +231,101 @@ bool SongStore::migrate()
         return false;
     }
 
-    if (!query.exec(QStringLiteral("CREATE TABLE IF NOT EXISTS queue_folders (id INTEGER PRIMARY KEY CHECK (id = 1), data TEXT NOT NULL)"))) {
+    if (!m_db.transaction()) {
+        setError(m_db.lastError().text());
+        return false;
+    }
+    const QStringList statements {
+        QStringLiteral("CREATE TABLE IF NOT EXISTS playlists (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL)"),
+        QStringLiteral("CREATE TABLE IF NOT EXISTS playlist_items (playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE, song_id INTEGER NOT NULL REFERENCES songs(id), path TEXT NOT NULL, position INTEGER NOT NULL, PRIMARY KEY (playlist_id, song_id))"),
+    };
+    for (const auto &statement : statements) {
+        if (!query.exec(statement)) {
+            setError(query.lastError().text());
+            m_db.rollback();
+            return false;
+        }
+    }
+    if (!migrateFolders()) {
+        m_db.rollback();
+        return false;
+    }
+    if (!m_db.commit()) {
+        setError(m_db.lastError().text());
+        m_db.rollback();
+        return false;
+    }
+    if (!query.exec(QStringLiteral("PRAGMA foreign_keys = ON"))) {
         setError(query.lastError().text());
         return false;
     }
+    return true;
+}
+
+bool SongStore::migrateFolders()
+{
+    QSqlQuery query(m_db);
+    auto exec = [&](const QString &sql) {
+        if (query.exec(sql)) return true;
+        setError(query.lastError().text());
+        return false;
+    };
+    if (m_db.tables().contains(QStringLiteral("queue_folders"))) {
+        if (!exec(QStringLiteral("SELECT data FROM queue_folders WHERE id = 1"))) return false;
+        QJsonArray folders;
+        if (query.next()) {
+            QJsonParseError parseError;
+            const auto document = QJsonDocument::fromJson(query.value(0).toByteArray(), &parseError);
+            if (parseError.error != QJsonParseError::NoError || !document.isArray()) {
+                setError(QStringLiteral("Unable to migrate invalid folder data"));
+                return false;
+            }
+            folders = document.array();
+        }
+        query.finish();
+        QHash<int, QJsonObject> byId;
+        for (const auto &value : folders) {
+            const auto folder = value.toObject();
+            const int id = folder.value("id").toInt();
+            if (id <= 0 || byId.contains(id) || folder.value("name").toString().trimmed().isEmpty()) {
+                setError(QStringLiteral("Unable to migrate invalid folder data"));
+                return false;
+            }
+            byId.insert(id, folder);
+        }
+        for (const auto &value : folders) {
+            const auto folder = value.toObject();
+            QStringList names;
+            QSet<int> visited;
+            int ancestor = folder.value("id").toInt();
+            while (ancestor != 0) {
+                if (visited.contains(ancestor) || !byId.contains(ancestor)) {
+                    setError(QStringLiteral("Unable to migrate invalid folder hierarchy"));
+                    return false;
+                }
+                visited.insert(ancestor);
+                names.prepend(byId.value(ancestor).value("name").toString());
+                ancestor = byId.value(ancestor).value("parent_id").toInt();
+            }
+            query.prepare(QStringLiteral("INSERT INTO playlists (name) VALUES (:name)"));
+            query.bindValue(QStringLiteral(":name"), names.join(QStringLiteral(" / ")));
+            if (!query.exec()) { setError(query.lastError().text()); return false; }
+            const int playlistId = query.lastInsertId().toInt();
+            query.prepare(QStringLiteral(
+                "INSERT OR IGNORE INTO playlist_items (playlist_id, song_id, path, position) "
+                "SELECT :playlist_id, song_id, path, position FROM queue_items "
+                "WHERE folder_id = :folder_id AND song_id IN (SELECT id FROM songs) ORDER BY position"));
+            query.bindValue(QStringLiteral(":playlist_id"), playlistId);
+            query.bindValue(QStringLiteral(":folder_id"), folder.value("id").toInt());
+            if (!query.exec()) { setError(query.lastError().text()); return false; }
+        }
+        if (!exec(QStringLiteral("DROP TABLE queue_folders"))) return false;
+    }
+    if (!exec(QStringLiteral("PRAGMA table_info(queue_items)"))) return false;
     bool hasFolder = false;
-    query.exec(QStringLiteral("PRAGMA table_info(queue_items)"));
     while (query.next()) hasFolder |= query.value(1).toString() == QStringLiteral("folder_id");
-    if (!hasFolder && !query.exec(QStringLiteral("ALTER TABLE queue_items ADD COLUMN folder_id INTEGER NOT NULL DEFAULT 0"))) {
-        setError(query.lastError().text());
-        return false;
-    }
+    query.finish();
+    if (hasFolder && !exec(QStringLiteral("ALTER TABLE queue_items DROP COLUMN folder_id"))) return false;
     return true;
 }
 
@@ -261,11 +348,10 @@ bool SongStore::saveQueue(const QueueSnapshot &snapshot)
     }
 
     query.prepare(QStringLiteral(
-        "INSERT INTO queue_items (position, path, song_id, current_index, folder_id) "
-        "VALUES (:position, :path, :song_id, :current_index, :folder_id)"));
+        "INSERT INTO queue_items (position, path, song_id, current_index) "
+        "VALUES (:position, :path, :song_id, :current_index)"));
     for (int index = 0; index < snapshot.items.size(); ++index) {
         const auto &item = snapshot.items.at(index);
-        query.bindValue(QStringLiteral(":folder_id"), item.folderId);
         query.bindValue(QStringLiteral(":position"), index);
         query.bindValue(QStringLiteral(":path"), item.path);
         query.bindValue(QStringLiteral(":song_id"), item.songId);
@@ -277,15 +363,9 @@ bool SongStore::saveQueue(const QueueSnapshot &snapshot)
         }
     }
 
-    query.prepare(QStringLiteral("INSERT OR REPLACE INTO queue_folders (id, data) VALUES (1, :data)"));
-    query.bindValue(QStringLiteral(":data"), QString::fromUtf8(QJsonDocument(snapshot.folders).toJson(QJsonDocument::Compact)));
-    if (!query.exec()) {
-        setError(query.lastError().text());
-        m_db.rollback();
-        return false;
-    }
     if (!m_db.commit()) {
         setError(m_db.lastError().text());
+        m_db.rollback();
         return false;
     }
     return true;
@@ -300,16 +380,14 @@ QueueSnapshot SongStore::loadQueue() const
 
     QSqlQuery query(m_db);
     if (!query.exec(QStringLiteral(
-            "SELECT path, song_id, current_index, folder_id FROM queue_items ORDER BY position ASC"))) {
+            "SELECT path, song_id, current_index FROM queue_items ORDER BY position ASC"))) {
         return snapshot;
     }
 
     while (query.next()) {
-        snapshot.items.append({query.value(0).toString(), query.value(1).toInt(), query.value(3).toInt()});
+        snapshot.items.append({query.value(0).toString(), query.value(1).toInt()});
         snapshot.currentIndex = query.value(2).toInt();
     }
-    if (query.exec(QStringLiteral("SELECT data FROM queue_folders WHERE id = 1")) && query.next())
-        snapshot.folders = QJsonDocument::fromJson(query.value(0).toByteArray()).array();
     if (snapshot.items.isEmpty()) {
         snapshot.currentIndex = -1;
     }

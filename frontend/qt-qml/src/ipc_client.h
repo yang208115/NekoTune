@@ -32,7 +32,7 @@ public:
     Q_INVOKABLE void stop();
     Q_INVOKABLE void next();
     Q_INVOKABLE void previous();
-    Q_INVOKABLE void organizeQueue(const QString &action, const QVariantMap &params);
+    Q_INVOKABLE void managePlaylist(const QString &action, const QVariantMap &params);
     Q_INVOKABLE void clearQueue();
     Q_INVOKABLE void seek(double positionMs);
     Q_INVOKABLE void setVolume(double volume);

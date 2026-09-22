@@ -173,31 +173,30 @@ NekoTune 使用基于换行分隔的 JSON 协议，通过 Unix domain socket 进
 
 队列会保存到当前 SQLite 数据库，包含顺序、重复项、文件路径和当前索引。后端重启后恢复最近一次队列；歌曲资料表中的历史歌曲不会自动重新加入队列。
 
-### `queue.folder.create` / `queue.folder.rename`
+### 歌单 `playlist.*`
 
-创建或重命名播放列表文件夹。`parent_id` 为 `0` 时放在根目录，因此可以创建多层文件夹。
+歌单是独立于播放队列的持久歌曲集合，没有文件夹嵌套。同一 `song_id` 可以加入多个歌单，在同一歌单中只保留一次；再次添加会更新文件路径并保留原顺序。歌单中的歌曲使用 `song_id` 标识，不使用临时的队列项 ID。
 
-```json
-{"id":14,"method":"queue.folder.create","params":{"name":"现场录音","parent_id":0}}
-{"id":15,"method":"queue.folder.rename","params":{"id":1,"name":"Live","parent_id":0}}
-```
-
-### `queue.folder.move` / `queue.folder.move_item`
-
-移动文件夹或歌曲。移动文件夹会阻止形成循环；删除文件夹时，内容会移到它的上一级。
+- `playlist.list`：返回 `data.playlists`，每个歌单包含 `id`、`name`、有序的 `items`；歌曲包含 `song_id`、`song_hash`、`path`、`first_path`、`title`、`custom_title` 和 `artist`。
+- `playlist.create`：传入 `name`，成功返回 `data.playlist_id` 和完整歌单列表。名称去除首尾空白后长度为 1–128 字符。
+- `playlist.rename` / `playlist.delete`：通过歌单 `id` 改名或删除。删除歌单不影响队列、其他歌单、歌曲资料或本地音乐文件。
+- `playlist.add`：传入歌单 `id` 和本地 `path`，或已有队列项的 `queue_id`。导入仅影响歌单，不自动入队或播放。
+- `playlist.remove`：传入歌单 `id`、`song_id`，仅移除该歌单中的关联。
+- `playlist.play`：传入歌单 `id`，按歌单顺序替换队列并播放；可选 `song_id` 指定从哪首开始。空歌单、失效 ID、缺失文件或队列保存失败时返回错误并保留原队列。
 
 ```json
-{"id":16,"method":"queue.folder.move_item","params":{"id":3,"parent_id":1}}
-{"id":17,"method":"queue.folder.move","params":{"id":2,"parent_id":1}}
+{"id":14,"method":"playlist.create","params":{"name":"现场录音"}}
+{"id":15,"method":"playlist.add","params":{"id":1,"queue_id":3}}
+{"id":16,"method":"playlist.add","params":{"id":1,"path":"/home/user/Music/live.flac"}}
+{"id":17,"method":"playlist.play","params":{"id":1}}
+{"id":18,"method":"playlist.rename","params":{"id":1,"name":"Live"}}
+{"id":19,"method":"playlist.remove","params":{"id":1,"song_id":2}}
+{"id":20,"method":"playlist.delete","params":{"id":1}}
 ```
 
-### `queue.folder.delete`
+`player.status` 和首次连接事件包含 `playlists`；歌单改动、歌单歌曲资料更新通过 `playlist.changed` 广播完整 `playlists`。`queue.changed` 仅更新队列。清空队列不清空歌单。
 
-删除文件夹并将歌曲和子文件夹移到上一级，不会删除本地音乐文件。
-
-```json
-{"id":18,"method":"queue.folder.delete","params":{"id":1}}
-```
+旧版本的队列文件夹会在启动时通过事务自动迁移为歌单，嵌套名称展开为 `父级 / 子级`，每个歌单保留原文件夹直接包含的歌曲和顺序；原队列及其重复项保持不变。旧 `queue.folder.*` 方法及 `folders`、`folder_id` 响应字段已移除。
 
 ### `song.metadata`
 

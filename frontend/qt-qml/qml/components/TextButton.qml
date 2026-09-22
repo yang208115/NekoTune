@@ -5,22 +5,24 @@ Button {
     id: button
 
     property bool subtle: false
-    property color fillColor: subtle ? "#201c2b" : "#cbb8ff"
-    property color hoverColor: subtle ? "#2d2740" : "#ddceff"
-    property color pressedColor: subtle ? "#393052" : "#b39de6"
-    property color borderColor: subtle ? "#3a334b" : "#cbb8ff"
-    property color labelColor: subtle ? "#d0c9dc" : "#1b1525"
+    property color lavenderColor: "#cbb8ff"
+    property color subtleBg: "#201c2b"
+    property color subtleHoverBg: "#2b253a"
+    property color subtleBorder: "#38314a"
+    property color subtleText: "#d8d2e4"
+    property color primaryText: "#161220"
+    property real cornerRadius: 10
 
     hoverEnabled: true
-    implicitHeight: 40
-    leftPadding: 16
-    rightPadding: 16
-    font.pixelSize: 14
+    implicitHeight: 34
+    leftPadding: 14
+    rightPadding: 14
+    font.pixelSize: 12
     font.weight: Font.DemiBold
 
     contentItem: Text {
         text: button.text
-        color: button.enabled ? button.labelColor : "#6a6255"
+        color: !button.enabled ? "#524b61" : button.subtle ? button.subtleText : button.primaryText
         font: button.font
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
@@ -28,9 +30,23 @@ Button {
     }
 
     background: Rectangle {
-        radius: 12
-        color: !button.enabled ? "#191720" : button.down ? button.pressedColor : button.hovered ? button.hoverColor : button.fillColor
-        border.color: button.enabled ? button.borderColor : "#2b2635"
-        border.width: 1
+        radius: button.cornerRadius
+        border.width: button.subtle ? 1 : 0
+        border.color: !button.enabled ? "#282335"
+                      : button.hovered ? "#4f4566"
+                      : button.subtleBorder
+
+        color: button.subtle ? (!button.enabled ? "#161320"
+                                : button.down ? "#1b1724"
+                                : button.hovered ? button.subtleHoverBg
+                                : button.subtleBg)
+                             : (!button.enabled ? "#332c42"
+                                : button.down ? "#bba4f2"
+                                : button.hovered ? "#d8c9ff"
+                                : button.lavenderColor)
+
+        Behavior on color {
+            ColorAnimation { duration: 120 }
+        }
     }
 }

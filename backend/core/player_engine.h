@@ -36,7 +36,8 @@ public:
     QJsonObject addToQueue(const QString &path);
     QJsonObject playQueueItem(int queueId);
     QJsonObject removeFromQueue(int queueId);
-    QJsonObject organizeQueue(const QString &action, const QJsonObject &params);
+    QJsonObject managePlaylist(const QString &action, const QJsonObject &params);
+    QJsonArray playlists() const;
     QJsonObject clearQueue();
     QJsonObject queueStatus() const;
     QJsonObject songMetadata(const QJsonObject &params) const;
@@ -63,6 +64,7 @@ private:
     QJsonObject currentSongObject() const;
     QJsonArray queueArray() const;
     void broadcastQueueChanged();
+    void broadcastPlaylistsChanged();
     void broadcastTrackChanged();
     void restoreQueueFromStore();
     void persistQueue();

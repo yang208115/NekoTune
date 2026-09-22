@@ -14,13 +14,10 @@ struct QueueItem {
     SongMetadata metadata;
     QString path;
     QString state;
-    int folderId = 0;
 };
 
 class PlayerQueue final {
 public:
-    QJsonArray folders;
-    QString organize(const QString &action, const QJsonObject &params);
     bool isEmpty() const;
     int size() const;
     int currentIndex() const;

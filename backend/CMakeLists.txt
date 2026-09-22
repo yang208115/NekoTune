@@ -4,6 +4,7 @@ set(NEKOTUNE_BACKEND_SOURCES
     ipc/ipc_server.cpp
     ipc/ipc_router.cpp
     storage/song_store.cpp
+    storage/playlist_store.cpp
     lyrics/lyrics_types.cpp
     lyrics/lrc_parser.cpp
     lyrics/lyrics_cache.cpp

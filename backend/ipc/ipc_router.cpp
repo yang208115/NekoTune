@@ -55,8 +55,8 @@ QJsonObject IpcRouter::dispatch(const QJsonObject &request) const
             return error(QStringLiteral("id must be a number"));
         result = method == QStringLiteral("queue.play") ? m_player.playQueueItem(queueId.toInt())
                                                         : m_player.removeFromQueue(queueId.toInt());
-    } else if (method.startsWith(QStringLiteral("queue.folder."))) {
-        result = m_player.organizeQueue(method.mid(13), params);
+    } else if (method.startsWith(QStringLiteral("playlist."))) {
+        result = m_player.managePlaylist(method.mid(9), params);
     } else if (method == QStringLiteral("queue.clear")) {
         result = m_player.clearQueue();
     } else if (method == QStringLiteral("queue.status")) {

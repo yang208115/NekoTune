@@ -8,6 +8,9 @@ ColumnLayout {
     property var lyrics: ({})
     property real position: 0
     property bool connected: false
+
+    signal seekRequested(real positionMs)
+
     readonly property var current: lyrics.track_id === song.song_hash ? lyrics : ({})
     readonly property var document: current.document || ({})
     readonly property var candidates: current.candidates || []
@@ -20,48 +23,58 @@ ColumnLayout {
 
     RowLayout {
         Layout.fillWidth: true
+        spacing: 6
+
         Label {
             Layout.fillWidth: true
             text: i18n.text("lyrics", i18n.language) + (document.source ? " · " + document.source : "")
-            color: "#89929a"
+            color: "#837c91"
+            font.pixelSize: 12
+            font.weight: Font.Medium
             elide: Text.ElideRight
         }
+
         TextButton {
             text: i18n.text("lyrics_search", i18n.language) + (root.candidates.length ? " (" + root.candidates.length + ")" : "")
-            implicitHeight: 30
-            implicitWidth: 100
+            implicitHeight: 28
             subtle: true
             enabled: root.connected
             onClicked: searchPopup.openForSong()
         }
+
         TextButton {
             text: i18n.text("lyrics_refresh", i18n.language)
-            implicitHeight: 30
-            implicitWidth: 66
+            implicitHeight: 28
+            implicitWidth: 64
             subtle: true
             enabled: root.connected && !root.busy && !root.current.offline
             onClicked: ipcClient.refreshLyrics(String(root.song.song_hash || ""))
         }
     }
+
+    // Status warning
     Label {
         Layout.fillWidth: true
         visible: root.current.state !== "ready" || Boolean(root.current.cache_warning)
         text: root.current.cache_warning ? i18n.text("lyrics_cache_warning", i18n.language)
              : root.current.state === "error" ? i18n.text("lyrics_error_" + root.current.error, i18n.language)
              : i18n.text("lyrics_" + (root.current.state || "loading"), i18n.language)
-        color: root.current.state === "error" ? "#f39a91" : "#89929a"
+        color: root.current.state === "error" ? "#e8a9c3" : "#8e879c"
         wrapMode: Text.Wrap
         textFormat: Text.PlainText
         font.pixelSize: 12
     }
+
     LrcLyrics {
         Layout.fillWidth: true
         Layout.fillHeight: true
         lines: root.document.lines || []
         plainText: String(root.document.plain_text || "")
         position: root.position
+        onSeekRequested: pos => root.seekRequested(pos)
     }
 
+    // Search Lyrics Modal Popup
     Popup {
         id: searchPopup
         property string trackId: ""
@@ -74,23 +87,92 @@ ColumnLayout {
         }
         parent: Overlay.overlay
         anchors.centerIn: parent
-        width: Math.min(parent.width - 60, 640)
-        height: Math.min(parent.height - 60, 560)
+        width: Math.min(parent.width - 48, 620)
+        height: Math.min(parent.height - 48, 540)
         modal: true
         focus: true
         padding: 22
-        background: Rectangle { color: "#171d23"; radius: 18; border.color: "#2a333c" }
+        background: Rectangle {
+            color: "#181423"
+            radius: 16
+            border.color: "#342d45"
+            border.width: 1
+        }
 
         ColumnLayout {
             anchors.fill: parent
-            spacing: 10
-            Label { text: i18n.text("lyrics_search", i18n.language); color: "#f7f4ed"; font.pixelSize: 22 }
-            TextField { id: titleField; Layout.fillWidth: true; placeholderText: i18n.text("custom_title", i18n.language); maximumLength: 500 }
+            spacing: 12
+
             RowLayout {
                 Layout.fillWidth: true
-                TextField { id: artistField; Layout.fillWidth: true; placeholderText: i18n.text("artist_author", i18n.language); maximumLength: 500 }
-                TextField { id: albumField; Layout.fillWidth: true; placeholderText: i18n.text("album", i18n.language); maximumLength: 500 }
+                Label {
+                    Layout.fillWidth: true
+                    text: i18n.text("lyrics_search", i18n.language)
+                    color: "#f6f3fa"
+                    font.pixelSize: 18
+                    font.weight: Font.Bold
+                }
+                IconButton {
+                    kind: "close"
+                    tooltipText: i18n.text("close", i18n.language)
+                    onClicked: searchPopup.close()
+                }
             }
+
+            TextField {
+                id: titleField
+                Layout.fillWidth: true
+                Layout.preferredHeight: 38
+                placeholderText: i18n.text("custom_title", i18n.language)
+                color: "#f6f3fa"
+                placeholderTextColor: "#645e70"
+                leftPadding: 12
+                rightPadding: 12
+                maximumLength: 500
+                background: Rectangle {
+                    radius: 8
+                    color: "#110e18"
+                    border.color: titleField.activeFocus ? "#cbb8ff" : "#292436"
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+                TextField {
+                    id: artistField
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 38
+                    placeholderText: i18n.text("artist_author", i18n.language)
+                    color: "#f6f3fa"
+                    placeholderTextColor: "#645e70"
+                    leftPadding: 12
+                    rightPadding: 12
+                    maximumLength: 500
+                    background: Rectangle {
+                        radius: 8
+                        color: "#110e18"
+                        border.color: artistField.activeFocus ? "#cbb8ff" : "#292436"
+                    }
+                }
+                TextField {
+                    id: albumField
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 38
+                    placeholderText: i18n.text("album", i18n.language)
+                    color: "#f6f3fa"
+                    placeholderTextColor: "#645e70"
+                    leftPadding: 12
+                    rightPadding: 12
+                    maximumLength: 500
+                    background: Rectangle {
+                        radius: 8
+                        color: "#110e18"
+                        border.color: albumField.activeFocus ? "#cbb8ff" : "#292436"
+                    }
+                }
+            }
+
             RowLayout {
                 Layout.fillWidth: true
                 CheckBox {
@@ -98,59 +180,131 @@ ColumnLayout {
                     checked: Boolean(root.current.offline)
                     enabled: root.connected
                     onClicked: ipcClient.setLyricsOffline(checked)
+                    contentItem: Text {
+                        text: parent.text
+                        font.pixelSize: 12
+                        color: "#b0a8bd"
+                        leftPadding: parent.indicator.width + 6
+                        verticalAlignment: Text.AlignVCenter
+                    }
                 }
                 Item { Layout.fillWidth: true }
                 TextButton {
                     text: i18n.text("lyrics_search", i18n.language)
+                    implicitWidth: 90
                     enabled: root.connected && titleField.text.trim().length > 0 && !root.current.offline
                     onClicked: ipcClient.searchLyrics(searchPopup.trackId, titleField.text, artistField.text, albumField.text)
                 }
             }
+
             Label {
                 Layout.fillWidth: true
                 text: root.busy ? i18n.text("lyrics_searching", i18n.language)
                       : root.current.state === "error" ? i18n.text("lyrics_error_" + root.current.error, i18n.language)
                       : i18n.text("lyrics_" + (root.current.state || "idle"), i18n.language)
-                color: "#89929a"
+                color: "#8e879c"
+                font.pixelSize: 12
                 wrapMode: Text.Wrap
             }
+
+            Rectangle {
+                Layout.fillWidth: true
+                height: 1
+                color: "#282335"
+            }
+
+            // Candidates List
             ListView {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 clip: true
                 spacing: 6
                 model: root.candidates
-                ScrollBar.vertical: ScrollBar {}
-                delegate: ItemDelegate {
+
+                ScrollBar.vertical: ScrollBar {
+                    policy: ScrollBar.AsNeeded
+                    width: 4
+                    contentItem: Rectangle { radius: 2; color: "#363044" }
+                }
+
+                delegate: Rectangle {
+                    id: candDelegate
                     required property var modelData
                     required property int index
                     width: ListView.view.width
-                    height: 72
-                    contentItem: Column {
-                        spacing: 4
-                        Label {
-                            width: parent.width
-                            text: modelData.title + " · " + modelData.artist
-                            textFormat: Text.PlainText
-                            elide: Text.ElideRight
-                            color: "#f7f4ed"
-                        }
-                        Label {
-                            width: parent.width
-                            text: modelData.album + " · " + Math.round(modelData.duration / 1000) + "s · "
-                                  + i18n.text(modelData.instrumental ? "lyrics_instrumental" : modelData.synced ? "lyrics_synced" : "lyrics_plain", i18n.language)
-                            textFormat: Text.PlainText
-                            elide: Text.ElideRight
-                            color: "#89929a"
+                    height: 58
+                    radius: 8
+                    color: candHover.hovered ? "#241f33" : "#1a1626"
+                    border.color: candHover.hovered ? "#3d3452" : "#262135"
+                    border.width: 1
+
+                    HoverHandler { id: candHover; cursorShape: Qt.PointingHandCursor }
+                    TapHandler {
+                        onTapped: {
+                            ipcClient.selectLyrics(searchPopup.trackId, String(root.current.revision), index)
+                            searchPopup.close()
                         }
                     }
-                    onClicked: {
-                        ipcClient.selectLyrics(searchPopup.trackId, String(root.current.revision), index)
-                        searchPopup.close()
+
+                    ColumnLayout {
+                        anchors.fill: parent
+                        anchors.margins: 10
+                        spacing: 3
+
+                        // Line 1: Title and Artist
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 6
+                            Label {
+                                text: candDelegate.modelData.title || i18n.text("untitled", i18n.language)
+                                color: "#f6f3fa"
+                                font.pixelSize: 13
+                                font.weight: Font.DemiBold
+                                elide: Text.ElideRight
+                            }
+                            Label {
+                                text: candDelegate.modelData.artist ? "· " + candDelegate.modelData.artist : ""
+                                color: "#cfc8db"
+                                font.pixelSize: 12
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                            }
+                        }
+
+                        // Line 2: Album, Duration, and Type Badge
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 8
+
+                            Label {
+                                Layout.fillWidth: true
+                                text: (candDelegate.modelData.album ? candDelegate.modelData.album + " · " : "")
+                                      + (candDelegate.modelData.duration ? Math.round(Number(candDelegate.modelData.duration) / 1000) + "s" : "")
+                                color: "#8e879c"
+                                font.pixelSize: 11
+                                elide: Text.ElideRight
+                            }
+
+                            Rectangle {
+                                Layout.preferredHeight: 18
+                                Layout.preferredWidth: typeLabel.implicitWidth + 10
+                                radius: 4
+                                color: candDelegate.modelData.synced ? "#231c36" : "#1c1828"
+                                border.color: candDelegate.modelData.synced ? "#3f335e" : "#2c263d"
+
+                                Label {
+                                    id: typeLabel
+                                    anchors.centerIn: parent
+                                    text: i18n.text(candDelegate.modelData.instrumental ? "lyrics_instrumental" : candDelegate.modelData.synced ? "lyrics_synced" : "lyrics_plain", i18n.language)
+                                    color: candDelegate.modelData.synced ? "#cbb8ff" : "#8e879c"
+                                    font.pixelSize: 10
+                                    font.weight: Font.Medium
+                                }
+                            }
+                        }
                     }
                 }
             }
-            TextButton { Layout.alignment: Qt.AlignRight; text: i18n.text("close", i18n.language); subtle: true; onClicked: searchPopup.close() }
         }
     }
 }

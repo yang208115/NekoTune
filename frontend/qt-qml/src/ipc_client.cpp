@@ -111,9 +111,12 @@ void IpcClient::previous()
     sendRequest(QStringLiteral("player.previous"));
 }
 
-void IpcClient::organizeQueue(const QString &action, const QVariantMap &params)
+void IpcClient::managePlaylist(const QString &action, const QVariantMap &params)
 {
-    sendRequest(QStringLiteral("queue.folder.") + action, QJsonObject::fromVariantMap(params));
+    auto values = QJsonObject::fromVariantMap(params);
+    if (values.contains(QStringLiteral("path")))
+        values.insert(QStringLiteral("path"), normalizePath(values.value(QStringLiteral("path")).toString()));
+    sendRequest(QStringLiteral("playlist.") + action, values);
 }
 
 void IpcClient::clearQueue()
@@ -273,7 +276,9 @@ void IpcClient::handlePayload(const QJsonObject &payload)
             emit statusChanged();
         } else if (eventName == QStringLiteral("queue.changed")) {
             m_status.insert(QStringLiteral("queue"), payload.value(QStringLiteral("queue")).toArray().toVariantList());
-            m_status.insert(QStringLiteral("folders"), payload.value(QStringLiteral("folders")).toArray().toVariantList());
+            emit statusChanged();
+        } else if (eventName == QStringLiteral("playlist.changed")) {
+            m_status.insert(QStringLiteral("playlists"), payload.value(QStringLiteral("playlists")).toArray().toVariantList());
             emit statusChanged();
         } else if (eventName == QStringLiteral("player.error")) {
             setError(payload.value(QStringLiteral("message")).toString());

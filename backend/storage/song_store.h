@@ -33,12 +33,20 @@ public:
                                                const QString &lyrics);
     bool saveQueue(const QueueSnapshot &snapshot);
     QueueSnapshot loadQueue() const;
+    QVector<Playlist> playlists() const;
+    std::optional<Playlist> playlistById(int id) const;
+    int createPlaylist(const QString &name);
+    bool renamePlaylist(int id, const QString &name);
+    bool deletePlaylist(int id);
+    bool addPlaylistSong(int id, const QueueRecord &song);
+    bool removePlaylistSong(int id, int songId);
 
     static QString defaultDatabasePath();
 
 private:
     bool initialize(const QString &databasePath);
     bool migrate();
+    bool migrateFolders();
     std::optional<SongMetadata> songByHash(const QString &hash) const;
     std::optional<SongMetadata> readSongFromQuery(QSqlQuery &query) const;
     void setError(const QString &message);

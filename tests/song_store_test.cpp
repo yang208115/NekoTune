@@ -15,7 +15,10 @@ private slots:
     void usesBuildDatabasePathInDevelopment();
     void storesAndUpdatesSongMetadata();
     void storesAndRestoresQueue();
-    void migratesAndRestoresFolders();
+    void migratesLegacyQueue();
+    void migratesFoldersToPlaylists();
+    void storesIndependentPlaylists();
+    void rejectsInvalidFolderMigration();
 };
 
 void SongStoreTest::usesBuildDatabasePathInDevelopment()
@@ -89,7 +92,7 @@ void SongStoreTest::storesAndUpdatesSongMetadata()
     QCOMPARE(songs.at(0).customTitle, QStringLiteral("My Title"));
 }
 
-void SongStoreTest::migratesAndRestoresFolders()
+void SongStoreTest::migratesLegacyQueue()
 {
     QTemporaryDir dir;
     const auto path = dir.filePath("old.sqlite3");
@@ -100,34 +103,128 @@ void SongStoreTest::migratesAndRestoresFolders()
         QSqlQuery query(db);
         QVERIFY(query.exec("CREATE TABLE queue_items (position INTEGER PRIMARY KEY, path TEXT NOT NULL, song_id INTEGER NOT NULL, current_index INTEGER NOT NULL DEFAULT -1)"));
         QVERIFY(query.exec("INSERT INTO queue_items VALUES (0, '/music/old.wav', 1, 0)"));
-        db.close();
     }
     QSqlDatabase::removeDatabase("old-schema");
+    nekotune::SongStore store(path);
+    QVERIFY2(store.isReady(), qPrintable(store.errorString()));
+    QCOMPARE(store.loadQueue().items.size(), 1);
+    QCOMPARE(store.loadQueue().currentIndex, 0);
+    QVERIFY(store.playlists().isEmpty());
+}
+
+void SongStoreTest::migratesFoldersToPlaylists()
+{
+    QTemporaryDir dir;
+    const auto path = dir.filePath("folders.sqlite3");
     {
+        nekotune::SongStore store(path);
+        QVERIFY(store.getOrCreateSong("first", "/music/first.wav"));
+        QVERIFY(store.getOrCreateSong("second", "/music/second.wav"));
+        QVERIFY(store.saveQueue({{{"/music/first.wav", 1}, {"/music/second.wav", 2}, {"/music/copy.wav", 2}}, 1}));
+    }
+    {
+        auto db = QSqlDatabase::addDatabase("QSQLITE", "folder-schema");
+        db.setDatabaseName(path);
+        QVERIFY(db.open());
+        QSqlQuery query(db);
+        QVERIFY(query.exec("ALTER TABLE queue_items ADD COLUMN folder_id INTEGER NOT NULL DEFAULT 0"));
+        QVERIFY(query.exec("UPDATE queue_items SET folder_id = 2 WHERE song_id = 2"));
+        QVERIFY(query.exec("CREATE TABLE queue_folders (id INTEGER PRIMARY KEY, data TEXT NOT NULL)"));
+        QVERIFY(query.exec(R"(INSERT INTO queue_folders VALUES (1, '[{"id":1,"parent_id":0,"name":"Rock"},{"id":2,"parent_id":1,"name":"Live"},{"id":3,"parent_id":0,"name":"Empty"}]'))"));
+    }
+    QSqlDatabase::removeDatabase("folder-schema");
+    for (int attempt = 0; attempt < 2; ++attempt) {
         nekotune::SongStore store(path);
         QVERIFY2(store.isReady(), qPrintable(store.errorString()));
-        auto snapshot = store.loadQueue();
-        QCOMPARE(snapshot.items.size(), 1);
-        QCOMPARE(snapshot.items[0].folderId, 0);
-        snapshot.folders = QJsonArray{QJsonObject{{"id", 1}, {"parent_id", 0}, {"name", "Root"}},
-                                     QJsonObject{{"id", 2}, {"parent_id", 1}, {"name", "Child"}}};
-        snapshot.items[0].folderId = 2;
-        QVERIFY(store.saveQueue(snapshot));
+        const auto playlists = store.playlists();
+        QCOMPARE(playlists.size(), 3);
+        QCOMPARE(playlists[0].name, QString("Rock"));
+        QVERIFY(playlists[0].items.isEmpty());
+        QCOMPARE(playlists[1].name, QString("Rock / Live"));
+        QCOMPARE(playlists[1].items.size(), 1);
+        QCOMPARE(playlists[1].items[0].songId, 2);
+        QCOMPARE(playlists[1].items[0].path, QString("/music/second.wav"));
+        QVERIFY(playlists[2].items.isEmpty());
+        QCOMPARE(store.loadQueue().items.size(), 3);
+        QCOMPARE(store.loadQueue().currentIndex, 1);
+    }
+}
+
+void SongStoreTest::storesIndependentPlaylists()
+{
+    QTemporaryDir dir;
+    const auto path = dir.filePath("playlists.sqlite3");
+    int rock = 0, live = 0;
+    {
+        nekotune::SongStore store(path);
+        QVERIFY(store.isReady());
+        QVERIFY(store.getOrCreateSong("first", "/music/first.wav"));
+        QVERIFY(store.getOrCreateSong("second", "/music/second.wav"));
+        rock = store.createPlaylist(" Rock ");
+        live = store.createPlaylist("Live");
+        QVERIFY(rock > 0 && live > rock);
+        QCOMPARE(store.createPlaylist(" "), 0);
+        QCOMPARE(store.createPlaylist(QString(129, 'a')), 0);
+        QVERIFY(!store.renamePlaylist(rock, ""));
+        QVERIFY(!store.renamePlaylist(999, "Missing"));
+        QVERIFY(!store.addPlaylistSong(999, {"/music/first.wav", 1}));
+        QVERIFY(!store.addPlaylistSong(rock, {"/music/missing.wav", 999}));
+        QVERIFY(store.addPlaylistSong(rock, {"/music/second.wav", 2}));
+        QVERIFY(store.addPlaylistSong(rock, {"/music/first.wav", 1}));
+        QVERIFY(store.addPlaylistSong(rock, {"/music/copy.wav", 2}));
+        QVERIFY(store.addPlaylistSong(live, {"/music/first.wav", 1}));
+        QCOMPARE(store.playlistById(rock)->items.size(), 2);
+        QCOMPARE(store.playlistById(rock)->items[0].path, QString("/music/copy.wav"));
+        QVERIFY(store.renamePlaylist(rock, " Favorites "));
+        QVERIFY(store.saveQueue({{{"/music/first.wav", 1}}, 0}));
+        QVERIFY(store.saveQueue({}));
+        QCOMPARE(store.playlistById(rock)->items.size(), 2);
     }
     {
         nekotune::SongStore store(path);
-        auto snapshot = store.loadQueue();
-        QCOMPARE(snapshot.folders.size(), 2);
-        QCOMPARE(snapshot.folders[1].toObject().value("parent_id").toInt(), 1);
-        QCOMPARE(snapshot.items[0].folderId, 2);
-        QCOMPARE(snapshot.currentIndex, 0);
-        snapshot.items.clear();
-        snapshot.currentIndex = -1;
-        QVERIFY(store.saveQueue(snapshot));
+        QCOMPARE(store.playlists().size(), 2);
+        QCOMPARE(store.playlistById(rock)->name, QString("Favorites"));
+        QCOMPARE(store.playlistById(rock)->items[0].songId, 2);
+        QCOMPARE(store.playlistById(rock)->items[1].songId, 1);
+        QVERIFY(store.removePlaylistSong(rock, 1));
+        QVERIFY(!store.removePlaylistSong(rock, 1));
+        QCOMPARE(store.playlistById(live)->items.size(), 1);
+        QVERIFY(store.saveQueue({{{"/music/first.wav", 1}}, 0}));
+        QVERIFY(store.deletePlaylist(live));
+        QVERIFY(!store.playlistById(live));
+        QVERIFY(!store.deletePlaylist(live));
+        QCOMPARE(store.loadQueue().items.size(), 1);
+        QCOMPARE(store.songs().size(), 2);
+        QVERIFY(store.createPlaylist("New") > live);
     }
-    nekotune::SongStore store(path);
-    QCOMPARE(store.loadQueue().folders.size(), 2);
-    QVERIFY(store.loadQueue().items.isEmpty());
+}
+
+void SongStoreTest::rejectsInvalidFolderMigration()
+{
+    QTemporaryDir dir;
+    const auto path = dir.filePath("invalid.sqlite3");
+    {
+        auto db = QSqlDatabase::addDatabase("QSQLITE", "invalid-schema");
+        db.setDatabaseName(path);
+        QVERIFY(db.open());
+        QSqlQuery query(db);
+        QVERIFY(query.exec("CREATE TABLE queue_folders (id INTEGER PRIMARY KEY, data TEXT NOT NULL)"));
+        QVERIFY(query.exec(R"(INSERT INTO queue_folders VALUES (1, '[{"id":1,"parent_id":1,"name":"Cycle"}]'))"));
+    }
+    QSqlDatabase::removeDatabase("invalid-schema");
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        nekotune::SongStore store(path);
+        QVERIFY(!store.isReady());
+        QVERIFY(store.errorString().contains("hierarchy"));
+    }
+    {
+        auto db = QSqlDatabase::addDatabase("QSQLITE", "inspect-schema");
+        db.setDatabaseName(path);
+        QVERIFY(db.open());
+        QVERIFY(db.tables().contains("queue_folders"));
+        QVERIFY(!db.tables().contains("playlists"));
+    }
+    QSqlDatabase::removeDatabase("inspect-schema");
 }
 
 int main(int argc, char *argv[])
