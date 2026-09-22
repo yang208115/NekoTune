@@ -4,6 +4,11 @@ set(NEKOTUNE_BACKEND_SOURCES
     ipc/ipc_server.cpp
     ipc/ipc_router.cpp
     storage/song_store.cpp
+    lyrics/lyrics_types.cpp
+    lyrics/lrc_parser.cpp
+    lyrics/lyrics_cache.cpp
+    lyrics/lrclib_provider.cpp
+    lyrics/lyrics_service.cpp
 )
 
 set(NEKOTUNE_BACKEND_HEADERS
@@ -14,6 +19,12 @@ set(NEKOTUNE_BACKEND_HEADERS
     ipc/ipc_router.h
     storage/song_metadata.h
     storage/song_store.h
+    lyrics/lyrics_types.h
+    lyrics/lrc_parser.h
+    lyrics/lyrics_cache.h
+    lyrics/lyrics_provider.h
+    lyrics/lrclib_provider.h
+    lyrics/lyrics_service.h
 )
 
 add_library(nekotune_core STATIC

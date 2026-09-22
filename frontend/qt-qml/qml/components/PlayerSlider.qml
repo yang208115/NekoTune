@@ -4,8 +4,8 @@ import QtQuick.Controls
 Slider {
     id: slider
 
-    property color activeColor: "#f2c86b"
-    property color baseColor: "#343840"
+    property color activeColor: "#cbb8ff"
+    property color baseColor: "#3a3547"
 
     implicitHeight: 30
 
@@ -31,8 +31,8 @@ Slider {
         width: slider.pressed ? 19 : 15
         height: width
         radius: width / 2
-        color: "#fff4cf"
-        border.color: "#14201f"
+        color: "#f7f4fb"
+        border.color: "#1b1525"
         border.width: 2
     }
 }

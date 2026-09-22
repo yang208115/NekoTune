@@ -12,6 +12,7 @@ NekoTune 是一款本地优先的 Linux 音乐播放器，采用前后端解耦�
 - 使用 SQLite 按音频内容 hash 管理歌曲记录，保存自定义歌名、作者名和歌词，并在启动时恢复已有歌曲
 - 文件选择器默认显示 `mp3`、`m4a`、`aac`、`wav`、`flac`、`ogg`；实际能否解码取决于本机 Qt Multimedia 后端和系统音频编解码插件
 - 已支持队列、单曲播放/移除、状态查询、进度、跳转、音量、上一首、下一首、停止和暂停控制
+- 播放时由后端按本地 `.lrc`、缓存、LRCLIB 顺序加载歌词，支持同步歌词、高亮、手动候选选择和离线缓存
 
 后端 API 边界会保持稳定，方便后续接入 Qt/QML、Web、GTK、终端或移动端客户端。
 
@@ -34,6 +35,12 @@ cmake --build build
 
 ```bash
 ./build/frontend/qt-qml/nekotune-qt-qml
+```
+
+排查歌词时间轴时，可以通过命令行参数打开诊断面板；默认启动不会显示：
+
+```bash
+./build/frontend/qt-qml/nekotune-qt-qml --lyrics-debug
 ```
 
 两个进程使用相同的 Qt 本地 socket 名称：

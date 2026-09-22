@@ -41,29 +41,22 @@ QString calculateSongHash(const QString &path, QString *errorMessage)
 QJsonObject metadataToObject(const SongMetadata &metadata)
 {
     return {
-        {QStringLiteral("song_id"), metadata.id},
-        {QStringLiteral("song_hash"), metadata.hash},
-        {QStringLiteral("first_path"), metadata.firstPath},
-        {QStringLiteral("custom_title"), metadata.customTitle},
-        {QStringLiteral("artist"), metadata.artist},
-        {QStringLiteral("lyrics"), metadata.lyrics},
+        {QStringLiteral("song_id"), metadata.id},           {QStringLiteral("song_hash"), metadata.hash},
+        {QStringLiteral("first_path"), metadata.firstPath}, {QStringLiteral("custom_title"), metadata.customTitle},
+        {QStringLiteral("artist"), metadata.artist},        {QStringLiteral("lyrics"), metadata.lyrics},
     };
 }
 
 } // namespace
 
-PlayerEngine::PlayerEngine(QObject *parent)
-    : QObject(parent)
+PlayerEngine::PlayerEngine(QObject *parent) : QObject(parent)
 {
     m_audioOutput.setVolume(0.8);
     m_player.setAudioOutput(&m_audioOutput);
 
-    connect(&m_player, &QMediaPlayer::playbackStateChanged,
-            this, &PlayerEngine::handlePlaybackStateChanged);
-    connect(&m_player, &QMediaPlayer::mediaStatusChanged,
-            this, &PlayerEngine::handleMediaStatusChanged);
-    connect(&m_player, &QMediaPlayer::errorOccurred,
-            this, &PlayerEngine::handleErrorChanged);
+    connect(&m_player, &QMediaPlayer::playbackStateChanged, this, &PlayerEngine::handlePlaybackStateChanged);
+    connect(&m_player, &QMediaPlayer::mediaStatusChanged, this, &PlayerEngine::handleMediaStatusChanged);
+    connect(&m_player, &QMediaPlayer::errorOccurred, this, &PlayerEngine::handleErrorChanged);
     connect(&m_player, &QMediaPlayer::positionChanged, this, [this](qint64 position) {
         emit eventReady({
             {QStringLiteral("event"), QStringLiteral("player.position_changed")},
@@ -78,7 +71,42 @@ PlayerEngine::PlayerEngine(QObject *parent)
         });
     });
 
+    m_lyricsService = new LyricsService;
+    m_lyricsService->moveToThread(&m_lyricsThread);
+    connect(&m_lyricsThread, &QThread::finished, m_lyricsService, &QObject::deleteLater);
+    connect(m_lyricsService, &LyricsService::changed, this, [this](const QJsonObject &snapshot) {
+        if (snapshot.value(QStringLiteral("revision")).toString() != QString::number(m_lyricsRevision) ||
+            snapshot.value(QStringLiteral("track_id")).toString() != lyricsQuery().trackId)
+            return;
+        m_lyrics = snapshot;
+        emit eventReady(
+            {{QStringLiteral("event"), QStringLiteral("lyrics.changed")}, {QStringLiteral("lyrics"), m_lyrics}});
+    });
+    m_lyricsThread.start();
+    m_metadataTimer.setSingleShot(true);
+    m_metadataTimer.setInterval(100);
+    connect(&m_metadataTimer, &QTimer::timeout, this, [this]() {
+        if (m_metadataReady || m_player.source().isEmpty())
+            return;
+        const auto status = m_player.mediaStatus();
+        if (status != QMediaPlayer::LoadedMedia && status != QMediaPlayer::BufferedMedia &&
+            status != QMediaPlayer::BufferingMedia && status != QMediaPlayer::EndOfMedia)
+            return;
+        m_fileMetadata = m_player.metaData();
+        m_metadataReady = true;
+        broadcastTrackChanged();
+        loadLyrics(true);
+    });
+    connect(&m_player, &QMediaPlayer::metaDataChanged, &m_metadataTimer, qOverload<>(&QTimer::start));
+    connect(&m_player, &QMediaPlayer::durationChanged, &m_metadataTimer, qOverload<>(&QTimer::start));
     restoreQueueFromStore();
+    loadLyrics(false);
+}
+
+PlayerEngine::~PlayerEngine()
+{
+    m_lyricsThread.quit();
+    m_lyricsThread.wait();
 }
 
 QJsonObject PlayerEngine::status() const
@@ -90,7 +118,9 @@ QJsonObject PlayerEngine::status() const
         {QStringLiteral("volume"), m_audioOutput.volume()},
         {QStringLiteral("song"), currentSongObject()},
         {QStringLiteral("queue"), queueArray()},
+        {QStringLiteral("folders"), m_queue.folders},
         {QStringLiteral("database_path"), m_songStore.databasePath()},
+        {QStringLiteral("lyrics"), m_lyrics},
     };
 }
 
@@ -281,6 +311,19 @@ QJsonObject PlayerEngine::removeFromQueue(int queueId)
     return ok(queueStatus());
 }
 
+QJsonObject PlayerEngine::organizeQueue(const QString &action, const QJsonObject &params)
+{
+    const auto previous = m_queue;
+    const auto message = m_queue.organize(action, params);
+    if (!message.isEmpty()) return error(message);
+    if (!m_songStore.saveQueue({m_queue.records(), m_queue.currentIndex(), m_queue.folders})) {
+        m_queue = previous;
+        return error(m_songStore.errorString());
+    }
+    broadcastQueueChanged();
+    return ok(status());
+}
+
 QJsonObject PlayerEngine::clearQueue()
 {
     m_player.stop();
@@ -298,6 +341,7 @@ QJsonObject PlayerEngine::queueStatus() const
     return {
         {QStringLiteral("current_index"), m_queue.currentIndex()},
         {QStringLiteral("items"), queueArray()},
+        {QStringLiteral("folders"), m_queue.folders},
     };
 }
 
@@ -347,6 +391,7 @@ QJsonObject PlayerEngine::updateSongMetadata(const QJsonObject &params)
     }
 
     m_queue.updateSongMetadata(*updated);
+    loadLyrics(m_metadataReady);
     broadcastTrackChanged();
     broadcastQueueChanged();
     return ok(metadataToObject(*updated));
@@ -376,6 +421,9 @@ void PlayerEngine::handleMediaStatusChanged(QMediaPlayer::MediaStatus status)
         setState(PlayerState::Loading);
         return;
     }
+
+    if (status == QMediaPlayer::LoadedMedia || status == QMediaPlayer::BufferedMedia)
+        m_metadataTimer.start();
 
     if (status == QMediaPlayer::EndOfMedia) {
         next();
@@ -425,6 +473,10 @@ bool PlayerEngine::loadCurrent()
 
     m_queue.markCurrent();
 
+    m_metadataTimer.stop();
+    m_metadataReady = false;
+    m_fileMetadata = {};
+    loadLyrics(false);
     m_player.setSource(QUrl::fromLocalFile(m_queue.at(currentIndex).path));
     broadcastTrackChanged();
     broadcastQueueChanged();
@@ -465,7 +517,14 @@ QJsonObject PlayerEngine::error(const QString &message) const
 
 QJsonObject PlayerEngine::currentSongObject() const
 {
-    return m_queue.currentSongObject();
+    auto song = m_queue.currentSongObject();
+    if (song.isEmpty())
+        return song;
+    const auto query = lyricsQuery();
+    song.insert(QStringLiteral("title"), query.title);
+    song.insert(QStringLiteral("artist"), query.artist);
+    song.insert(QStringLiteral("album"), query.album);
+    return song;
 }
 
 QJsonArray PlayerEngine::queueArray() const
@@ -478,11 +537,18 @@ void PlayerEngine::broadcastQueueChanged()
     emit eventReady({
         {QStringLiteral("event"), QStringLiteral("queue.changed")},
         {QStringLiteral("queue"), queueArray()},
+        {QStringLiteral("folders"), m_queue.folders},
     });
 }
 
 void PlayerEngine::broadcastTrackChanged()
 {
+    if (m_queue.currentIndex() < 0) {
+        m_metadataTimer.stop();
+        m_fileMetadata = {};
+        m_metadataReady = false;
+        loadLyrics(false);
+    }
     emit eventReady({
         {QStringLiteral("event"), QStringLiteral("player.track_changed")},
         {QStringLiteral("song"), currentSongObject()},
@@ -492,10 +558,12 @@ void PlayerEngine::broadcastTrackChanged()
 void PlayerEngine::restoreQueueFromStore()
 {
     const auto snapshot = m_songStore.loadQueue();
+    m_queue.folders = snapshot.folders;
     for (const auto &record : snapshot.items) {
         const auto metadata = m_songStore.songById(record.songId);
         if (metadata && !record.path.isEmpty()) {
             m_queue.add(record.path, *metadata);
+            m_queue[m_queue.size() - 1].folderId = record.folderId;
         }
     }
 
@@ -507,7 +575,109 @@ void PlayerEngine::restoreQueueFromStore()
 
 void PlayerEngine::persistQueue()
 {
-    m_songStore.saveQueue({m_queue.records(), m_queue.currentIndex()});
+    m_songStore.saveQueue({m_queue.records(), m_queue.currentIndex(), m_queue.folders});
+}
+
+LyricsQuery PlayerEngine::lyricsQuery() const
+{
+    if (m_queue.currentIndex() < 0)
+        return {};
+    const auto &item = m_queue.at(m_queue.currentIndex());
+    QString title = item.metadata.customTitle;
+    if (title.isEmpty())
+        title = m_fileMetadata.stringValue(QMediaMetaData::Title);
+    if (title.isEmpty())
+        title = QFileInfo(item.path).completeBaseName();
+    QString artist = item.metadata.artist;
+    if (artist.isEmpty())
+        artist = m_fileMetadata.stringValue(QMediaMetaData::ContributingArtist);
+    if (artist.isEmpty())
+        artist = m_fileMetadata.stringValue(QMediaMetaData::AlbumArtist);
+    return {title, artist, m_fileMetadata.stringValue(QMediaMetaData::AlbumTitle),
+            m_metadataReady ? m_player.duration() : 0, item.metadata.hash};
+}
+
+void PlayerEngine::loadLyrics(bool metadataReady, bool force)
+{
+    const auto query = lyricsQuery();
+    const auto revision = ++m_lyricsRevision;
+    const bool offline = m_lyrics.value(QStringLiteral("offline")).toBool();
+    m_lyrics = {{QStringLiteral("track_id"), query.trackId},
+                {QStringLiteral("revision"), QString::number(revision)},
+                {QStringLiteral("state"), query.trackId.isEmpty() ? QStringLiteral("idle") : QStringLiteral("loading")},
+                {QStringLiteral("offline"), offline}};
+    emit eventReady(
+        {{QStringLiteral("event"), QStringLiteral("lyrics.changed")}, {QStringLiteral("lyrics"), m_lyrics}});
+    if (query.trackId.isEmpty()) {
+        QMetaObject::invokeMethod(m_lyricsService,
+                                  [service = m_lyricsService, revision]() { service->clear(revision); });
+        return;
+    }
+    const auto &item = m_queue.at(m_queue.currentIndex());
+    QMetaObject::invokeMethod(m_lyricsService, [service = m_lyricsService, query, path = item.path,
+                                                custom = item.metadata.lyrics, revision, metadataReady, force]() {
+        service->load(query, path, custom, revision, metadataReady, force);
+    });
+}
+
+bool PlayerEngine::isCurrentLyricsRequest(const QJsonObject &params) const
+{
+    return !lyricsQuery().trackId.isEmpty() &&
+           params.value(QStringLiteral("track_id")).toString() == lyricsQuery().trackId;
+}
+
+QJsonObject PlayerEngine::refreshLyrics(const QJsonObject &params)
+{
+    if (!isCurrentLyricsRequest(params))
+        return error(QStringLiteral("Track is no longer current"));
+    loadLyrics(m_metadataReady, true);
+    return ok();
+}
+
+QJsonObject PlayerEngine::searchLyrics(const QJsonObject &params)
+{
+    if (!isCurrentLyricsRequest(params))
+        return error(QStringLiteral("Track is no longer current"));
+    auto query = lyricsQuery();
+    for (const auto &field : {QStringLiteral("title"), QStringLiteral("artist"), QStringLiteral("album")}) {
+        if (params.contains(field) && (!params.value(field).isString() || params.value(field).toString().size() > 500))
+            return error(QStringLiteral("Search fields must be strings of at most 500 characters"));
+    }
+    query.title = params.value(QStringLiteral("title")).toString(query.title).trimmed();
+    query.artist = params.value(QStringLiteral("artist")).toString(query.artist).trimmed();
+    query.album = params.value(QStringLiteral("album")).toString(query.album).trimmed();
+    if (query.title.isEmpty())
+        return error(QStringLiteral("Search title is required"));
+    m_metadataTimer.stop();
+    const auto revision = ++m_lyricsRevision;
+    m_lyrics.insert(QStringLiteral("revision"), QString::number(revision));
+    QMetaObject::invokeMethod(m_lyricsService,
+                              [service = m_lyricsService, query, revision]() { service->search(query, revision); });
+    return ok();
+}
+
+QJsonObject PlayerEngine::selectLyrics(const QJsonObject &params)
+{
+    if (!isCurrentLyricsRequest(params) ||
+        params.value(QStringLiteral("revision")).toString() != QString::number(m_lyricsRevision))
+        return error(QStringLiteral("Lyrics results are no longer current"));
+    const auto index = params.value(QStringLiteral("index"));
+    if (!index.isDouble() || index.toInt(-1) < 0 || index.toDouble() != index.toInt() ||
+        index.toInt() >= m_lyrics.value(QStringLiteral("candidates")).toArray().size())
+        return error(QStringLiteral("Invalid lyrics candidate index"));
+    QMetaObject::invokeMethod(m_lyricsService, [service = m_lyricsService, value = index.toInt(),
+                                                revision = m_lyricsRevision]() { service->select(value, revision); });
+    return ok();
+}
+
+QJsonObject PlayerEngine::setLyricsOffline(bool offline)
+{
+    m_lyrics.insert(QStringLiteral("offline"), offline);
+    QMetaObject::invokeMethod(m_lyricsService,
+                              [service = m_lyricsService, offline]() { service->setOffline(offline); });
+    if (!offline)
+        loadLyrics(m_metadataReady);
+    return ok();
 }
 
 } // namespace nekotune

@@ -21,3 +21,7 @@ target_link_libraries(nekotune_song_store_test
 )
 
 add_test(NAME nekotune_song_store_test COMMAND nekotune_song_store_test)
+
+add_executable(nekotune_lyrics_test lyrics_test.cpp)
+target_link_libraries(nekotune_lyrics_test PRIVATE nekotune_core Qt6::Test)
+add_test(NAME nekotune_lyrics_test COMMAND nekotune_lyrics_test)

@@ -9,6 +9,7 @@ class PlayerQueueTest final : public QObject {
 
 private slots:
     void addAndRemoveQueueItems();
+    void organizesNestedFolders();
 };
 
 void PlayerQueueTest::addAndRemoveQueueItems()
@@ -70,6 +71,40 @@ void PlayerQueueTest::addAndRemoveQueueItems()
     QCOMPARE(items.at(1).toObject().value(QStringLiteral("id")).toInt(), repeatedSecondId);
 
     QCOMPARE(queue.indexById(firstId), -1);
+}
+
+void PlayerQueueTest::organizesNestedFolders()
+{
+    nekotune::PlayerQueue queue;
+    const int first = queue.add("/music/song.wav", {});
+    queue.add("/music/song.wav", {});
+    queue.setCurrentIndex(0);
+    auto apply = [&](const QString &action, QJsonObject params) {
+        return queue.organize(action, params);
+    };
+    QVERIFY(apply("create", {{"name", "Rock"}, {"parent_id", 0}}).isEmpty());
+    QVERIFY(apply("create", {{"name", "Live"}, {"parent_id", 1}}).isEmpty());
+    QVERIFY(apply("create", {{"name", "2026"}, {"parent_id", 2}}).isEmpty());
+    QVERIFY(!apply("move", {{"id", 1}, {"parent_id", 3}}).isEmpty());
+    QVERIFY(!apply("move", {{"id", 1}, {"parent_id", 1}}).isEmpty());
+    QVERIFY(!apply("create", {{"name", " "}, {"parent_id", 0}}).isEmpty());
+    QVERIFY(!apply("create", {{"name", "Bad"}, {"parent_id", 99}}).isEmpty());
+    QVERIFY(!apply("move_item", {{"id", 1.5}, {"parent_id", 0}}).isEmpty());
+    QVERIFY(!apply("move_item", {{"id", 999}, {"parent_id", 0}}).isEmpty());
+    QVERIFY(apply("move_item", {{"id", first}, {"parent_id", 2}}).isEmpty());
+    QCOMPARE(queue.at(0).folderId, 2);
+    QCOMPARE(queue.at(1).folderId, 0);
+    QCOMPARE(queue.currentIndex(), 0);
+    QVERIFY(apply("rename", {{"id", 2}, {"name", " Concerts "}}).isEmpty());
+    QCOMPARE(queue.folders[1].toObject().value("name").toString(), QString("Concerts"));
+    QVERIFY(apply("delete", {{"id", 2}}).isEmpty());
+    QCOMPARE(queue.at(0).folderId, 1);
+    QCOMPARE(queue.folders[1].toObject().value("parent_id").toInt(), 1);
+    QCOMPARE(queue.size(), 2);
+    QVERIFY(apply("move", {{"id", 3}, {"parent_id", 0}}).isEmpty());
+    QCOMPARE(queue.folders[1].toObject().value("parent_id").toInt(), 0);
+    queue.clear();
+    QCOMPARE(queue.folders.size(), 2);
 }
 
 QTEST_APPLESS_MAIN(PlayerQueueTest)

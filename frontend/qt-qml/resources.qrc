@@ -1,11 +1,15 @@
 <RCC>
     <qresource prefix="/">
+        <file>artwork-default.png</file>
+        <file alias="artwork/default-cover.png">artwork-default.png</file>
         <file>i18n/en.json</file>
         <file>i18n/zh.json</file>
         <file>qml/Main.qml</file>
         <file>qml/components/AlbumArt.qml</file>
         <file>qml/components/IconButton.qml</file>
         <file>qml/components/LrcLyrics.qml</file>
+        <file>qml/components/LyricsDebugPanel.qml</file>
+        <file>qml/components/LyricsPanel.qml</file>
         <file>qml/components/PlayerPanel.qml</file>
         <file>qml/components/PlayerSlider.qml</file>
         <file>qml/components/QueuePanel.qml</file>

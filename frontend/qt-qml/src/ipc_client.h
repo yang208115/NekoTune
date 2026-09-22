@@ -32,14 +32,18 @@ public:
     Q_INVOKABLE void stop();
     Q_INVOKABLE void next();
     Q_INVOKABLE void previous();
+    Q_INVOKABLE void organizeQueue(const QString &action, const QVariantMap &params);
     Q_INVOKABLE void clearQueue();
     Q_INVOKABLE void seek(double positionMs);
     Q_INVOKABLE void setVolume(double volume);
-    Q_INVOKABLE void updateSongMetadata(int songId,
-                                        const QString &customTitle,
-                                        const QString &artist,
+    Q_INVOKABLE void updateSongMetadata(int songId, const QString &customTitle, const QString &artist,
                                         const QString &lyrics);
     Q_INVOKABLE void refreshStatus();
+    Q_INVOKABLE void refreshLyrics(const QString &trackId);
+    Q_INVOKABLE void searchLyrics(const QString &trackId, const QString &title, const QString &artist,
+                                  const QString &album);
+    Q_INVOKABLE void selectLyrics(const QString &trackId, const QString &revision, int index);
+    Q_INVOKABLE void setLyricsOffline(bool offline);
 
 signals:
     void connectedChanged();

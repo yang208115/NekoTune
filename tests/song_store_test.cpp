@@ -4,6 +4,8 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QTemporaryDir>
+#include <QSqlQuery>
+#include <QJsonObject>
 #include <QtTest/QtTest>
 
 class SongStoreTest final : public QObject {
@@ -13,6 +15,7 @@ private slots:
     void usesBuildDatabasePathInDevelopment();
     void storesAndUpdatesSongMetadata();
     void storesAndRestoresQueue();
+    void migratesAndRestoresFolders();
 };
 
 void SongStoreTest::usesBuildDatabasePathInDevelopment()
@@ -84,6 +87,47 @@ void SongStoreTest::storesAndUpdatesSongMetadata()
     QCOMPARE(songs.size(), 1);
     QCOMPARE(songs.at(0).id, first->id);
     QCOMPARE(songs.at(0).customTitle, QStringLiteral("My Title"));
+}
+
+void SongStoreTest::migratesAndRestoresFolders()
+{
+    QTemporaryDir dir;
+    const auto path = dir.filePath("old.sqlite3");
+    {
+        auto db = QSqlDatabase::addDatabase("QSQLITE", "old-schema");
+        db.setDatabaseName(path);
+        QVERIFY(db.open());
+        QSqlQuery query(db);
+        QVERIFY(query.exec("CREATE TABLE queue_items (position INTEGER PRIMARY KEY, path TEXT NOT NULL, song_id INTEGER NOT NULL, current_index INTEGER NOT NULL DEFAULT -1)"));
+        QVERIFY(query.exec("INSERT INTO queue_items VALUES (0, '/music/old.wav', 1, 0)"));
+        db.close();
+    }
+    QSqlDatabase::removeDatabase("old-schema");
+    {
+        nekotune::SongStore store(path);
+        QVERIFY2(store.isReady(), qPrintable(store.errorString()));
+        auto snapshot = store.loadQueue();
+        QCOMPARE(snapshot.items.size(), 1);
+        QCOMPARE(snapshot.items[0].folderId, 0);
+        snapshot.folders = QJsonArray{QJsonObject{{"id", 1}, {"parent_id", 0}, {"name", "Root"}},
+                                     QJsonObject{{"id", 2}, {"parent_id", 1}, {"name", "Child"}}};
+        snapshot.items[0].folderId = 2;
+        QVERIFY(store.saveQueue(snapshot));
+    }
+    {
+        nekotune::SongStore store(path);
+        auto snapshot = store.loadQueue();
+        QCOMPARE(snapshot.folders.size(), 2);
+        QCOMPARE(snapshot.folders[1].toObject().value("parent_id").toInt(), 1);
+        QCOMPARE(snapshot.items[0].folderId, 2);
+        QCOMPARE(snapshot.currentIndex, 0);
+        snapshot.items.clear();
+        snapshot.currentIndex = -1;
+        QVERIFY(store.saveQueue(snapshot));
+    }
+    nekotune::SongStore store(path);
+    QCOMPARE(store.loadQueue().folders.size(), 2);
+    QVERIFY(store.loadQueue().items.isEmpty());
 }
 
 int main(int argc, char *argv[])

@@ -173,6 +173,32 @@ NekoTune 使用基于换行分隔的 JSON 协议，通过 Unix domain socket 进
 
 队列会保存到当前 SQLite 数据库，包含顺序、重复项、文件路径和当前索引。后端重启后恢复最近一次队列；歌曲资料表中的历史歌曲不会自动重新加入队列。
 
+### `queue.folder.create` / `queue.folder.rename`
+
+创建或重命名播放列表文件夹。`parent_id` 为 `0` 时放在根目录，因此可以创建多层文件夹。
+
+```json
+{"id":14,"method":"queue.folder.create","params":{"name":"现场录音","parent_id":0}}
+{"id":15,"method":"queue.folder.rename","params":{"id":1,"name":"Live","parent_id":0}}
+```
+
+### `queue.folder.move` / `queue.folder.move_item`
+
+移动文件夹或歌曲。移动文件夹会阻止形成循环；删除文件夹时，内容会移到它的上一级。
+
+```json
+{"id":16,"method":"queue.folder.move_item","params":{"id":3,"parent_id":1}}
+{"id":17,"method":"queue.folder.move","params":{"id":2,"parent_id":1}}
+```
+
+### `queue.folder.delete`
+
+删除文件夹并将歌曲和子文件夹移到上一级，不会删除本地音乐文件。
+
+```json
+{"id":18,"method":"queue.folder.delete","params":{"id":1}}
+```
+
 ### `song.metadata`
 
 读取指定歌曲的自定义元数据。
@@ -188,3 +214,18 @@ NekoTune 使用基于换行分隔的 JSON 协议，通过 Unix domain socket 进
 ```json
 {"id":15,"method":"song.update_metadata","params":{"song_id":1,"custom_title":"自定义歌名","artist":"作者名","lyrics":"歌词内容"}}
 ```
+
+## 歌词
+
+后端通过 LRCLIB 获取歌词，Qt/QML 客户端不会直接访问歌词服务。播放曲目后，后端按“同目录同名 `.lrc` → 本地歌词缓存 → LRCLIB”顺序加载；缓存文件位于 `QStandardPaths::AppDataLocation/lyrics-cache`，也可以由 `LyricsCache` 调用方指定目录。缓存采用内容 hash（或标题、歌手、专辑和时长）作为键，并通过 `QSaveFile` 原子替换。
+
+歌词状态通过 `lyrics.changed` 事件广播，`lyrics.state` 可能为 `loading`、`waiting_metadata`、`searching`、`ready`、`instrumental`、`not_found`、`offline`、`error` 或 `candidates`。`lyrics.document.lines` 是后端解析后的 `{time_ms,text}` 数组，普通歌词在 `lyrics.document.plain_text` 中。
+
+歌词相关请求都需要带当前歌曲的 `track_id`（音频内容 hash）：
+
+- `lyrics.refresh`：忽略缓存并重新获取当前歌曲歌词。
+- `lyrics.search`：按传入的 `title`、`artist`、`album` 手动搜索。
+- `lyrics.select`：按 `revision` 和候选 `index` 应用搜索结果。
+- `lyrics.set_offline`：设置离线模式。离线时仍会读取同名 LRC 和已有缓存，不发起网络请求。
+
+自动结果只有在标题、歌手、专辑和时长满足精确匹配（时长误差不超过 2 秒）且候选明显领先时才会直接应用；其余情况通过 `lyrics.changed` 的 `candidates` 数组交给客户端选择。网络失败、未找到歌词和无效响应会使用不同状态，均不会改变播放器播放状态。

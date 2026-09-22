@@ -1,6 +1,7 @@
 #include "storage/song_store.h"
 
 #include <QCoreApplication>
+#include <QJsonDocument>
 #include <QDir>
 #include <QFileInfo>
 #include <QProcessEnvironment>
@@ -227,6 +228,17 @@ bool SongStore::migrate()
         return false;
     }
 
+    if (!query.exec(QStringLiteral("CREATE TABLE IF NOT EXISTS queue_folders (id INTEGER PRIMARY KEY CHECK (id = 1), data TEXT NOT NULL)"))) {
+        setError(query.lastError().text());
+        return false;
+    }
+    bool hasFolder = false;
+    query.exec(QStringLiteral("PRAGMA table_info(queue_items)"));
+    while (query.next()) hasFolder |= query.value(1).toString() == QStringLiteral("folder_id");
+    if (!hasFolder && !query.exec(QStringLiteral("ALTER TABLE queue_items ADD COLUMN folder_id INTEGER NOT NULL DEFAULT 0"))) {
+        setError(query.lastError().text());
+        return false;
+    }
     return true;
 }
 
@@ -249,10 +261,11 @@ bool SongStore::saveQueue(const QueueSnapshot &snapshot)
     }
 
     query.prepare(QStringLiteral(
-        "INSERT INTO queue_items (position, path, song_id, current_index) "
-        "VALUES (:position, :path, :song_id, :current_index)"));
+        "INSERT INTO queue_items (position, path, song_id, current_index, folder_id) "
+        "VALUES (:position, :path, :song_id, :current_index, :folder_id)"));
     for (int index = 0; index < snapshot.items.size(); ++index) {
         const auto &item = snapshot.items.at(index);
+        query.bindValue(QStringLiteral(":folder_id"), item.folderId);
         query.bindValue(QStringLiteral(":position"), index);
         query.bindValue(QStringLiteral(":path"), item.path);
         query.bindValue(QStringLiteral(":song_id"), item.songId);
@@ -264,6 +277,13 @@ bool SongStore::saveQueue(const QueueSnapshot &snapshot)
         }
     }
 
+    query.prepare(QStringLiteral("INSERT OR REPLACE INTO queue_folders (id, data) VALUES (1, :data)"));
+    query.bindValue(QStringLiteral(":data"), QString::fromUtf8(QJsonDocument(snapshot.folders).toJson(QJsonDocument::Compact)));
+    if (!query.exec()) {
+        setError(query.lastError().text());
+        m_db.rollback();
+        return false;
+    }
     if (!m_db.commit()) {
         setError(m_db.lastError().text());
         return false;
@@ -280,14 +300,16 @@ QueueSnapshot SongStore::loadQueue() const
 
     QSqlQuery query(m_db);
     if (!query.exec(QStringLiteral(
-            "SELECT path, song_id, current_index FROM queue_items ORDER BY position ASC"))) {
+            "SELECT path, song_id, current_index, folder_id FROM queue_items ORDER BY position ASC"))) {
         return snapshot;
     }
 
     while (query.next()) {
-        snapshot.items.append({query.value(0).toString(), query.value(1).toInt()});
+        snapshot.items.append({query.value(0).toString(), query.value(1).toInt(), query.value(3).toInt()});
         snapshot.currentIndex = query.value(2).toInt();
     }
+    if (query.exec(QStringLiteral("SELECT data FROM queue_folders WHERE id = 1")) && query.next())
+        snapshot.folders = QJsonDocument::fromJson(query.value(0).toByteArray()).array();
     if (snapshot.items.isEmpty()) {
         snapshot.currentIndex = -1;
     }

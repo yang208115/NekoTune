@@ -2,14 +2,18 @@
 
 #include "core/player_queue.h"
 #include "core/player_state.h"
+#include "lyrics/lyrics_service.h"
 #include "storage/song_store.h"
 
 #include <QAudioOutput>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QMediaMetaData>
 #include <QMediaPlayer>
 #include <QObject>
 #include <QStringList>
+#include <QThread>
+#include <QTimer>
 
 namespace nekotune {
 
@@ -18,6 +22,7 @@ class PlayerEngine final : public QObject {
 
 public:
     explicit PlayerEngine(QObject *parent = nullptr);
+    ~PlayerEngine() override;
 
     QJsonObject status() const;
     QJsonObject play(const QJsonObject &params);
@@ -31,10 +36,15 @@ public:
     QJsonObject addToQueue(const QString &path);
     QJsonObject playQueueItem(int queueId);
     QJsonObject removeFromQueue(int queueId);
+    QJsonObject organizeQueue(const QString &action, const QJsonObject &params);
     QJsonObject clearQueue();
     QJsonObject queueStatus() const;
     QJsonObject songMetadata(const QJsonObject &params) const;
     QJsonObject updateSongMetadata(const QJsonObject &params);
+    QJsonObject refreshLyrics(const QJsonObject &params);
+    QJsonObject searchLyrics(const QJsonObject &params);
+    QJsonObject selectLyrics(const QJsonObject &params);
+    QJsonObject setLyricsOffline(bool offline);
 
 signals:
     void eventReady(const QJsonObject &event);
@@ -56,11 +66,21 @@ private:
     void broadcastTrackChanged();
     void restoreQueueFromStore();
     void persistQueue();
+    LyricsQuery lyricsQuery() const;
+    void loadLyrics(bool metadataReady, bool force = false);
+    bool isCurrentLyricsRequest(const QJsonObject &params) const;
 
     QMediaPlayer m_player;
     QAudioOutput m_audioOutput;
     SongStore m_songStore;
     PlayerQueue m_queue;
+    QThread m_lyricsThread;
+    LyricsService *m_lyricsService = nullptr;
+    QTimer m_metadataTimer;
+    QMediaMetaData m_fileMetadata;
+    QJsonObject m_lyrics;
+    quint64 m_lyricsRevision = 0;
+    bool m_metadataReady = false;
     PlayerState m_state = PlayerState::Stopped;
 };
 

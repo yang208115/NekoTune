@@ -19,6 +19,7 @@ QString displayTitle(const QueueItem &item)
 QJsonObject itemToObject(const QueueItem &item, int position, bool includeLyrics)
 {
     QJsonObject object {
+        {QStringLiteral("folder_id"), item.folderId},
         {QStringLiteral("id"), item.id},
         {QStringLiteral("queue_id"), item.id},
         {QStringLiteral("song_id"), item.metadata.id},
@@ -43,6 +44,72 @@ QJsonObject itemToObject(const QueueItem &item, int position, bool includeLyrics
 }
 
 } // namespace
+
+QString PlayerQueue::organize(const QString &action, const QJsonObject &params)
+{
+    auto validId = [&](const QString &key) {
+        const auto value = params.value(key);
+        return value.isDouble() && value.toDouble() >= 0
+            && value.toDouble() == value.toInt(-1);
+    };
+    auto folderIndex = [&](int id) {
+        for (int i = 0; i < folders.size(); ++i)
+            if (folders[i].toObject().value("id").toInt() == id) return i;
+        return -1;
+    };
+    const int id = params.value("id").toInt();
+    const int parent = params.value("parent_id").toInt();
+    if (action != "create" && (!validId("id") || id == 0))
+        return QStringLiteral("Invalid item id");
+    if (action == "create" || action == "move" || action == "move_item") {
+        if (!validId("parent_id") || (parent != 0 && folderIndex(parent) < 0))
+            return QStringLiteral("Folder does not exist");
+    }
+    const int index = folderIndex(id);
+    if (action != "create" && action != "move_item" && index < 0)
+        return QStringLiteral("Folder does not exist");
+    if (action == "create" || action == "rename") {
+        const auto name = params.value("name").toString().trimmed();
+        if (name.isEmpty() || name.size() > 128)
+            return QStringLiteral("Folder name must contain 1 to 128 characters");
+        int nextId = 1;
+        for (const auto &value : folders)
+            nextId = qMax(nextId, value.toObject().value("id").toInt() + 1);
+        auto folder = action == "create" ? QJsonObject{{"id", nextId}, {"parent_id", parent}}
+                                         : folders[index].toObject();
+        folder.insert("name", name);
+        if (action == "create") folders.append(folder);
+        else folders[index] = folder;
+    } else if (action == "move_item") {
+        const int itemIndex = indexById(id);
+        if (itemIndex < 0) return QStringLiteral("Queue item does not exist");
+        m_items[itemIndex].folderId = parent;
+    } else if (action == "move") {
+        int ancestor = parent;
+        while (ancestor != 0) {
+            if (ancestor == id) return QStringLiteral("Cannot move a folder into itself or its descendants");
+            ancestor = folders[folderIndex(ancestor)].toObject().value("parent_id").toInt();
+        }
+        auto folder = folders[index].toObject();
+        folder.insert("parent_id", parent);
+        folders[index] = folder;
+    } else if (action == "delete") {
+        const int destination = folders[index].toObject().value("parent_id").toInt();
+        for (auto &item : m_items)
+            if (item.folderId == id) item.folderId = destination;
+        for (int i = 0; i < folders.size(); ++i) {
+            auto folder = folders[i].toObject();
+            if (folder.value("parent_id").toInt() == id) {
+                folder.insert("parent_id", destination);
+                folders[i] = folder;
+            }
+        }
+        folders.removeAt(index);
+    } else {
+        return QStringLiteral("Unknown folder action");
+    }
+    return {};
+}
 
 bool PlayerQueue::isEmpty() const
 {
@@ -171,7 +238,7 @@ QVector<QueueRecord> PlayerQueue::records() const
     QVector<QueueRecord> records;
     records.reserve(m_items.size());
     for (const auto &item : m_items) {
-        records.append({item.path, item.metadata.id});
+        records.append({item.path, item.metadata.id, item.folderId});
     }
     return records;
 }

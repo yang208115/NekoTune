@@ -6,14 +6,13 @@
 #include <QProcessEnvironment>
 #include <QUrl>
 
-IpcClient::IpcClient(QObject *parent)
-    : QObject(parent)
+IpcClient::IpcClient(QObject *parent) : QObject(parent)
 {
     m_status.insert(QStringLiteral("state"), QStringLiteral("stopped"));
     m_status.insert(QStringLiteral("position"), 0);
     m_status.insert(QStringLiteral("duration"), 0);
     m_status.insert(QStringLiteral("volume"), 0.8);
-    m_status.insert(QStringLiteral("queue"), QVariantList {});
+    m_status.insert(QStringLiteral("queue"), QVariantList{});
 
     m_reconnectTimer.setInterval(1000);
     connect(&m_reconnectTimer, &QTimer::timeout, this, &IpcClient::connectBackend);
@@ -112,6 +111,11 @@ void IpcClient::previous()
     sendRequest(QStringLiteral("player.previous"));
 }
 
+void IpcClient::organizeQueue(const QString &action, const QVariantMap &params)
+{
+    sendRequest(QStringLiteral("queue.folder.") + action, QJsonObject::fromVariantMap(params));
+}
+
 void IpcClient::clearQueue()
 {
     sendRequest(QStringLiteral("queue.clear"));
@@ -127,17 +131,39 @@ void IpcClient::setVolume(double volume)
     sendRequest(QStringLiteral("player.set_volume"), {{QStringLiteral("volume"), volume}});
 }
 
-void IpcClient::updateSongMetadata(int songId,
-                                   const QString &customTitle,
-                                   const QString &artist,
-                                   const QString &lyrics)
+void IpcClient::updateSongMetadata(int songId, const QString &customTitle, const QString &artist, const QString &lyrics)
 {
     sendRequest(QStringLiteral("song.update_metadata"), {
-        {QStringLiteral("song_id"), songId},
-        {QStringLiteral("custom_title"), customTitle},
-        {QStringLiteral("artist"), artist},
-        {QStringLiteral("lyrics"), lyrics},
-    });
+                                                            {QStringLiteral("song_id"), songId},
+                                                            {QStringLiteral("custom_title"), customTitle},
+                                                            {QStringLiteral("artist"), artist},
+                                                            {QStringLiteral("lyrics"), lyrics},
+                                                        });
+}
+
+void IpcClient::refreshLyrics(const QString &trackId)
+{
+    sendRequest(QStringLiteral("lyrics.refresh"), {{QStringLiteral("track_id"), trackId}});
+}
+
+void IpcClient::searchLyrics(const QString &trackId, const QString &title, const QString &artist, const QString &album)
+{
+    sendRequest(QStringLiteral("lyrics.search"), {{QStringLiteral("track_id"), trackId},
+                                                  {QStringLiteral("title"), title},
+                                                  {QStringLiteral("artist"), artist},
+                                                  {QStringLiteral("album"), album}});
+}
+
+void IpcClient::selectLyrics(const QString &trackId, const QString &revision, int index)
+{
+    sendRequest(QStringLiteral("lyrics.select"), {{QStringLiteral("track_id"), trackId},
+                                                  {QStringLiteral("revision"), revision},
+                                                  {QStringLiteral("index"), index}});
+}
+
+void IpcClient::setLyricsOffline(bool offline)
+{
+    sendRequest(QStringLiteral("lyrics.set_offline"), {{QStringLiteral("offline"), offline}});
 }
 
 void IpcClient::refreshStatus()
@@ -208,7 +234,7 @@ void IpcClient::sendRequest(const QString &method, const QJsonObject &params)
         return;
     }
 
-    const QJsonObject payload {
+    const QJsonObject payload{
         {QStringLiteral("id"), m_nextId++},
         {QStringLiteral("method"), method},
         {QStringLiteral("params"), params},
@@ -241,8 +267,13 @@ void IpcClient::handlePayload(const QJsonObject &payload)
         } else if (eventName == QStringLiteral("player.track_changed")) {
             m_status.insert(QStringLiteral("song"), payload.value(QStringLiteral("song")).toObject().toVariantMap());
             emit statusChanged();
+        } else if (eventName == QStringLiteral("lyrics.changed")) {
+            m_status.insert(QStringLiteral("lyrics"),
+                            payload.value(QStringLiteral("lyrics")).toObject().toVariantMap());
+            emit statusChanged();
         } else if (eventName == QStringLiteral("queue.changed")) {
             m_status.insert(QStringLiteral("queue"), payload.value(QStringLiteral("queue")).toArray().toVariantList());
+            m_status.insert(QStringLiteral("folders"), payload.value(QStringLiteral("folders")).toArray().toVariantList());
             emit statusChanged();
         } else if (eventName == QStringLiteral("player.error")) {
             setError(payload.value(QStringLiteral("message")).toString());
