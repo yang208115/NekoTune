@@ -12,7 +12,9 @@ class LyricsService final : public QObject {
     explicit LyricsService(LyricsProvider *provider = nullptr, const QString &cacheDirectory = {},
                            QObject *parent = nullptr);
     void load(const LyricsQuery &query, const QString &path, const QString &customLyrics, quint64 revision,
-              bool metadataReady, bool force = false);
+              bool metadataReady, bool force = false, const QByteArray &storedAsr = {});
+    void applyAsr(const LyricsQuery &query, const QByteArray &json, quint64 revision, bool persist = true);
+    void importAsr(const LyricsQuery &query, const QString &path, quint64 revision);
     void search(const LyricsQuery &query, quint64 revision);
     void select(int index, quint64 revision);
     void clear(quint64 revision);
@@ -24,6 +26,7 @@ class LyricsService final : public QObject {
     static bool confident(const LyricsQuery &query, const QVector<LyricsCandidate> &ranked);
 
   signals:
+    void transcriptionReady(const QString &trackId, const QByteArray &json);
     void changed(const QJsonObject &snapshot);
 
   private:
@@ -31,6 +34,7 @@ class LyricsService final : public QObject {
     void failed(quint64 token, const QString &kind);
     void publish(const QString &state, const QString &error = {});
     void apply(const LyricsDocument &document, bool cache);
+    void rememberComparison(const LyricsDocument &document);
     void cancel();
 
     LyricsCache m_cache;

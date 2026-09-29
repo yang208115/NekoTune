@@ -18,6 +18,7 @@ IpcServer::IpcServer(PlayerEngine &player, QObject *parent)
 
 bool IpcServer::listen()
 {
+    m_server.setSocketOptions(QLocalServer::UserAccessOption);
     if (m_server.listen(m_serverName)) {
         return true;
     }

@@ -4,6 +4,7 @@
 #include <QFile>
 #include <QFileDevice>
 #include <QFileInfo>
+#include <QDir>
 #include <QJsonDocument>
 #include <QUrl>
 
@@ -49,7 +50,8 @@ QJsonObject metadataToObject(const SongMetadata &metadata)
 
 } // namespace
 
-PlayerEngine::PlayerEngine(QObject *parent) : QObject(parent)
+PlayerEngine::PlayerEngine(QObject *parent) : QObject(parent),
+    m_settings(QFileInfo(m_songStore.databasePath()).absoluteDir().filePath(QStringLiteral("nekotune-settings.json")))
 {
     m_audioOutput.setVolume(0.8);
     m_player.setAudioOutput(&m_audioOutput);
@@ -73,12 +75,39 @@ PlayerEngine::PlayerEngine(QObject *parent) : QObject(parent)
 
     m_lyricsService = new LyricsService;
     m_lyricsService->moveToThread(&m_lyricsThread);
+    connect(m_lyricsService, &LyricsService::transcriptionReady, this, [this](const QString &trackId, const QByteArray &json) {
+        const bool saved = m_songStore.saveTranscription(trackId, json);
+        if (saved) m_asrStorageFailures.remove(trackId);
+        else m_asrStorageFailures.insert(trackId);
+        if (m_asrQuery.trackId == trackId && m_asrState.value(QStringLiteral("state")) == QStringLiteral("saving"))
+            publishAsr(saved ? QStringLiteral("ready") : QStringLiteral("error"), saved ? QString() : QStringLiteral("storage"));
+    });
+    connect(&m_asr, &AliyunAsr::taskSubmitted, this,
+            [this](const QString &taskId, const QString &model, const QString &language) {
+                if (!m_songStore.saveAsrTask(taskId, m_asrQuery.trackId, model, language))
+                    qWarning().noquote() << "ASR task backup failed task_id=" + taskId << m_songStore.errorString();
+                else
+                    qInfo().noquote() << "ASR task backed up task_id=" + taskId;
+            });
+    connect(&m_asr, &AliyunAsr::progress, this, [this](const QString &stage) { publishAsr(stage); });
+    connect(&m_asr, &AliyunAsr::failed, this, [this](const QString &code) { publishAsr(QStringLiteral("error"), code); });
+    connect(&m_asr, &AliyunAsr::completed, this, [this](const QByteArray &json) {
+        if (m_asrQuery.trackId != lyricsQuery().trackId) return;
+        m_metadataTimer.stop();
+        publishAsr(QStringLiteral("saving"));
+        const auto revision = ++m_lyricsRevision;
+        m_lyrics.insert(QStringLiteral("revision"), QString::number(revision));
+        QMetaObject::invokeMethod(m_lyricsService, [service = m_lyricsService, query = m_asrQuery, json, revision]() {
+            service->applyAsr(query, json, revision);
+        });
+    });
     connect(&m_lyricsThread, &QThread::finished, m_lyricsService, &QObject::deleteLater);
     connect(m_lyricsService, &LyricsService::changed, this, [this](const QJsonObject &snapshot) {
         if (snapshot.value(QStringLiteral("revision")).toString() != QString::number(m_lyricsRevision) ||
             snapshot.value(QStringLiteral("track_id")).toString() != lyricsQuery().trackId)
             return;
         m_lyrics = snapshot;
+        m_lyrics.insert(QStringLiteral("storage_warning"), m_asrStorageFailures.contains(lyricsQuery().trackId));
         emit eventReady(
             {{QStringLiteral("event"), QStringLiteral("lyrics.changed")}, {QStringLiteral("lyrics"), m_lyrics}});
     });
@@ -112,6 +141,8 @@ PlayerEngine::~PlayerEngine()
 QJsonObject PlayerEngine::status() const
 {
     return {
+        {QStringLiteral("settings"), m_settings.publicSettings()},
+        {QStringLiteral("asr"), m_asrState},
         {QStringLiteral("state"), toString(m_state)},
         {QStringLiteral("position"), m_player.position()},
         {QStringLiteral("duration"), m_player.duration()},
@@ -695,6 +726,7 @@ LyricsQuery PlayerEngine::lyricsQuery() const
 void PlayerEngine::loadLyrics(bool metadataReady, bool force)
 {
     const auto query = lyricsQuery();
+    if (m_asr.active() && (m_asrQuery.trackId != query.trackId || force)) cancelAsr();
     const auto revision = ++m_lyricsRevision;
     const bool offline = m_lyrics.value(QStringLiteral("offline")).toBool();
     m_lyrics = {{QStringLiteral("track_id"), query.trackId},
@@ -709,9 +741,10 @@ void PlayerEngine::loadLyrics(bool metadataReady, bool force)
         return;
     }
     const auto &item = m_queue.at(m_queue.currentIndex());
+    const auto storedAsr = m_songStore.transcription(query.trackId);
     QMetaObject::invokeMethod(m_lyricsService, [service = m_lyricsService, query, path = item.path,
-                                                custom = item.metadata.lyrics, revision, metadataReady, force]() {
-        service->load(query, path, custom, revision, metadataReady, force);
+                                                custom = item.metadata.lyrics, revision, metadataReady, force, storedAsr]() {
+        service->load(query, path, custom, revision, metadataReady, force, storedAsr);
     });
 }
 
@@ -719,6 +752,78 @@ bool PlayerEngine::isCurrentLyricsRequest(const QJsonObject &params) const
 {
     return !lyricsQuery().trackId.isEmpty() &&
            params.value(QStringLiteral("track_id")).toString() == lyricsQuery().trackId;
+}
+
+QJsonObject PlayerEngine::settings() const
+{
+    return ok({{QStringLiteral("settings"), m_settings.publicSettings()}});
+}
+
+QJsonObject PlayerEngine::updateSettings(const QJsonObject &params)
+{
+    QString message;
+    if (!m_settings.update(params, &message)) return error(message);
+    emit eventReady({{QStringLiteral("event"), QStringLiteral("settings.changed")},
+                     {QStringLiteral("settings"), m_settings.publicSettings()}});
+    return settings();
+}
+
+void PlayerEngine::publishAsr(const QString &state, const QString &errorCode)
+{
+    m_asrState = {{QStringLiteral("state"), state}, {QStringLiteral("track_id"), m_asrQuery.trackId},
+                 {QStringLiteral("error"), errorCode}};
+    emit eventReady({{QStringLiteral("event"), QStringLiteral("asr.changed")}, {QStringLiteral("asr"), m_asrState}});
+}
+
+QJsonObject PlayerEngine::transcribeLyrics(const QJsonObject &params)
+{
+    if (!isCurrentLyricsRequest(params) || params.value(QStringLiteral("revision")).toString() != QString::number(m_lyricsRevision))
+        return error(QStringLiteral("Track is no longer current"));
+    if (m_asr.active() || m_asrState.value(QStringLiteral("state")) == QStringLiteral("saving"))
+        return error(QStringLiteral("ASR is already running"));
+    if (m_lyrics.value(QStringLiteral("offline")).toBool())
+        return error(QStringLiteral("Disable lyrics offline mode before using ASR"));
+    if (m_settings.apiKey().isEmpty()) return error(QStringLiteral("Configure the Aliyun API key in Settings first"));
+    const auto languageValue = params.value(QStringLiteral("language"));
+    const auto language = languageValue.isUndefined() ? QStringLiteral("ja") : languageValue.toString();
+    if (!QStringList{QStringLiteral("ja"), QStringLiteral("auto"), QStringLiteral("zh"), QStringLiteral("en"),
+                     QStringLiteral("ko")}.contains(language))
+        return error(QStringLiteral("Unsupported recognition language"));
+    const auto modelValue = params.value(QStringLiteral("model"));
+    const auto model = modelValue.isUndefined() ? QStringLiteral("fun-asr") : modelValue.toString();
+    if (!AliyunAsr::supportsModel(model))
+        return error(QStringLiteral("Unsupported recognition model"));
+    m_asrQuery = lyricsQuery();
+    m_asr.start(m_queue.at(m_queue.currentIndex()).path, m_settings.apiKey(), language, model);
+    return ok();
+}
+
+QJsonObject PlayerEngine::cancelAsr()
+{
+    if (m_asr.active()) {
+        m_asr.cancel();
+        publishAsr(QStringLiteral("canceled"));
+    }
+    return ok();
+}
+
+QJsonObject PlayerEngine::importAsrLyrics(const QJsonObject &params)
+{
+    if (!isCurrentLyricsRequest(params) ||
+        params.value(QStringLiteral("revision")).toString() != QString::number(m_lyricsRevision))
+        return error(QStringLiteral("Track is no longer current"));
+    const auto path = params.value(QStringLiteral("path"));
+    if (!path.isString() || !QFileInfo(path.toString()).isAbsolute())
+        return error(QStringLiteral("An absolute local JSON file path is required"));
+    cancelAsr();
+    m_metadataTimer.stop();
+    const auto query = lyricsQuery();
+    const auto revision = ++m_lyricsRevision;
+    m_lyrics.insert(QStringLiteral("revision"), QString::number(revision));
+    QMetaObject::invokeMethod(m_lyricsService, [service = m_lyricsService, query, path = path.toString(), revision]() {
+        service->importAsr(query, path, revision);
+    });
+    return ok();
 }
 
 QJsonObject PlayerEngine::refreshLyrics(const QJsonObject &params)
@@ -743,6 +848,7 @@ QJsonObject PlayerEngine::searchLyrics(const QJsonObject &params)
     query.album = params.value(QStringLiteral("album")).toString(query.album).trimmed();
     if (query.title.isEmpty())
         return error(QStringLiteral("Search title is required"));
+    cancelAsr();
     m_metadataTimer.stop();
     const auto revision = ++m_lyricsRevision;
     m_lyrics.insert(QStringLiteral("revision"), QString::number(revision));
@@ -760,6 +866,7 @@ QJsonObject PlayerEngine::selectLyrics(const QJsonObject &params)
     if (!index.isDouble() || index.toInt(-1) < 0 || index.toDouble() != index.toInt() ||
         index.toInt() >= m_lyrics.value(QStringLiteral("candidates")).toArray().size())
         return error(QStringLiteral("Invalid lyrics candidate index"));
+    cancelAsr();
     QMetaObject::invokeMethod(m_lyricsService, [service = m_lyricsService, value = index.toInt(),
                                                 revision = m_lyricsRevision]() { service->select(value, revision); });
     return ok();
@@ -767,6 +874,7 @@ QJsonObject PlayerEngine::selectLyrics(const QJsonObject &params)
 
 QJsonObject PlayerEngine::setLyricsOffline(bool offline)
 {
+    if (offline) cancelAsr();
     m_lyrics.insert(QStringLiteral("offline"), offline);
     QMetaObject::invokeMethod(m_lyricsService,
                               [service = m_lyricsService, offline]() { service->setOffline(offline); });

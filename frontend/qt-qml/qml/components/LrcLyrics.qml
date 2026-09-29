@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Controls
 
@@ -11,6 +13,7 @@ Item {
     readonly property real activeTime: activeIndex >= 0 ? Number(lines[activeIndex].time_ms) : -1
     property color activeColor: "#f6f3fa"
     property color inactiveColor: "#645e73"
+    property color wordColor: "#cbb8ff"
 
     property bool userScrolling: false
 
@@ -75,6 +78,7 @@ Item {
             required property var modelData
             required property int index
 
+            objectName: "lyricLine" + index
             readonly property bool active: index === root.activeIndex
             readonly property real timeMs: Number(modelData.time_ms || 0)
 
@@ -91,14 +95,17 @@ Item {
                 id: lineText
                 anchors.centerIn: parent
                 width: parent.width - 24
-                text: modelData.text || "♪"
-                textFormat: Text.PlainText
+                objectName: "lyricText" + lineDelegate.index
+                text: lineDelegate.active && lineDelegate.modelData.words && lineDelegate.modelData.words.length
+                      ? root.highlightedText(lineDelegate.modelData, root.position) : (lineDelegate.modelData.text || "♪")
+                textFormat: lineDelegate.active && lineDelegate.modelData.words && lineDelegate.modelData.words.length
+                            ? Text.RichText : Text.PlainText
                 wrapMode: Text.Wrap
                 horizontalAlignment: Text.AlignHCenter
-                font.pixelSize: active ? 20 : 15
-                font.weight: active ? Font.Bold : Font.Normal
-                color: active ? root.activeColor : lineMouse.hovered ? "#d0c9dc" : root.inactiveColor
-                opacity: active ? 1.0 : lineMouse.hovered ? 0.9 : 0.6
+                font.pixelSize: lineDelegate.active ? 20 : 15
+                font.weight: lineDelegate.active ? Font.Bold : Font.Normal
+                color: lineDelegate.active ? root.activeColor : lineMouse.hovered ? "#d0c9dc" : root.inactiveColor
+                opacity: lineDelegate.active ? 1.0 : lineMouse.hovered ? 0.9 : 0.6
 
                 Behavior on font.pixelSize {
                     NumberAnimation { duration: 140; easing.type: Easing.OutQuad }
@@ -171,6 +178,30 @@ Item {
             horizontalAlignment: TextEdit.AlignHCenter
             background: null
         }
+    }
+
+    function escapeText(value) {
+        return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+                            .replace(/>/g, "&gt;").replace(/"/g, "&quot;")
+                            .replace(/\n/g, "<br>")
+    }
+
+    function highlightedText(line, playbackPosition) {
+        const text = String(line.text || "")
+        const words = line.words || []
+        let result = ""
+        let offset = 0
+        for (const word of words) {
+            const start = Number(word.start)
+            const end = start + Number(word.length)
+            result += escapeText(text.slice(offset, start))
+            const started = playbackPosition >= Number(word.time_ms)
+            const singing = started && playbackPosition < Number(word.end_time_ms)
+            const color = singing ? root.wordColor : started ? root.activeColor : root.inactiveColor
+            result += '<font color="' + color + '">' + escapeText(text.slice(start, end)) + '</font>'
+            offset = end
+        }
+        return result + escapeText(text.slice(offset))
     }
 
     function updateActiveLine() {

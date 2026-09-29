@@ -37,3 +37,7 @@ add_test(NAME nekotune_slider_quick_test COMMAND nekotune_slider_quick_test)
 set_tests_properties(nekotune_slider_quick_test PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Fusion"
 )
+
+add_executable(nekotune_asr_test aliyun_asr_test.cpp)
+target_link_libraries(nekotune_asr_test PRIVATE nekotune_core Qt6::Test)
+add_test(NAME nekotune_asr_test COMMAND nekotune_asr_test)

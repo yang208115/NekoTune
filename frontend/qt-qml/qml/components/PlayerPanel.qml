@@ -7,6 +7,8 @@ Item {
 
     property var song: ({})
     property var lyrics: ({})
+    property var asr: ({})
+    property var asrSettings: ({})
     property var queue: []
     property real duration: 0
     property real position: 0
@@ -25,6 +27,7 @@ Item {
 
     readonly property bool hasSong: Boolean(root.song && root.song.song_id)
 
+    signal settingsRequested()
     signal addRequested()
     signal togglePlayPauseRequested()
     signal nextRequested()
@@ -132,6 +135,9 @@ Item {
                 Layout.fillHeight: true
                 song: root.song
                 lyrics: root.lyrics
+                asr: root.asr
+                asrSettings: root.asrSettings
+                onSettingsRequested: root.settingsRequested()
                 position: root.position
                 connected: root.connected
                 onSeekRequested: pos => root.seekRequested(pos)

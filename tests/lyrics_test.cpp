@@ -1,3 +1,4 @@
+#include "lyrics/asr_parser.h"
 #include "lyrics/lrc_parser.h"
 #include "lyrics/lrclib_provider.h"
 #include "lyrics/lyrics_service.h"
@@ -127,6 +128,9 @@ static void writeFile(const QString &path, const QByteArray &bytes)
 class LyricsTest final : public QObject {
     Q_OBJECT
   private slots:
+    void asrParsingAndValidation();
+    void asrImportCacheAndPriority();
+    void comparisonSourcesAndLifecycle();
     void timestampsAndMultipleTags();
     void invalidAndEmptyLines();
     void stableSortAndOffset();
@@ -144,6 +148,176 @@ class LyricsTest final : public QObject {
     void providerPayloadsAndRequest();
     void providerCancellationAndDestruction();
 };
+
+static QByteArray asrResponse()
+{
+    return R"({"file_url":"https://example.invalid/private?signature=secret","transcripts":[
+        {"channel_id":0,"sentences":[
+            {"begin_time":2000,"end_time":4000,"text":"Hello <world>!","words":[
+                {"begin_time":2000,"end_time":2500,"text":"Hello"},
+                {"begin_time":3000,"end_time":4000,"text":" <world>","punctuation":"!"}]},
+            {"begin_time":560,"end_time":1440,"text":"いつか。","words":[
+                {"begin_time":560,"end_time":920,"text":"いつ"},
+                {"begin_time":920,"end_time":1440,"text":"か","punctuation":"。"}]},
+            {"begin_time":5000,"end_time":6000,"text":"Sentence only"}]},
+        {"channel_id":1,"sentences":[{"begin_time":560,"end_time":1440,"text":"Duplicate"}]}]})";
+}
+
+void LyricsTest::asrParsingAndValidation()
+{
+    const auto lines = AsrParser::parse(asrResponse());
+    QCOMPARE(lines.size(), 3);
+    QCOMPARE(lines.first().timestampMs, 560);
+    QCOMPARE(lines.first().endTimestampMs, 1440);
+    QCOMPARE(lines.first().text, QStringLiteral("いつか。"));
+    QCOMPARE(lines.first().words.size(), 2);
+    QCOMPARE(lines.first().words.last().start, 2);
+    QCOMPARE(lines.first().words.last().length, 2); // Preserve punctuation.
+    QCOMPARE(lines.at(1).words.last().start, 5); // Preserve leading whitespace.
+    QVERIFY(lines.last().words.isEmpty());
+    const auto serialized = AsrParser::serialize(lines);
+    QVERIFY(!serialized.contains(QStringLiteral("signature")));
+    QVERIFY(!serialized.contains(QStringLiteral("file_url")));
+    QCOMPARE(LrcParser::toJson(AsrParser::parse(serialized.toUtf8())), LrcParser::toJson(lines));
+    for (const auto &invalid : {QByteArray("not json"), QByteArray("[]"), QByteArray("{}"),
+            QByteArray(R"({"transcripts":[{"sentences":[
+                {"end_time":100,"text":"missing start"},
+                {"begin_time":-1,"end_time":100,"text":"negative"},
+                {"begin_time":2,"end_time":1,"text":"reversed"},
+                {"begin_time":1.5,"end_time":2,"text":"fraction"},
+                {"begin_time":0,"end_time":99999999999999,"text":"overflow"},
+                {"begin_time":0,"end_time":100,"text":"  "}]}]})")})
+        QVERIFY(AsrParser::parse(invalid).isEmpty());
+    const auto spaces = AsrParser::parse(R"({"transcripts":[{"sentences":[
+        {"begin_time":0,"end_time":300,"text":"a b","words":[
+            {"begin_time":0,"end_time":100,"text":"a"},
+            {"begin_time":100,"end_time":200,"text":" "},
+            {"begin_time":200,"end_time":300,"text":"b"}]}]}]})");
+    QCOMPARE(spaces.first().words.size(), 3); // ASR emits standalone space tokens.
+    QCOMPARE(AsrParser::parse(AsrParser::serialize(spaces).toUtf8()).first().words.size(), 3);
+    auto malformedWords = asrResponse();
+    malformedWords.replace("\"begin_time\":920", "\"begin_time\":800");
+    const auto fallback = AsrParser::parse(malformedWords);
+    QCOMPARE(fallback.first().text, lines.first().text);
+    QVERIFY(fallback.first().words.isEmpty()); // Overlap falls back to sentence timing.
+    malformedWords = asrResponse();
+    malformedWords.replace("<world>\",\"punctuation", "wrong\",\"punctuation");
+    QVERIFY(AsrParser::parse(malformedWords).at(1).words.isEmpty());
+}
+
+void LyricsTest::asrImportCacheAndPriority()
+{
+    QTemporaryDir temp;
+    const auto cachePath = temp.filePath(QStringLiteral("cache"));
+    const auto audio = temp.filePath(QStringLiteral("song.wav"));
+    const auto json = temp.filePath(QStringLiteral("transcription.json"));
+    const auto sidecar = temp.filePath(QStringLiteral("song.asr.json"));
+    const auto lrc = temp.filePath(QStringLiteral("song.lrc"));
+    writeFile(json, asrResponse());
+    MockProvider provider;
+    LyricsService service(&provider, cachePath);
+    QJsonObject state;
+    QByteArray storedJson;
+    connect(&service, &LyricsService::transcriptionReady, this, [&](const QString &track, const QByteArray &json) {
+        QCOMPARE(track, query().trackId);
+        storedJson = json;
+    });
+    connect(&service, &LyricsService::changed, this, [&](const auto &value) { state = value; });
+    service.load(query(), audio, {}, 1, true);
+    const auto oldToken = provider.token;
+    service.importAsr(query(), json, 2);
+    QCOMPARE(state.value(QStringLiteral("state")).toString(), QStringLiteral("ready"));
+    QCOMPARE(state.value(QStringLiteral("revision")).toString(), QStringLiteral("2"));
+    const auto document = state.value(QStringLiteral("document")).toObject();
+    QCOMPARE(document.value(QStringLiteral("source")).toString(), QStringLiteral("aliyun_asr"));
+    QCOMPARE(document.value(QStringLiteral("lines")).toArray().size(), 3);
+    QVERIFY(document.value(QStringLiteral("synced")).toBool());
+    emit provider.completed(oldToken, {candidate()});
+    QCOMPARE(state.value(QStringLiteral("document")).toObject(), document);
+    LyricsCache cache(cachePath);
+    QVERIFY(!cache.read(query()));
+    QCOMPARE(storedJson, asrResponse());
+    service.setOffline(true);
+    service.load(query(), audio, {}, 3, false, false, storedJson);
+    QCOMPARE(state.value(QStringLiteral("document")).toObject(), document);
+    QVERIFY(state.value(QStringLiteral("stored")).toBool());
+    writeFile(json, "{broken");
+    service.importAsr(query(), json, 4);
+    QCOMPARE(state.value(QStringLiteral("error")).toString(), QStringLiteral("invalid_asr"));
+    QCOMPARE(state.value(QStringLiteral("document")).toObject(), document);
+    QCOMPARE(storedJson, asrResponse()); // Failed imports retain existing database contents.
+    service.importAsr(query(), temp.path(), 5);
+    QCOMPARE(state.value(QStringLiteral("error")).toString(), QStringLiteral("local_read"));
+    writeFile(sidecar, asrResponse());
+    service.load(query(), audio, {}, 6, false, true);
+    QCOMPARE(state.value(QStringLiteral("document")).toObject(), document);
+    writeFile(lrc, "[00:01]LRC wins");
+    service.load(query(), audio, {}, 7, false);
+    QCOMPARE(state.value(QStringLiteral("document")).toObject().value(QStringLiteral("source")).toString(),
+             QStringLiteral("local"));
+    QCOMPARE(provider.requests, 1); // Import, sidecars and offline cache need no provider.
+}
+
+void LyricsTest::comparisonSourcesAndLifecycle()
+{
+    QTemporaryDir temp;
+    const auto audio = temp.filePath(QStringLiteral("song.wav"));
+    const auto lrc = temp.filePath(QStringLiteral("song.LRC"));
+    const auto sidecar = temp.filePath(QStringLiteral("song.ASR.JSON"));
+    const auto cachePath = temp.filePath(QStringLiteral("cache"));
+    LyricsCache cache(cachePath);
+    QVERIFY(cache.write(query(), candidate().document));
+    MockProvider provider;
+    LyricsService service(&provider, cachePath);
+    QJsonObject state;
+    connect(&service, &LyricsService::changed, this, [&](const auto &value) { state = value; });
+    QSignalSpy stored(&service, &LyricsService::transcriptionReady);
+    const auto comparison = [&]() { return state.value(QStringLiteral("comparison")).toObject(); };
+    const auto source = [&](const QString &kind) { return comparison().value(kind).toObject(); };
+    service.setOffline(true);
+    service.load(query(), audio, {}, 1, false, false, asrResponse());
+    QCOMPARE(source("lrc").value("source").toString(), QStringLiteral("lrclib"));
+    QCOMPARE(source("asr").value("lines").toArray().size(), 3);
+    QCOMPARE(state.value("document").toObject(), source("asr"));
+    QCOMPARE(stored.count(), 0);
+    QVERIFY(!QJsonDocument(comparison()).toJson().contains("signature"));
+
+    writeFile(lrc, "[00:01.1]Local reference");
+    writeFile(sidecar, asrResponse());
+    service.load(query(), audio, {}, 2, false);
+    QCOMPARE(source("lrc").value("source").toString(), QStringLiteral("local"));
+    QCOMPARE(source("asr").value("lines").toArray().size(), 3);
+    QCOMPARE(state.value("document").toObject(), source("lrc"));
+    QCOMPARE(stored.count(), 0); // Collecting a comparison does not import or persist it.
+    const auto reference = source("lrc");
+    service.applyAsr(query(), asrResponse(), 3);
+    QCOMPARE(source("lrc"), reference);
+    QCOMPARE(state.value("document").toObject(), source("asr"));
+    const auto beforeInvalid = comparison();
+    service.applyAsr(query(), "invalid", 4);
+    QCOMPARE(comparison(), beforeInvalid);
+
+    service.setOffline(false);
+    service.search(query(), 5);
+    emit provider.completed(provider.token, {candidate()});
+    service.select(0, 5);
+    QCOMPARE(source("lrc").value("source").toString(), QStringLiteral("lrclib"));
+    QCOMPARE(source("asr"), beforeInvalid.value("asr").toObject());
+
+    auto next = query();
+    next.trackId = QStringLiteral("another-song");
+    service.setOffline(true);
+    service.load(next, temp.filePath("other.wav"), {}, 6, false);
+    QVERIFY(comparison().isEmpty());
+    QVERIFY(!state.contains("document"));
+    service.load(next, temp.filePath("other.wav"), QStringLiteral("[00:02]Custom"), 7, false,
+                 false, asrResponse());
+    QCOMPARE(source("lrc").value("source").toString(), QStringLiteral("custom"));
+    QCOMPARE(source("asr").value("lines").toArray().size(), 3);
+    service.clear(8);
+    QVERIFY(comparison().isEmpty());
+    QCOMPARE(provider.requests, 1); // Only the explicit search above used the provider.
+}
 
 void LyricsTest::timestampsAndMultipleTags()
 {

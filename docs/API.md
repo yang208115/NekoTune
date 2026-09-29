@@ -216,15 +216,31 @@ NekoTune 使用基于换行分隔的 JSON 协议，通过 Unix domain socket 进
 
 ## 歌词
 
-后端通过 LRCLIB 获取歌词，Qt/QML 客户端不会直接访问歌词服务。播放曲目后，后端按“同目录同名 `.lrc` → 本地歌词缓存 → LRCLIB”顺序加载；缓存文件位于 `QStandardPaths::AppDataLocation/lyrics-cache`，也可以由 `LyricsCache` 调用方指定目录。缓存采用内容 hash（或标题、歌手、专辑和时长）作为键，并通过 `QSaveFile` 原子替换。
+后端通过 LRCLIB 获取歌词，Qt/QML 客户端不会直接访问歌词服务。播放曲目后，后端按“同目录同名 `.lrc` → 同名 `.asr.json` → 数据库 ASR → 本地歌词缓存 → LRCLIB”顺序加载；缓存文件位于 `QStandardPaths::AppDataLocation/lyrics-cache`，也可以由 `LyricsCache` 调用方指定目录。缓存采用内容 hash（或标题、歌手、专辑和时长）作为键，并通过 `QSaveFile` 原子替换。
 
-歌词状态通过 `lyrics.changed` 事件广播，`lyrics.state` 可能为 `loading`、`waiting_metadata`、`searching`、`ready`、`instrumental`、`not_found`、`offline`、`error` 或 `candidates`。`lyrics.document.lines` 是后端解析后的 `{time_ms,text}` 数组，普通歌词在 `lyrics.document.plain_text` 中。
+歌词状态通过 `lyrics.changed` 事件广播，`lyrics.state` 可能为 `loading`、`waiting_metadata`、`searching`、`ready`、`instrumental`、`not_found`、`offline`、`error` 或 `candidates`。`lyrics.document.lines` 是后端解析后的 `{time_ms,text}` 数组，普通歌词在 `lyrics.document.plain_text` 中。ASR 句子额外包含 `end_time_ms`，以及可选 `words: [{time_ms,end_time_ms,start,length}]`；`start` 和 `length` 为句子原文的 UTF-16 偏移，供 QML 保留原文并高亮词语。ASR 来源为 `aliyun_asr`。
 
 歌词相关请求都需要带当前歌曲的 `track_id`（音频内容 hash）：
 
+- `lyrics.import_asr`：传入当前 `track_id`、`revision`（字符串）和本地 JSON 的绝对 `path`，导入阿里云 ASR 结果并将完整 JSON 保存到 `song_transcriptions(song_hash, transcription_json, updated_at)`。请求返回表示已排队；最终结果由 `lyrics.changed` 广播。无效文件返回 `invalid_asr`，读取失败或文件过大返回 `local_read`，已有歌词与数据库内容保留。只接受当前歌曲及版本，避免选择文件期间切歌后误应用。
 - `lyrics.refresh`：忽略缓存并重新获取当前歌曲歌词。
 - `lyrics.search`：按传入的 `title`、`artist`、`album` 手动搜索。
 - `lyrics.select`：按 `revision` 和候选 `index` 应用搜索结果。
-- `lyrics.set_offline`：设置离线模式。离线时仍会读取同名 LRC 和已有缓存，不发起网络请求。
+- `lyrics.set_offline`：设置离线模式。离线时仍会读取同名 LRC、ASR 和已有缓存，不发起网络请求。
+
+`lyrics.comparison` 可包含独立的 `asr` 和 `lrc` 文档，结构与 `lyrics.document` 相同，仅包含解析后的渲染数据。加载时收集同一歌曲可用的本地、数据库、缓存和自定义歌词；后续导入 ASR 或选择 LRC 更新对应文档并保留另一份。切歌、清空和重新加载会重建此数据，不额外发起网络请求或改变 `lyrics.document` 的来源优先级。某种格式不可用时对应字段缺省。
 
 自动结果只有在标题、歌手、专辑和时长满足精确匹配（时长误差不超过 2 秒）且候选明显领先时才会直接应用；其余情况通过 `lyrics.changed` 的 `candidates` 数组交给客户端选择。网络失败、未找到歌词和无效响应会使用不同状态，均不会改变播放器播放状态。
+
+### ASR 识别与设置
+
+- `settings.get`：返回 `data.settings`，包括 `api_key_configured`、默认模型 `model`（`fun-asr`），不包含 API Key。
+- `settings.update`：接受可选 `api_key`。省略密钥保留原值，空字符串清除。持久化成功后广播 `settings.changed`，密钥仅写入本机权限为 `0600` 的配置文件。
+- `lyrics.transcribe`：接受当前 `track_id`、字符串 `revision`、本次请求的 `language`（`ja/auto/zh/en/ko`，省略时为 `ja`）和 `model`（省略时为 `fun-asr`）。模型允许 `fun-asr`、`qwen-audio-3.1-asr-flash-filetrans`、`qwen-audio-3.0-asr-flash-filetrans`、`qwen3-asr-flash-filetrans`、`paraformer-v2`；其他值在上传前拒绝。模型和语言均不持久化，旧版配置中的语言值会被忽略。选择 `auto` 时省略语言参数，由模型使用自身默认语言范围；Qwen3 使用 `language`，其他模型使用 `language_hints`。需要已配置密钥且未开启歌词离线模式。同一时间仅执行一个任务。返回 `ok` 表示请求已启动，不代表识别完成。
+- `lyrics.cancel_asr`：停止本地请求和轮询，不保证已提交的云端任务停止或免于计费。
+
+`asr.changed` 广播 `{asr:{track_id,state,error}}`；`player.status` 也包含 `asr` 和脱敏 `settings`。状态依次为 `uploading/submitting/recognizing/downloading/saving/ready`，失败为 `error`，取消为 `canceled`。错误码包括 `missing_key/audio_file/unauthorized/rate_limited/network/timeout/invalid_response/invalid_asr/task_failed/storage`。切歌和歌词离线模式会停止未完成识别，结果按原歌曲 hash 存储，不串到新歌曲。
+
+云端提交返回有效 `task_id` 后，后端在开始轮询前同步写入 SQLite `asr_tasks(task_id, song_hash, model, language, created_at)`，以任务 ID 去重，保留同一歌曲的多次任务。仅备份；不新增 IPC 接口或恢复逻辑，失败/取消不删除记录。备份写入失败只记录控制台警告，不改变识别状态。手动导入 JSON 没有云端任务 ID，不创建此记录。
+
+下载或导入的原始 JSON 由后端保存，再发布普通 `lyrics.changed` 文档。数据库保存失败时保留当前可显示歌词并设置 `lyrics.storage_warning`；下次启动不保证恢复失败的写入。原始 JSON 不通过播放器状态广播，`lyrics.document` 仍只含用于渲染的字段。

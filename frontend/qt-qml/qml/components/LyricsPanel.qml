@@ -1,11 +1,16 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Dialogs
 
 ColumnLayout {
     id: root
     property var song: ({})
     property var lyrics: ({})
+    property var asr: ({})
+    property var asrSettings: ({})
+    readonly property bool asrBusy: ["uploading", "submitting", "recognizing", "downloading", "saving"].indexOf(asr.state) >= 0
+    signal settingsRequested()
     property real position: 0
     property bool connected: false
 
@@ -19,6 +24,8 @@ ColumnLayout {
 
     onSongChanged: {
         if (searchPopup.trackId !== String(song.song_hash || "")) searchPopup.close()
+        if (importDialog.trackId !== String(song.song_hash || "")) importDialog.close()
+        if (asrPopup.trackId !== String(song.song_hash || "")) asrPopup.close()
     }
 
     RowLayout {
@@ -32,6 +39,18 @@ ColumnLayout {
             font.pixelSize: 12
             font.weight: Font.Medium
             elide: Text.ElideRight
+        }
+
+        TextButton {
+            text: i18n.text("lyrics_import_asr", i18n.language)
+            implicitHeight: 28
+            subtle: true
+            enabled: root.connected && Boolean(root.song.song_hash) && !root.busy
+            onClicked: {
+                importDialog.trackId = String(root.song.song_hash)
+                importDialog.revision = String(root.current.revision)
+                importDialog.open()
+            }
         }
 
         TextButton {
@@ -52,11 +71,37 @@ ColumnLayout {
         }
     }
 
+    RowLayout {
+        Layout.fillWidth: true
+        spacing: 8
+        TextButton {
+            objectName: "transcribeLyricsButton"
+            text: i18n.text(root.asrBusy ? "asr_cancel" : "asr_transcribe", i18n.language)
+            enabled: root.connected && Boolean(root.song.song_hash) && (!root.current.offline || root.asrBusy)
+            onClicked: {
+                if (root.asrBusy) ipcClient.cancelAsr()
+                else if (!root.asrSettings.api_key_configured) root.settingsRequested()
+                else asrPopup.openForSong()
+            }
+        }
+        Label {
+            Layout.fillWidth: true
+            text: root.asr.track_id === root.song.song_hash && root.asr.state
+                  ? i18n.text(root.asr.state === "error" ? "asr_error_" + root.asr.error : "asr_" + root.asr.state, i18n.language)
+                  : i18n.text("asr_upload_short", i18n.language)
+            color: root.asr.state === "error" ? "#e8a9c3" : "#a59caf"
+            wrapMode: Text.Wrap
+            textFormat: Text.PlainText
+            font.pixelSize: 12
+        }
+    }
+
     // Status warning
     Label {
         Layout.fillWidth: true
-        visible: root.current.state !== "ready" || Boolean(root.current.cache_warning)
-        text: root.current.cache_warning ? i18n.text("lyrics_cache_warning", i18n.language)
+        visible: root.current.state !== "ready" || Boolean(root.current.cache_warning) || Boolean(root.current.storage_warning)
+        text: root.current.storage_warning ? i18n.text("asr_error_storage", i18n.language)
+             : root.current.cache_warning ? i18n.text("lyrics_cache_warning", i18n.language)
              : root.current.state === "error" ? i18n.text("lyrics_error_" + root.current.error, i18n.language)
              : i18n.text("lyrics_" + (root.current.state || "loading"), i18n.language)
         color: root.current.state === "error" ? "#e8a9c3" : "#8e879c"
@@ -72,6 +117,117 @@ ColumnLayout {
         plainText: String(root.document.plain_text || "")
         position: root.position
         onSeekRequested: pos => root.seekRequested(pos)
+    }
+
+    Popup {
+        id: asrPopup
+        objectName: "asrLanguagePopup"
+        property string trackId: ""
+        property string revision: ""
+        readonly property var languages: ["ja", "auto", "zh", "en", "ko"]
+        readonly property var models: ["fun-asr", "qwen-audio-3.1-asr-flash-filetrans",
+                                      "qwen-audio-3.0-asr-flash-filetrans", "qwen3-asr-flash-filetrans", "paraformer-v2"]
+        function openForSong() {
+            trackId = String(root.song.song_hash || "")
+            revision = String(root.current.revision)
+            asrLanguage.currentIndex = 0
+            asrModel.currentIndex = 0
+            open()
+        }
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: Math.min(parent.width - 48, 560)
+        padding: 24
+        modal: true
+        focus: true
+        background: Rectangle { color: "#181423"; radius: 16; border.color: "#342d45" }
+
+        ColumnLayout {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            spacing: 16
+            Label {
+                text: i18n.text("asr_transcribe", i18n.language)
+                color: "#f6f3fa"
+                font.pixelSize: 20
+                font.weight: Font.Bold
+            }
+            Label {
+                Layout.fillWidth: true
+                text: root.song.title || ""
+                visible: text.length > 0
+                textFormat: Text.PlainText
+                elide: Text.ElideRight
+                color: "#a59caf"
+            }
+            Label { text: i18n.text("asr_model", i18n.language); color: "#d8d2e4" }
+            ComboBox {
+                id: asrModel
+                objectName: "asrRequestModel"
+                Layout.fillWidth: true
+                model: ["Fun-ASR", "Qwen-Audio 3.1 ASR Flash Filetrans", "Qwen-Audio 3.0 ASR Flash Filetrans",
+                        "Qwen3 ASR Flash Filetrans", "Paraformer v2"]
+                currentIndex: 0
+                palette.button: "#241e31"
+                palette.buttonText: "#f6f3fa"
+                palette.text: "#f6f3fa"
+                palette.base: "#241e31"
+                palette.highlight: "#4b3e67"
+            }
+            Label { text: i18n.text("asr_language", i18n.language); color: "#d8d2e4" }
+            ComboBox {
+                id: asrLanguage
+                objectName: "asrRequestLanguage"
+                Layout.fillWidth: true
+                model: ["日本語", i18n.text("asr_language_auto", i18n.language), "中文", "English", "한국어"]
+                currentIndex: 0
+                palette.button: "#241e31"
+                palette.buttonText: "#f6f3fa"
+                palette.text: "#f6f3fa"
+                palette.base: "#241e31"
+                palette.highlight: "#4b3e67"
+            }
+            Label {
+                Layout.fillWidth: true
+                text: i18n.text("asr_upload_short", i18n.language)
+                wrapMode: Text.Wrap
+                color: "#a59caf"
+                font.pixelSize: 12
+            }
+            RowLayout {
+                Layout.alignment: Qt.AlignRight
+                spacing: 10
+                TextButton {
+                    objectName: "cancelAsrUpload"
+                    text: i18n.text("cancel", i18n.language)
+                    subtle: true
+                    onClicked: asrPopup.close()
+                }
+                TextButton {
+                    objectName: "startAsrUpload"
+                    text: i18n.text("asr_start_upload", i18n.language)
+                    enabled: root.connected && !root.asrBusy && !root.current.offline
+                             && asrPopup.trackId === String(root.song.song_hash || "")
+                             && asrPopup.revision === String(root.current.revision)
+                    onClicked: {
+                        ipcClient.transcribeLyrics(asrPopup.trackId, asrPopup.revision,
+                                                   asrPopup.languages[asrLanguage.currentIndex],
+                                                   asrPopup.models[asrModel.currentIndex])
+                        asrPopup.close()
+                    }
+                }
+            }
+        }
+    }
+
+    FileDialog {
+        id: importDialog
+        property string trackId: ""
+        property string revision: ""
+        title: i18n.text("lyrics_import_asr", i18n.language)
+        nameFilters: ["ASR JSON (*.json)"]
+        fileMode: FileDialog.OpenFile
+        onAccepted: ipcClient.importAsrLyrics(trackId, revision, selectedFile.toString())
     }
 
     // Search Lyrics Modal Popup

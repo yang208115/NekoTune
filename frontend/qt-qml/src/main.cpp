@@ -40,7 +40,7 @@ int main(int argc, char *argv[])
     commandLine.addHelpOption();
     commandLine.addOption(QCommandLineOption(
         {QStringLiteral("lyrics-debug"), QStringLiteral("debug-lyrics")},
-        QStringLiteral("Show the lyrics timing diagnostics panel.")));
+        QStringLiteral("Enable the lyrics diagnostics page in the sidebar.")));
     commandLine.process(app);
 
     IpcClient ipcClient;

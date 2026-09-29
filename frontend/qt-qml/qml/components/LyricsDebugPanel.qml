@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -5,11 +7,15 @@ import QtQuick.Layouts
 Rectangle {
     id: root
 
+    property var translator: null
     property var lyrics: ({})
     property var song: ({})
     property real position: 0
     property real duration: 0
     property string playbackState: "stopped"
+    property bool comparisonMode: false
+    readonly property var comparison: lyrics.comparison || ({})
+    signal seekRequested(real positionMs)
     readonly property var document: lyrics.document || ({})
     readonly property var lines: document.lines || []
     readonly property int activeIndex: findActiveIndex()
@@ -20,9 +26,6 @@ Rectangle {
     radius: 14
     border.color: "#e8a9c3"
     border.width: 1
-    opacity: 0.97
-    z: 100
-
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 14
@@ -30,18 +33,36 @@ Rectangle {
 
         RowLayout {
             Layout.fillWidth: true
+            Layout.preferredHeight: 28
             Label {
                 Layout.fillWidth: true
-                text: "LYRICS DEBUG"
+                text: root.tr("lyrics_debug_page")
                 color: "#e8a9c3"
                 font.bold: true
-                font.letterSpacing: 1.4
+                font.pixelSize: 18
             }
             Label {
                 text: "--lyrics-debug"
                 color: "#89929a"
                 font.pixelSize: 11
             }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            TextButton {
+                objectName: "timelineMode"
+                subtle: root.comparisonMode
+                text: root.tr("lyrics_debug_timeline")
+                onClicked: root.comparisonMode = false
+            }
+            TextButton {
+                objectName: "comparisonMode"
+                subtle: !root.comparisonMode
+                text: root.tr("lyrics_debug_compare")
+                onClicked: root.comparisonMode = true
+            }
+            Item { Layout.fillWidth: true }
         }
 
         GridLayout {
@@ -56,14 +77,14 @@ Rectangle {
             Label { Layout.fillWidth: true; text: String(root.lyrics.state || "-") + " / " + String(root.document.source || "-"); color: "#f7f4ed"; elide: Text.ElideRight }
 
             Label { text: "position"; color: "#89929a" }
-            Label { Layout.fillWidth: true; text: formatMs(root.position) + " (" + String(Math.round(root.position)) + " ms)"; color: "#f7f4ed"; elide: Text.ElideRight }
+            Label { Layout.fillWidth: true; text: root.formatMs(root.position) + " (" + String(Math.round(root.position)) + " ms)"; color: "#f7f4ed"; elide: Text.ElideRight }
             Label { text: "duration"; color: "#89929a" }
-            Label { Layout.fillWidth: true; text: formatMs(root.duration) + " (" + String(Math.round(root.duration)) + " ms)"; color: "#f7f4ed"; elide: Text.ElideRight }
+            Label { Layout.fillWidth: true; text: root.formatMs(root.duration) + " (" + String(Math.round(root.duration)) + " ms)"; color: "#f7f4ed"; elide: Text.ElideRight }
 
             Label { text: "active"; color: "#89929a" }
-            Label { Layout.fillWidth: true; text: String(root.activeIndex) + " @ " + lineTime(root.activeLine); color: "#f7f4ed"; elide: Text.ElideRight }
+            Label { Layout.fillWidth: true; text: String(root.activeIndex) + " @ " + root.lineTime(root.activeLine); color: "#f7f4ed"; elide: Text.ElideRight }
             Label { text: "next"; color: "#89929a" }
-            Label { Layout.fillWidth: true; text: lineTime(root.nextLine) + " (Δ " + deltaToNext() + ")"; color: "#f7f4ed"; elide: Text.ElideRight }
+            Label { Layout.fillWidth: true; text: root.lineTime(root.nextLine) + " (Δ " + root.deltaToNext() + ")"; color: "#f7f4ed"; elide: Text.ElideRight }
 
             Label { text: "track"; color: "#89929a" }
             Label { Layout.columnSpan: 3; Layout.fillWidth: true; text: String(root.song.title || "-") + " · " + String(root.song.artist || "-"); color: "#f7f4ed"; elide: Text.ElideRight }
@@ -71,6 +92,7 @@ Rectangle {
 
         Label {
             Layout.fillWidth: true
+            visible: !root.comparisonMode
             text: "Current: " + String(root.activeLine.text || "(none)")
             color: "#cbb8ff"
             elide: Text.ElideRight
@@ -81,6 +103,7 @@ Rectangle {
             id: lineList
             Layout.fillWidth: true
             Layout.fillHeight: true
+            visible: !root.comparisonMode
             clip: true
             spacing: 2
             model: root.lines
@@ -88,12 +111,13 @@ Rectangle {
             ScrollBar.vertical: ScrollBar {}
 
             delegate: Rectangle {
+                id: lineRow
                 required property var modelData
                 required property int index
                 width: lineList.width - 12
                 height: 26
                 radius: 5
-                color: index === root.activeIndex ? "#49384b" : "transparent"
+                color: lineRow.index === root.activeIndex ? "#49384b" : "transparent"
 
                 RowLayout {
                     anchors.fill: parent
@@ -102,14 +126,14 @@ Rectangle {
                     spacing: 8
                     Label {
                         Layout.preferredWidth: 86
-                        text: String(modelData.time_ms) + " ms"
-                        color: index === root.activeIndex ? "#e8a9c3" : "#89929a"
+                        text: String(lineRow.modelData.time_ms) + " ms"
+                        color: lineRow.index === root.activeIndex ? "#e8a9c3" : "#89929a"
                         font.pixelSize: 11
                     }
                     Label {
                         Layout.fillWidth: true
-                        text: modelData.text
-                        color: index === root.activeIndex ? "#f7f4ed" : "#a7adb3"
+                        text: lineRow.modelData.text
+                        color: lineRow.index === root.activeIndex ? "#f7f4ed" : "#a7adb3"
                         elide: Text.ElideRight
                         textFormat: Text.PlainText
                     }
@@ -121,6 +145,50 @@ Rectangle {
                     positionViewAtIndex(currentIndex, ListView.Contain)
             }
         }
+
+        Label {
+            Layout.fillWidth: true
+            visible: root.comparisonMode
+            text: root.tr("lyrics_debug_delta") + ": "
+                  + (asrTimeline.activeIndex >= 0 && lrcTimeline.activeIndex >= 0
+                     ? String(Number(asrTimeline.activeLine.time_ms) - Number(lrcTimeline.activeLine.time_ms)) + " ms" : "—")
+            color: "#cbb8ff"
+            wrapMode: Text.Wrap
+        }
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            visible: root.comparisonMode
+            spacing: 8
+            LyricsDebugTimeline {
+                id: asrTimeline
+                objectName: "asrTimeline"
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                Layout.preferredWidth: 1
+                title: "ASR"
+                document: root.comparison.asr || ({})
+                position: root.position
+                emptyText: root.tr("lyrics_debug_no_asr")
+                onSeekRequested: positionMs => root.seekRequested(positionMs)
+            }
+            LyricsDebugTimeline {
+                id: lrcTimeline
+                objectName: "lrcTimeline"
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                Layout.preferredWidth: 1
+                title: "LRC"
+                document: root.comparison.lrc || ({})
+                position: root.position
+                emptyText: root.tr("lyrics_debug_no_lrc")
+                onSeekRequested: positionMs => root.seekRequested(positionMs)
+            }
+        }
+    }
+
+    function tr(key) {
+        return root.translator ? root.translator.text(key, root.translator.language) : key
     }
 
     function findActiveIndex() {

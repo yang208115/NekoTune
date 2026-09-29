@@ -1,4 +1,5 @@
 #include "lyrics/lyrics_service.h"
+#include "lyrics/asr_parser.h"
 #include "lyrics/lrc_parser.h"
 #include "lyrics/lrclib_provider.h"
 
@@ -35,7 +36,7 @@ void LyricsService::clear(quint64 revision)
 }
 
 void LyricsService::load(const LyricsQuery &query, const QString &path, const QString &customLyrics, quint64 revision,
-                         bool metadataReady, bool force)
+                         bool metadataReady, bool force, const QByteArray &storedAsr)
 {
     cancel();
     m_revision = revision;
@@ -55,6 +56,35 @@ void LyricsService::load(const LyricsQuery &query, const QString &path, const QS
         }
     }
     QFile local(localPath);
+    // Collect available alternatives without changing playback priority, requesting
+    // recognition, or exposing the raw transcription metadata to clients.
+    LyricsDocument customDocument;
+    customDocument.source = QStringLiteral("custom");
+    customDocument.syncedLyrics = customLyrics;
+    customDocument.validate();
+    rememberComparison(customDocument);
+    const auto cached = m_cache.read(query);
+    if (cached)
+        rememberComparison(*cached);
+    LyricsDocument asrDocument;
+    asrDocument.source = QStringLiteral("aliyun_asr");
+    if (storedAsr.size() <= 2 * 1024 * 1024) {
+        asrDocument.asrLyrics = QString::fromUtf8(storedAsr);
+        rememberComparison(asrDocument);
+    }
+    if (local.exists()) {
+        const auto asrName = audio.completeBaseName() + QStringLiteral(".asr.json");
+        for (const auto &sidecar : sidecars) {
+            if (sidecar.fileName().compare(asrName, Qt::CaseInsensitive) != 0)
+                continue;
+            QFile asrFile(sidecar.absoluteFilePath());
+            if (asrFile.open(QIODevice::ReadOnly) && asrFile.size() <= 2 * 1024 * 1024) {
+                asrDocument.asrLyrics = QString::fromUtf8(asrFile.read(2 * 1024 * 1024 + 1));
+                rememberComparison(asrDocument);
+            }
+            break;
+        }
+    }
     if (local.exists()) {
         // Presence of a sidecar is authoritative, including malformed or unreadable
         // files.
@@ -77,8 +107,21 @@ void LyricsService::load(const LyricsQuery &query, const QString &path, const QS
             apply(document, false);
         return;
     }
+    const auto asrName = audio.completeBaseName() + QStringLiteral(".asr.json");
+    for (const auto &sidecar : sidecars) {
+        if (sidecar.fileName().compare(asrName, Qt::CaseInsensitive) == 0) {
+            importAsr(query, sidecar.absoluteFilePath(), revision);
+            return;
+        }
+    }
     if (!force) {
-        if (const auto cached = m_cache.read(query)) {
+        if (!storedAsr.isEmpty()) {
+            applyAsr(query, storedAsr, revision, false);
+            return;
+        }
+        if (cached) {
+            if (!cached->asrLyrics.isEmpty())
+                emit transcriptionReady(query.trackId, cached->asrLyrics.toUtf8());
             m_snapshot.insert(QStringLiteral("cached"), true);
             apply(*cached, false);
             return;
@@ -111,9 +154,49 @@ void LyricsService::load(const LyricsQuery &query, const QString &path, const QS
     m_provider->request(query, m_token, false);
 }
 
+void LyricsService::importAsr(const LyricsQuery &query, const QString &path, quint64 revision)
+{
+    cancel();
+    if (m_query.trackId != query.trackId)
+        m_snapshot = {};
+    m_query = query;
+    m_revision = revision;
+    QFile file(path);
+    if (!QFileInfo(file).isFile() || !file.open(QIODevice::ReadOnly) || file.size() > 2 * 1024 * 1024) {
+        publish(QStringLiteral("error"), QStringLiteral("local_read"));
+        return;
+    }
+    applyAsr(query, file.read(2 * 1024 * 1024 + 1), revision);
+}
+
+void LyricsService::applyAsr(const LyricsQuery &query, const QByteArray &json, quint64 revision, bool persist)
+{
+    cancel();
+    if (m_query.trackId != query.trackId)
+        m_snapshot = {};
+    m_query = query;
+    m_revision = revision;
+    const auto lines = json.size() <= 2 * 1024 * 1024 ? AsrParser::parse(json) : QVector<LyricLine>{};
+    if (lines.isEmpty()) {
+        publish(QStringLiteral("error"), QStringLiteral("invalid_asr"));
+        return;
+    }
+    LyricsDocument document;
+    document.source = QStringLiteral("aliyun_asr");
+    document.matched = query;
+    document.asrLyrics = AsrParser::serialize(lines);
+    m_snapshot.remove(QStringLiteral("cached"));
+    if (persist)
+        emit transcriptionReady(query.trackId, json);
+    m_snapshot.insert(QStringLiteral("stored"), !persist);
+    apply(document, false);
+}
+
 void LyricsService::search(const LyricsQuery &query, quint64 revision)
 {
     cancel();
+    if (m_query.trackId != query.trackId)
+        m_snapshot = {};
     m_revision = revision;
     m_query = query;
     m_search = true;
@@ -250,11 +333,25 @@ void LyricsService::publish(const QString &state, const QString &error)
 
 void LyricsService::apply(const LyricsDocument &document, bool cache)
 {
+    rememberComparison(document);
     m_snapshot.remove(QStringLiteral("candidates"));
     m_snapshot.insert(QStringLiteral("document"), document.toJson());
     const bool cacheFailed = cache && !m_cache.write(m_query, document);
     m_snapshot.insert(QStringLiteral("cache_warning"), cacheFailed);
     publish(document.instrumental ? QStringLiteral("instrumental") : QStringLiteral("ready"));
+}
+
+void LyricsService::rememberComparison(const LyricsDocument &document)
+{
+    auto comparison = m_snapshot.value(QStringLiteral("comparison")).toObject();
+    // Parse each format independently even if a cache entry contains both.
+    auto lrc = document;
+    lrc.asrLyrics.clear();
+    if (!LrcParser::parse(lrc.syncedLyrics).isEmpty())
+        comparison.insert(QStringLiteral("lrc"), lrc.toJson());
+    if (!AsrParser::parse(document.asrLyrics.toUtf8()).isEmpty())
+        comparison.insert(QStringLiteral("asr"), document.toJson());
+    m_snapshot.insert(QStringLiteral("comparison"), comparison);
 }
 
 } // namespace nekotune

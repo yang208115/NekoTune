@@ -54,6 +54,7 @@ std::optional<LyricsDocument> LyricsCache::read(const LyricsQuery &query) const
     result.source = object.value(QStringLiteral("source")).toString();
     result.syncedLyrics = object.value(QStringLiteral("synced_lyrics")).toString();
     result.plainLyrics = object.value(QStringLiteral("plain_lyrics")).toString();
+    result.asrLyrics = object.value(QStringLiteral("asr_lyrics")).toString();
     result.instrumental = object.value(QStringLiteral("instrumental")).toBool();
     result.providerId = object.value(QStringLiteral("provider_id")).toInteger();
     result.matched = {object.value(QStringLiteral("matched_title")).toString(),
@@ -78,6 +79,7 @@ bool LyricsCache::write(const LyricsQuery &query, const LyricsDocument &document
                              {QStringLiteral("key"), keyFor(query)},
                              {QStringLiteral("source"), document.source},
                              {QStringLiteral("synced_lyrics"), document.syncedLyrics},
+                             {QStringLiteral("asr_lyrics"), document.asrLyrics},
                              {QStringLiteral("plain_lyrics"), document.isSynced() ? QString() : document.plainLyrics},
                              {QStringLiteral("instrumental"), document.instrumental},
                              {QStringLiteral("provider_id"), document.providerId},

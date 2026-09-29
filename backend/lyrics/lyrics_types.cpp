@@ -1,4 +1,5 @@
 #include "lyrics/lyrics_types.h"
+#include "lyrics/asr_parser.h"
 #include "lyrics/lrc_parser.h"
 
 #include <QJsonArray>
@@ -9,7 +10,10 @@ void LyricsDocument::validate()
 {
     if (!LrcParser::looksLikeLrc(syncedLyrics))
         syncedLyrics.clear();
+    if (AsrParser::parse(asrLyrics.toUtf8()).isEmpty())
+        asrLyrics.clear();
     if (instrumental) {
+        asrLyrics.clear();
         syncedLyrics.clear();
         plainLyrics.clear();
     }
@@ -17,11 +21,12 @@ void LyricsDocument::validate()
 
 QJsonObject LyricsDocument::toJson() const
 {
+    const auto lines = asrLyrics.isEmpty() ? LrcParser::parse(syncedLyrics) : AsrParser::parse(asrLyrics.toUtf8());
     return {{QStringLiteral("source"), source},
             {QStringLiteral("synced"), isSynced()},
             {QStringLiteral("instrumental"), instrumental},
             {QStringLiteral("plain_text"), plainLyrics},
-            {QStringLiteral("lines"), LrcParser::toJson(LrcParser::parse(syncedLyrics))}};
+            {QStringLiteral("lines"), LrcParser::toJson(lines)}};
 }
 
 QJsonObject LyricsCandidate::toJson() const

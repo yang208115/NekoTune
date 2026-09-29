@@ -39,6 +39,10 @@ public:
     Q_INVOKABLE void updateSongMetadata(int songId, const QString &customTitle, const QString &artist,
                                         const QString &lyrics);
     Q_INVOKABLE void refreshStatus();
+    Q_INVOKABLE void updateSettings(const QVariantMap &values);
+    Q_INVOKABLE void transcribeLyrics(const QString &trackId, const QString &revision, const QString &language, const QString &model);
+    Q_INVOKABLE void cancelAsr();
+    Q_INVOKABLE void importAsrLyrics(const QString &trackId, const QString &revision, const QString &fileUrl);
     Q_INVOKABLE void refreshLyrics(const QString &trackId);
     Q_INVOKABLE void searchLyrics(const QString &trackId, const QString &title, const QString &artist,
                                   const QString &album);
@@ -46,6 +50,7 @@ public:
     Q_INVOKABLE void setLyricsOffline(bool offline);
 
 signals:
+    void settingsSaved(bool success, const QString &message);
     void connectedChanged();
     void statusChanged();
     void errorChanged();

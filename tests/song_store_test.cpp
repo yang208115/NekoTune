@@ -14,12 +14,79 @@ class SongStoreTest final : public QObject {
 private slots:
     void usesBuildDatabasePathInDevelopment();
     void storesAndUpdatesSongMetadata();
+    void storesOriginalTranscription();
+    void backsUpAsrTasksAndMigratesExistingDatabase();
     void storesAndRestoresQueue();
     void migratesLegacyQueue();
     void migratesFoldersToPlaylists();
     void storesIndependentPlaylists();
     void rejectsInvalidFolderMigration();
 };
+
+void SongStoreTest::storesOriginalTranscription()
+{
+    QTemporaryDir directory;
+    const auto path = directory.filePath(QStringLiteral("songs.sqlite3"));
+    const QByteArray original = R"({"file_url":"signed-url","properties":{"channels":[0,1]},"transcripts":[],"extra":{"confidence":0.92}})";
+    {
+        nekotune::SongStore store(path);
+        QVERIFY(store.getOrCreateSong(QStringLiteral("hash"), QStringLiteral("song.wav")));
+        QVERIFY(store.saveTranscription(QStringLiteral("hash"), original));
+        QCOMPARE(store.transcription(QStringLiteral("hash")), original);
+        QVERIFY(!store.saveTranscription(QStringLiteral("missing-song"), original));
+        QVERIFY(!store.saveTranscription(QStringLiteral("hash"), "not json"));
+        QCOMPARE(store.transcription(QStringLiteral("hash")), original);
+    }
+    nekotune::SongStore restored(path);
+    QCOMPARE(restored.transcription(QStringLiteral("hash")), original);
+    QVERIFY(restored.transcription(QStringLiteral("other-hash")).isEmpty());
+    QVERIFY(restored.saveTranscription(QStringLiteral("hash"), "{\"replacement\":true}"));
+    QCOMPARE(restored.transcription(QStringLiteral("hash")), QByteArray("{\"replacement\":true}"));
+}
+
+void SongStoreTest::backsUpAsrTasksAndMigratesExistingDatabase()
+{
+    QTemporaryDir directory;
+    const auto path = directory.filePath("songs.sqlite3");
+    const QString connection = QStringLiteral("asr-task-backup-test");
+    {
+        nekotune::SongStore store(path, connection);
+        QVERIFY(store.getOrCreateSong("song-hash", "song.wav"));
+        QVERIFY(store.saveTranscription("song-hash", "{\"original\":true}"));
+        QSqlQuery query(QSqlDatabase::database(connection));
+        // Model the schema from before task backups were added.
+        QVERIFY(query.exec("DROP TABLE asr_tasks"));
+    }
+    {
+        nekotune::SongStore store(path, connection);
+        QVERIFY2(store.isReady(), qPrintable(store.errorString()));
+        QVERIFY(store.saveAsrTask("task-one", "song-hash", "fun-asr", "ja"));
+        QVERIFY(store.saveAsrTask("task-two", "song-hash", "qwen3-asr-flash-filetrans", "en"));
+        QVERIFY(store.saveAsrTask("task-one", "song-hash", "paraformer-v2", "auto"));
+        QVERIFY(!store.saveAsrTask("orphan", "missing-song", "fun-asr", "ja"));
+        QVERIFY(!store.saveAsrTask("", "song-hash", "fun-asr", "ja"));
+        QVERIFY(!store.saveAsrTask("task-three", "song-hash", "", "ja"));
+        QVERIFY(!store.saveAsrTask("task-three", "song-hash", "fun-asr", ""));
+    }
+    {
+        nekotune::SongStore store(path, connection);
+        QVERIFY(store.isReady());
+        QCOMPARE(store.transcription("song-hash"), QByteArray("{\"original\":true}"));
+        QSqlQuery query(QSqlDatabase::database(connection));
+        QVERIFY(query.exec("SELECT task_id, song_hash, model, language, created_at FROM asr_tasks ORDER BY task_id"));
+        QVERIFY(query.next());
+        QCOMPARE(query.value(0).toString(), QStringLiteral("task-one"));
+        QCOMPARE(query.value(1).toString(), QStringLiteral("song-hash"));
+        QCOMPARE(query.value(2).toString(), QStringLiteral("fun-asr"));
+        QCOMPARE(query.value(3).toString(), QStringLiteral("ja"));
+        QVERIFY(!query.value(4).toString().isEmpty());
+        QVERIFY(query.next());
+        QCOMPARE(query.value(0).toString(), QStringLiteral("task-two"));
+        QCOMPARE(query.value(2).toString(), QStringLiteral("qwen3-asr-flash-filetrans"));
+        QCOMPARE(query.value(3).toString(), QStringLiteral("en"));
+        QVERIFY(!query.next());
+    }
+}
 
 void SongStoreTest::usesBuildDatabasePathInDevelopment()
 {

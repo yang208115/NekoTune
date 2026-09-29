@@ -144,6 +144,29 @@ void IpcClient::updateSongMetadata(int songId, const QString &customTitle, const
                                                         });
 }
 
+void IpcClient::updateSettings(const QVariantMap &values)
+{
+    if (!connected()) { emit settingsSaved(false, QStringLiteral("Backend is not connected")); return; }
+    sendRequest(QStringLiteral("settings.update"), QJsonObject::fromVariantMap(values));
+}
+
+void IpcClient::transcribeLyrics(const QString &trackId, const QString &revision, const QString &language, const QString &model)
+{
+    sendRequest(QStringLiteral("lyrics.transcribe"), {{QStringLiteral("track_id"), trackId},
+                                                     {QStringLiteral("revision"), revision},
+                                                     {QStringLiteral("language"), language},
+                                                     {QStringLiteral("model"), model}});
+}
+
+void IpcClient::cancelAsr() { sendRequest(QStringLiteral("lyrics.cancel_asr")); }
+
+void IpcClient::importAsrLyrics(const QString &trackId, const QString &revision, const QString &fileUrl)
+{
+    sendRequest(QStringLiteral("lyrics.import_asr"), {{QStringLiteral("track_id"), trackId},
+                                                     {QStringLiteral("revision"), revision},
+                                                     {QStringLiteral("path"), QUrl(fileUrl).toLocalFile()}});
+}
+
 void IpcClient::refreshLyrics(const QString &trackId)
 {
     sendRequest(QStringLiteral("lyrics.refresh"), {{QStringLiteral("track_id"), trackId}});
@@ -252,7 +275,11 @@ void IpcClient::handlePayload(const QJsonObject &payload)
 {
     const auto eventName = payload.value(QStringLiteral("event")).toString();
     if (!eventName.isEmpty()) {
-        if (eventName == QStringLiteral("server.connected")) {
+        if (eventName == QStringLiteral("settings.changed") || eventName == QStringLiteral("asr.changed")) {
+            const auto key = eventName.section(QLatin1Char('.'), 0, 0);
+            m_status.insert(key, payload.value(key).toObject().toVariantMap());
+            emit statusChanged();
+        } else if (eventName == QStringLiteral("server.connected")) {
             mergeStatus(payload.value(QStringLiteral("data")).toObject());
         } else if (eventName == QStringLiteral("player.state_changed")) {
             m_status.insert(QStringLiteral("state"), payload.value(QStringLiteral("state")).toString());
@@ -287,12 +314,11 @@ void IpcClient::handlePayload(const QJsonObject &payload)
     }
 
     const auto id = payload.value(QStringLiteral("id"));
-    if (id.isDouble()) {
-        m_pendingRequests.remove(id.toInt());
-    }
+    const auto method = id.isDouble() ? m_pendingRequests.take(id.toInt()) : QString();
 
     if (payload.value(QStringLiteral("status")).toString() == QStringLiteral("error")) {
         setError(payload.value(QStringLiteral("message")).toString());
+        if (method == QStringLiteral("settings.update")) emit settingsSaved(false, m_error);
         return;
     }
 
@@ -300,6 +326,7 @@ void IpcClient::handlePayload(const QJsonObject &payload)
     if (!data.isEmpty()) {
         mergeStatus(data);
     }
+    if (method == QStringLiteral("settings.update")) emit settingsSaved(true, {});
 }
 
 void IpcClient::mergeStatus(const QJsonObject &data)

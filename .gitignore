@@ -28,3 +28,6 @@ Testing/
 # Codex local metadata
 /.agents/
 /.codex/
+
+# Local ASR credentials
+nekotune-settings.json

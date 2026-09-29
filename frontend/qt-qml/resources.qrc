@@ -9,10 +9,12 @@
         <file>qml/components/IconButton.qml</file>
         <file>qml/components/LrcLyrics.qml</file>
         <file>qml/components/LyricsDebugPanel.qml</file>
+        <file>qml/components/LyricsDebugTimeline.qml</file>
         <file>qml/components/LyricsPanel.qml</file>
         <file>qml/components/PlayerPanel.qml</file>
         <file>qml/components/PlayerSlider.qml</file>
         <file>qml/components/SeekSlider.qml</file>
+        <file>qml/components/SettingsPanel.qml</file>
         <file>qml/components/QueuePanel.qml</file>
         <file>qml/components/TextButton.qml</file>
     </qresource>

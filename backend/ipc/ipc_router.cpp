@@ -69,6 +69,16 @@ QJsonObject IpcRouter::dispatch(const QJsonObject &request) const
         if (!params.value(QStringLiteral("offline")).isBool())
             return error(QStringLiteral("offline must be a boolean"));
         result = m_player.setLyricsOffline(params.value(QStringLiteral("offline")).toBool());
+    } else if (method == QStringLiteral("settings.get")) {
+        result = m_player.settings();
+    } else if (method == QStringLiteral("settings.update")) {
+        result = m_player.updateSettings(params);
+    } else if (method == QStringLiteral("lyrics.transcribe")) {
+        result = m_player.transcribeLyrics(params);
+    } else if (method == QStringLiteral("lyrics.cancel_asr")) {
+        result = m_player.cancelAsr();
+    } else if (method == QStringLiteral("lyrics.import_asr")) {
+        result = m_player.importAsrLyrics(params);
     } else if (method == QStringLiteral("lyrics.refresh")) {
         result = m_player.refreshLyrics(params);
     } else if (method == QStringLiteral("lyrics.search")) {

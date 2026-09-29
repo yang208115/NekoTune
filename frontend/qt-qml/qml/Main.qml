@@ -43,7 +43,7 @@ ApplicationWindow {
     readonly property color lavender: "#cbb8ff"
     readonly property color rose: "#e8a9c3"
 
-    // View mode: "queue" (library & queue table) or "lyrics" (immersive artwork & lyrics)
+    // Main content page: queue, lyrics, settings, or CLI-enabled lyrics diagnostics.
     property string viewMode: "queue"
 
     FileDialog {
@@ -324,6 +324,23 @@ ApplicationWindow {
                         }
                     }
 
+                    TextButton {
+                        objectName: "lyricsDebugNavigation"
+                        Layout.fillWidth: true
+                        visible: Boolean(lyricsDebugEnabled)
+                        text: i18n.text("lyrics_debug_page", i18n.language)
+                        subtle: root.viewMode !== "lyrics_debug"
+                        onClicked: root.viewMode = "lyrics_debug"
+                    }
+
+                    TextButton {
+                        objectName: "settingsNavigation"
+                        Layout.fillWidth: true
+                        text: i18n.text("settings", i18n.language)
+                        subtle: root.viewMode !== "settings"
+                        onClicked: root.viewMode = "settings"
+                    }
+
                     Item { Layout.fillHeight: true }
 
                     // Sidebar Bottom Info & Language
@@ -378,6 +395,38 @@ ApplicationWindow {
                 Layout.fillHeight: true
                 color: "#110f17"
 
+                Loader {
+                    objectName: "lyricsDebugPageLoader"
+                    anchors.fill: parent
+                    anchors.margins: 20
+                    active: Boolean(lyricsDebugEnabled)
+                    visible: active && root.viewMode === "lyrics_debug"
+                    sourceComponent: LyricsDebugPanel {
+                        objectName: "lyricsDebugPage"
+                        translator: i18n
+                        lyrics: root.lyrics
+                        song: root.song
+                        position: root.position
+                        duration: root.duration
+                        playbackState: root.playbackState
+                        onSeekRequested: positionMs => ipcClient.seek(positionMs)
+                    }
+                }
+
+                SettingsPanel {
+                    id: settingsPanel
+                    objectName: "settingsPanel"
+                    anchors.fill: parent
+                    visible: root.viewMode === "settings"
+                    settings: ipcClient.status.settings || ({})
+                    connected: ipcClient.connected
+                    onSaveRequested: values => ipcClient.updateSettings(values)
+                }
+                Connections {
+                    target: ipcClient
+                    function onSettingsSaved(success, message) { settingsPanel.finishSaving(success, message) }
+                }
+
                 // Stack / Mode Switcher between Queue Table & Immersive Lyrics
                 QueuePanel {
                     objectName: "queuePanel"
@@ -403,6 +452,9 @@ ApplicationWindow {
                     visible: root.viewMode === "lyrics"
                     song: root.song
                     lyrics: root.lyrics
+                    asr: ipcClient.status.asr || ({})
+                    asrSettings: ipcClient.status.settings || ({})
+                    onSettingsRequested: root.viewMode = "settings"
                     queue: root.queue
                     duration: root.duration
                     position: root.position
@@ -740,21 +792,6 @@ ApplicationWindow {
                 }
             }
         }
-    }
-
-    // Diagnostics Panel
-    LyricsDebugPanel {
-        visible: Boolean(lyricsDebugEnabled)
-        anchors.right: parent.right
-        anchors.bottom: parent.bottom
-        anchors.margins: 20
-        width: Math.min(600, parent.width - 40)
-        height: Math.min(450, parent.height - 40)
-        lyrics: root.lyrics
-        song: root.song
-        position: root.position
-        duration: root.duration
-        playbackState: root.playbackState
     }
 
     function formatTime(ms) {
