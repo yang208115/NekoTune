@@ -58,17 +58,6 @@ QJsonArray LrcParser::toJson(const QVector<LyricLine> &lines)
     QJsonArray result;
     for (const auto &line : lines) {
         QJsonObject object{{QStringLiteral("time_ms"), line.timestampMs}, {QStringLiteral("text"), line.text}};
-        if (line.endTimestampMs >= 0)
-            object.insert(QStringLiteral("end_time_ms"), line.endTimestampMs);
-        if (!line.words.isEmpty()) {
-            QJsonArray words;
-            for (const auto &word : line.words)
-                words.append(QJsonObject{{QStringLiteral("time_ms"), word.timestampMs},
-                                         {QStringLiteral("end_time_ms"), word.endTimestampMs},
-                                         {QStringLiteral("start"), word.start},
-                                         {QStringLiteral("length"), word.length}});
-            object.insert(QStringLiteral("words"), words);
-        }
         result.append(object);
     }
     return result;

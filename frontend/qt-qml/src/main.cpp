@@ -12,7 +12,43 @@
 #include <QDebug>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QQmlNetworkAccessManagerFactory>
+#include <QNetworkAccessManager>
+#include <QNetworkDiskCache>
+#include <QStandardPaths>
+#include <QDir>
 #include <QQuickStyle>
+
+class CoverNetworkManager final : public QNetworkAccessManager {
+public:
+    using QNetworkAccessManager::QNetworkAccessManager;
+
+protected:
+    QNetworkReply *createRequest(Operation operation, const QNetworkRequest &request,
+                                 QIODevice *outgoingData = nullptr) override
+    {
+        QNetworkRequest cachedRequest(request);
+        if (operation == GetOperation &&
+            request.url().host().compare(QStringLiteral("imge.kugou.com"), Qt::CaseInsensitive) == 0)
+            cachedRequest.setAttribute(QNetworkRequest::CacheLoadControlAttribute, QNetworkRequest::PreferCache);
+        return QNetworkAccessManager::createRequest(operation, cachedRequest, outgoingData);
+    }
+};
+
+class CoverNetworkManagerFactory final : public QQmlNetworkAccessManagerFactory {
+public:
+    QNetworkAccessManager *create(QObject *parent) override
+    {
+        auto *manager = new CoverNetworkManager(parent);
+        auto *cache = new QNetworkDiskCache(manager);
+        const auto directory = QDir(QStandardPaths::writableLocation(QStandardPaths::CacheLocation))
+                                   .filePath(QStringLiteral("covers"));
+        cache->setCacheDirectory(directory);
+        cache->setMaximumCacheSize(64 * 1024 * 1024);
+        manager->setCache(cache);
+        return manager;
+    }
+};
 
 int main(int argc, char *argv[])
 {
@@ -47,6 +83,7 @@ int main(int argc, char *argv[])
     I18n i18n;
 
     QQmlApplicationEngine engine;
+    engine.setNetworkAccessManagerFactory(new CoverNetworkManagerFactory);
     engine.rootContext()->setContextProperty(QStringLiteral("ipcClient"), &ipcClient);
     engine.rootContext()->setContextProperty(QStringLiteral("i18n"), &i18n);
     engine.rootContext()->setContextProperty(QStringLiteral("lyricsDebugEnabled"),

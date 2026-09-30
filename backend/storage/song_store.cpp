@@ -148,54 +148,6 @@ std::optional<SongMetadata> SongStore::updateMetadata(int songId,
     return songById(songId);
 }
 
-bool SongStore::saveAsrTask(const QString &taskId, const QString &songHash, const QString &model, const QString &language)
-{
-    if (!m_ready)
-        return false;
-    if (taskId.isEmpty() || songHash.isEmpty() || model.isEmpty() || language.isEmpty()) {
-        setError(QStringLiteral("ASR task backup fields must not be empty"));
-        return false;
-    }
-    QSqlQuery query(m_db);
-    query.prepare(QStringLiteral("INSERT INTO asr_tasks(task_id, song_hash, model, language) VALUES(?, ?, ?, ?) "
-                                 "ON CONFLICT(task_id) DO NOTHING"));
-    query.addBindValue(taskId);
-    query.addBindValue(songHash);
-    query.addBindValue(model);
-    query.addBindValue(language);
-    if (!query.exec()) {
-        setError(query.lastError().text());
-        return false;
-    }
-    return true;
-}
-
-bool SongStore::saveTranscription(const QString &hash, const QByteArray &json)
-{
-    if (!m_ready || hash.isEmpty() || !QJsonDocument::fromJson(json).isObject())
-        return false;
-    QSqlQuery query(m_db);
-    query.prepare(QStringLiteral("INSERT INTO song_transcriptions(song_hash, transcription_json) VALUES(?, ?) "
-                                 "ON CONFLICT(song_hash) DO UPDATE SET transcription_json=excluded.transcription_json, updated_at=CURRENT_TIMESTAMP"));
-    query.addBindValue(hash);
-    query.addBindValue(QString::fromUtf8(json));
-    if (!query.exec()) {
-        setError(query.lastError().text());
-        return false;
-    }
-    return true;
-}
-
-QByteArray SongStore::transcription(const QString &hash) const
-{
-    if (!m_ready)
-        return {};
-    QSqlQuery query(m_db);
-    query.prepare(QStringLiteral("SELECT transcription_json FROM song_transcriptions WHERE song_hash=?"));
-    query.addBindValue(hash);
-    return query.exec() && query.next() ? query.value(0).toString().toUtf8() : QByteArray{};
-}
-
 QString SongStore::defaultDatabasePath()
 {
     const auto env = QProcessEnvironment::systemEnvironment();
@@ -284,10 +236,6 @@ bool SongStore::migrate()
         return false;
     }
     const QStringList statements {
-        QStringLiteral("CREATE TABLE IF NOT EXISTS asr_tasks (task_id TEXT PRIMARY KEY NOT NULL, "
-                       "song_hash TEXT NOT NULL REFERENCES songs(hash) ON DELETE CASCADE, model TEXT NOT NULL, "
-                       "language TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
-        QStringLiteral("CREATE TABLE IF NOT EXISTS song_transcriptions (song_hash TEXT PRIMARY KEY REFERENCES songs(hash) ON DELETE CASCADE, transcription_json TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"),
         QStringLiteral("CREATE TABLE IF NOT EXISTS playlists (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL)"),
         QStringLiteral("CREATE TABLE IF NOT EXISTS playlist_items (playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE, song_id INTEGER NOT NULL REFERENCES songs(id), path TEXT NOT NULL, position INTEGER NOT NULL, PRIMARY KEY (playlist_id, song_id))"),
     };

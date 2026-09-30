@@ -13,7 +13,6 @@ Item {
     readonly property real activeTime: activeIndex >= 0 ? Number(lines[activeIndex].time_ms) : -1
     property color activeColor: "#f6f3fa"
     property color inactiveColor: "#645e73"
-    property color wordColor: "#cbb8ff"
 
     property bool userScrolling: false
 
@@ -96,10 +95,8 @@ Item {
                 anchors.centerIn: parent
                 width: parent.width - 24
                 objectName: "lyricText" + lineDelegate.index
-                text: lineDelegate.active && lineDelegate.modelData.words && lineDelegate.modelData.words.length
-                      ? root.highlightedText(lineDelegate.modelData, root.position) : (lineDelegate.modelData.text || "♪")
-                textFormat: lineDelegate.active && lineDelegate.modelData.words && lineDelegate.modelData.words.length
-                            ? Text.RichText : Text.PlainText
+                text: lineDelegate.modelData.text || "♪"
+                textFormat: Text.PlainText
                 wrapMode: Text.Wrap
                 horizontalAlignment: Text.AlignHCenter
                 font.pixelSize: lineDelegate.active ? 20 : 15
@@ -178,30 +175,6 @@ Item {
             horizontalAlignment: TextEdit.AlignHCenter
             background: null
         }
-    }
-
-    function escapeText(value) {
-        return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;")
-                            .replace(/>/g, "&gt;").replace(/"/g, "&quot;")
-                            .replace(/\n/g, "<br>")
-    }
-
-    function highlightedText(line, playbackPosition) {
-        const text = String(line.text || "")
-        const words = line.words || []
-        let result = ""
-        let offset = 0
-        for (const word of words) {
-            const start = Number(word.start)
-            const end = start + Number(word.length)
-            result += escapeText(text.slice(offset, start))
-            const started = playbackPosition >= Number(word.time_ms)
-            const singing = started && playbackPosition < Number(word.end_time_ms)
-            const color = singing ? root.wordColor : started ? root.activeColor : root.inactiveColor
-            result += '<font color="' + color + '">' + escapeText(text.slice(start, end)) + '</font>'
-            offset = end
-        }
-        return result + escapeText(text.slice(offset))
     }
 
     function updateActiveLine() {

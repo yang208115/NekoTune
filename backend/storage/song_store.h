@@ -31,9 +31,6 @@ public:
                                                const QString &customTitle,
                                                const QString &artist,
                                                const QString &lyrics);
-    bool saveAsrTask(const QString &taskId, const QString &songHash, const QString &model, const QString &language);
-    bool saveTranscription(const QString &hash, const QByteArray &json);
-    QByteArray transcription(const QString &hash) const;
     bool saveQueue(const QueueSnapshot &snapshot);
     QueueSnapshot loadQueue() const;
     QVector<Playlist> playlists() const;

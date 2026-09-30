@@ -4,9 +4,6 @@
 #include "core/player_state.h"
 #include "lyrics/lyrics_service.h"
 #include "storage/song_store.h"
-#include "storage/asr_settings.h"
-#include "lyrics/aliyun_asr.h"
-#include <QSet>
 
 #include <QAudioOutput>
 #include <QJsonArray>
@@ -14,7 +11,6 @@
 #include <QMediaMetaData>
 #include <QMediaPlayer>
 #include <QObject>
-#include <QStringList>
 #include <QThread>
 #include <QTimer>
 
@@ -45,11 +41,6 @@ public:
     QJsonObject queueStatus() const;
     QJsonObject songMetadata(const QJsonObject &params) const;
     QJsonObject updateSongMetadata(const QJsonObject &params);
-    QJsonObject settings() const;
-    QJsonObject updateSettings(const QJsonObject &params);
-    QJsonObject transcribeLyrics(const QJsonObject &params);
-    QJsonObject cancelAsr();
-    QJsonObject importAsrLyrics(const QJsonObject &params);
     QJsonObject refreshLyrics(const QJsonObject &params);
     QJsonObject searchLyrics(const QJsonObject &params);
     QJsonObject selectLyrics(const QJsonObject &params);
@@ -78,17 +69,11 @@ private:
     void persistQueue();
     LyricsQuery lyricsQuery() const;
     void loadLyrics(bool metadataReady, bool force = false);
-    void publishAsr(const QString &state, const QString &error = {});
     bool isCurrentLyricsRequest(const QJsonObject &params) const;
 
     QMediaPlayer m_player;
     QAudioOutput m_audioOutput;
     SongStore m_songStore;
-    AsrSettings m_settings;
-    AliyunAsr m_asr;
-    LyricsQuery m_asrQuery;
-    QJsonObject m_asrState;
-    QSet<QString> m_asrStorageFailures;
     PlayerQueue m_queue;
     QThread m_lyricsThread;
     LyricsService *m_lyricsService = nullptr;

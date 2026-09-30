@@ -52,9 +52,11 @@ std::optional<LyricsDocument> LyricsCache::read(const LyricsQuery &query) const
         return std::nullopt;
     LyricsDocument result;
     result.source = object.value(QStringLiteral("source")).toString();
+    result.coverUrl = object.value(QStringLiteral("cover_url")).toString();
+    if (result.source == QStringLiteral("aliyun_asr"))
+        return std::nullopt;
     result.syncedLyrics = object.value(QStringLiteral("synced_lyrics")).toString();
     result.plainLyrics = object.value(QStringLiteral("plain_lyrics")).toString();
-    result.asrLyrics = object.value(QStringLiteral("asr_lyrics")).toString();
     result.instrumental = object.value(QStringLiteral("instrumental")).toBool();
     result.providerId = object.value(QStringLiteral("provider_id")).toInteger();
     result.matched = {object.value(QStringLiteral("matched_title")).toString(),
@@ -78,8 +80,8 @@ bool LyricsCache::write(const LyricsQuery &query, const LyricsDocument &document
     const QJsonObject object{{QStringLiteral("version"), 1},
                              {QStringLiteral("key"), keyFor(query)},
                              {QStringLiteral("source"), document.source},
+                             {QStringLiteral("cover_url"), document.coverUrl},
                              {QStringLiteral("synced_lyrics"), document.syncedLyrics},
-                             {QStringLiteral("asr_lyrics"), document.asrLyrics},
                              {QStringLiteral("plain_lyrics"), document.isSynced() ? QString() : document.plainLyrics},
                              {QStringLiteral("instrumental"), document.instrumental},
                              {QStringLiteral("provider_id"), document.providerId},

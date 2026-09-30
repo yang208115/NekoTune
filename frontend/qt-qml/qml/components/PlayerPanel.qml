@@ -7,8 +7,6 @@ Item {
 
     property var song: ({})
     property var lyrics: ({})
-    property var asr: ({})
-    property var asrSettings: ({})
     property var queue: []
     property real duration: 0
     property real position: 0
@@ -26,8 +24,9 @@ Item {
     property color roseColor: "#e8a9c3"
 
     readonly property bool hasSong: Boolean(root.song && root.song.song_id)
+    readonly property string coverUrl: !root.lyrics.offline && root.lyrics.track_id === root.song.song_hash
+                                       ? String((root.lyrics.document || {}).cover_url || "") : ""
 
-    signal settingsRequested()
     signal addRequested()
     signal togglePlayPauseRequested()
     signal nextRequested()
@@ -62,6 +61,7 @@ Item {
                         height: 240
                         maxDimension: 240
                         hasSong: root.hasSong
+                        coverUrl: root.coverUrl
                         playbackState: root.playbackState
                         lavenderColor: root.lavenderColor
                         roseColor: root.roseColor
@@ -135,9 +135,6 @@ Item {
                 Layout.fillHeight: true
                 song: root.song
                 lyrics: root.lyrics
-                asr: root.asr
-                asrSettings: root.asrSettings
-                onSettingsRequested: root.settingsRequested()
                 position: root.position
                 connected: root.connected
                 onSeekRequested: pos => root.seekRequested(pos)

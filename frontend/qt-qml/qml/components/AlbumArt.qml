@@ -5,6 +5,7 @@ Item {
     id: root
 
     property bool hasSong: false
+    property string coverUrl: ""
     property string playbackState: "stopped"
     property real maxDimension: 260
     property color lavenderColor: "#cbb8ff"
@@ -30,6 +31,16 @@ Item {
             smooth: true
             mipmap: true
             visible: root.hasSong
+        }
+
+        Image {
+            anchors.fill: parent
+            source: root.hasSong ? root.coverUrl : ""
+            fillMode: Image.PreserveAspectCrop
+            asynchronous: true
+            smooth: true
+            mipmap: true
+            visible: root.hasSong && status === Image.Ready
         }
 
         // Placeholder artwork if no song

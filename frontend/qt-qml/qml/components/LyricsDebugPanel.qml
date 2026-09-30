@@ -13,8 +13,6 @@ Rectangle {
     property real position: 0
     property real duration: 0
     property string playbackState: "stopped"
-    property bool comparisonMode: false
-    readonly property var comparison: lyrics.comparison || ({})
     signal seekRequested(real positionMs)
     readonly property var document: lyrics.document || ({})
     readonly property var lines: document.lines || []
@@ -48,23 +46,6 @@ Rectangle {
             }
         }
 
-        RowLayout {
-            Layout.fillWidth: true
-            TextButton {
-                objectName: "timelineMode"
-                subtle: root.comparisonMode
-                text: root.tr("lyrics_debug_timeline")
-                onClicked: root.comparisonMode = false
-            }
-            TextButton {
-                objectName: "comparisonMode"
-                subtle: !root.comparisonMode
-                text: root.tr("lyrics_debug_compare")
-                onClicked: root.comparisonMode = true
-            }
-            Item { Layout.fillWidth: true }
-        }
-
         GridLayout {
             Layout.fillWidth: true
             columns: 4
@@ -92,7 +73,6 @@ Rectangle {
 
         Label {
             Layout.fillWidth: true
-            visible: !root.comparisonMode
             text: "Current: " + String(root.activeLine.text || "(none)")
             color: "#cbb8ff"
             elide: Text.ElideRight
@@ -103,7 +83,6 @@ Rectangle {
             id: lineList
             Layout.fillWidth: true
             Layout.fillHeight: true
-            visible: !root.comparisonMode
             clip: true
             spacing: 2
             model: root.lines
@@ -114,10 +93,14 @@ Rectangle {
                 id: lineRow
                 required property var modelData
                 required property int index
+                objectName: "debugLine" + index
                 width: lineList.width - 12
                 height: 26
                 radius: 5
                 color: lineRow.index === root.activeIndex ? "#49384b" : "transparent"
+
+                HoverHandler { cursorShape: Qt.PointingHandCursor }
+                TapHandler { onTapped: root.seekRequested(Number(lineRow.modelData.time_ms)) }
 
                 RowLayout {
                     anchors.fill: parent
@@ -143,46 +126,6 @@ Rectangle {
             onCurrentIndexChanged: {
                 if (currentIndex >= 0 && currentIndex < count)
                     positionViewAtIndex(currentIndex, ListView.Contain)
-            }
-        }
-
-        Label {
-            Layout.fillWidth: true
-            visible: root.comparisonMode
-            text: root.tr("lyrics_debug_delta") + ": "
-                  + (asrTimeline.activeIndex >= 0 && lrcTimeline.activeIndex >= 0
-                     ? String(Number(asrTimeline.activeLine.time_ms) - Number(lrcTimeline.activeLine.time_ms)) + " ms" : "—")
-            color: "#cbb8ff"
-            wrapMode: Text.Wrap
-        }
-        RowLayout {
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            visible: root.comparisonMode
-            spacing: 8
-            LyricsDebugTimeline {
-                id: asrTimeline
-                objectName: "asrTimeline"
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                Layout.preferredWidth: 1
-                title: "ASR"
-                document: root.comparison.asr || ({})
-                position: root.position
-                emptyText: root.tr("lyrics_debug_no_asr")
-                onSeekRequested: positionMs => root.seekRequested(positionMs)
-            }
-            LyricsDebugTimeline {
-                id: lrcTimeline
-                objectName: "lrcTimeline"
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                Layout.preferredWidth: 1
-                title: "LRC"
-                document: root.comparison.lrc || ({})
-                position: root.position
-                emptyText: root.tr("lyrics_debug_no_lrc")
-                onSeekRequested: positionMs => root.seekRequested(positionMs)
             }
         }
     }

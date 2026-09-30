@@ -1,5 +1,4 @@
 #include "lyrics/lyrics_types.h"
-#include "lyrics/asr_parser.h"
 #include "lyrics/lrc_parser.h"
 
 #include <QJsonArray>
@@ -10,10 +9,7 @@ void LyricsDocument::validate()
 {
     if (!LrcParser::looksLikeLrc(syncedLyrics))
         syncedLyrics.clear();
-    if (AsrParser::parse(asrLyrics.toUtf8()).isEmpty())
-        asrLyrics.clear();
     if (instrumental) {
-        asrLyrics.clear();
         syncedLyrics.clear();
         plainLyrics.clear();
     }
@@ -21,8 +17,9 @@ void LyricsDocument::validate()
 
 QJsonObject LyricsDocument::toJson() const
 {
-    const auto lines = asrLyrics.isEmpty() ? LrcParser::parse(syncedLyrics) : AsrParser::parse(asrLyrics.toUtf8());
+    const auto lines = LrcParser::parse(syncedLyrics);
     return {{QStringLiteral("source"), source},
+            {QStringLiteral("cover_url"), coverUrl},
             {QStringLiteral("synced"), isSynced()},
             {QStringLiteral("instrumental"), instrumental},
             {QStringLiteral("plain_text"), plainLyrics},
@@ -32,6 +29,9 @@ QJsonObject LyricsDocument::toJson() const
 QJsonObject LyricsCandidate::toJson() const
 {
     return {{QStringLiteral("id"), document.providerId},
+            {QStringLiteral("source"), document.source},
+            {QStringLiteral("cover_url"), document.coverUrl},
+            {QStringLiteral("song_result"), songResult},
             {QStringLiteral("title"), document.matched.title},
             {QStringLiteral("artist"), document.matched.artist},
             {QStringLiteral("album"), document.matched.album},

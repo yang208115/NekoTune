@@ -5,17 +5,16 @@
 #include <QObject>
 
 namespace nekotune {
+class KugouProvider;
 
 class LyricsService final : public QObject {
     Q_OBJECT
   public:
     explicit LyricsService(LyricsProvider *provider = nullptr, const QString &cacheDirectory = {},
-                           QObject *parent = nullptr);
+                           QObject *parent = nullptr, KugouProvider *kugouProvider = nullptr);
     void load(const LyricsQuery &query, const QString &path, const QString &customLyrics, quint64 revision,
-              bool metadataReady, bool force = false, const QByteArray &storedAsr = {});
-    void applyAsr(const LyricsQuery &query, const QByteArray &json, quint64 revision, bool persist = true);
-    void importAsr(const LyricsQuery &query, const QString &path, quint64 revision);
-    void search(const LyricsQuery &query, quint64 revision);
+              bool metadataReady, bool force = false);
+    void search(const LyricsQuery &query, quint64 revision, const QString &source = QStringLiteral("lrclib"));
     void select(int index, quint64 revision);
     void clear(quint64 revision);
     void setOffline(bool offline);
@@ -26,7 +25,6 @@ class LyricsService final : public QObject {
     static bool confident(const LyricsQuery &query, const QVector<LyricsCandidate> &ranked);
 
   signals:
-    void transcriptionReady(const QString &trackId, const QByteArray &json);
     void changed(const QJsonObject &snapshot);
 
   private:
@@ -34,10 +32,11 @@ class LyricsService final : public QObject {
     void failed(quint64 token, const QString &kind);
     void publish(const QString &state, const QString &error = {});
     void apply(const LyricsDocument &document, bool cache);
-    void rememberComparison(const LyricsDocument &document);
     void cancel();
 
     LyricsCache m_cache;
+    LyricsProvider *m_lrclibProvider;
+    KugouProvider *m_kugouProvider;
     LyricsProvider *m_provider;
     LyricsQuery m_query;
     quint64 m_token = 0;

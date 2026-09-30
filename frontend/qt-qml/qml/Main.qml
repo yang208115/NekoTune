@@ -43,7 +43,7 @@ ApplicationWindow {
     readonly property color lavender: "#cbb8ff"
     readonly property color rose: "#e8a9c3"
 
-    // Main content page: queue, lyrics, settings, or CLI-enabled lyrics diagnostics.
+    // Main content page: queue, lyrics, or CLI-enabled lyrics diagnostics.
     property string viewMode: "queue"
 
     FileDialog {
@@ -333,14 +333,6 @@ ApplicationWindow {
                         onClicked: root.viewMode = "lyrics_debug"
                     }
 
-                    TextButton {
-                        objectName: "settingsNavigation"
-                        Layout.fillWidth: true
-                        text: i18n.text("settings", i18n.language)
-                        subtle: root.viewMode !== "settings"
-                        onClicked: root.viewMode = "settings"
-                    }
-
                     Item { Layout.fillHeight: true }
 
                     // Sidebar Bottom Info & Language
@@ -413,20 +405,6 @@ ApplicationWindow {
                     }
                 }
 
-                SettingsPanel {
-                    id: settingsPanel
-                    objectName: "settingsPanel"
-                    anchors.fill: parent
-                    visible: root.viewMode === "settings"
-                    settings: ipcClient.status.settings || ({})
-                    connected: ipcClient.connected
-                    onSaveRequested: values => ipcClient.updateSettings(values)
-                }
-                Connections {
-                    target: ipcClient
-                    function onSettingsSaved(success, message) { settingsPanel.finishSaving(success, message) }
-                }
-
                 // Stack / Mode Switcher between Queue Table & Immersive Lyrics
                 QueuePanel {
                     objectName: "queuePanel"
@@ -452,9 +430,6 @@ ApplicationWindow {
                     visible: root.viewMode === "lyrics"
                     song: root.song
                     lyrics: root.lyrics
-                    asr: ipcClient.status.asr || ({})
-                    asrSettings: ipcClient.status.settings || ({})
-                    onSettingsRequested: root.viewMode = "settings"
                     queue: root.queue
                     duration: root.duration
                     position: root.position
@@ -511,6 +486,15 @@ ApplicationWindow {
                                 source: "qrc:/artwork/default-cover.png"
                                 fillMode: Image.PreserveAspectCrop
                                 opacity: root.hasSong ? 1.0 : 0.4
+                            }
+
+                            Image {
+                                anchors.fill: parent
+                                source: root.hasSong && root.lyrics.track_id === root.song.song_hash
+                                        ? String((root.lyrics.document || {}).cover_url || "") : ""
+                                fillMode: Image.PreserveAspectCrop
+                                asynchronous: true
+                                visible: status === Image.Ready
                             }
 
                             TapHandler {

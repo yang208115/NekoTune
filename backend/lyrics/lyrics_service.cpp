@@ -1,6 +1,6 @@
 #include "lyrics/lyrics_service.h"
-#include "lyrics/asr_parser.h"
 #include "lyrics/lrc_parser.h"
+#include "lyrics/kugou_provider.h"
 #include "lyrics/lrclib_provider.h"
 
 #include <QDir>
@@ -11,17 +11,25 @@
 
 namespace nekotune {
 
-LyricsService::LyricsService(LyricsProvider *provider, const QString &cacheDirectory, QObject *parent)
-    : QObject(parent), m_cache(cacheDirectory), m_provider(provider ? provider : new LrclibProvider(this))
+LyricsService::LyricsService(LyricsProvider *provider, const QString &cacheDirectory, QObject *parent,
+                             KugouProvider *kugouProvider)
+    : QObject(parent), m_cache(cacheDirectory), m_lrclibProvider(provider ? provider : new LrclibProvider(this)),
+      m_kugouProvider(kugouProvider ? kugouProvider : new KugouProvider(this)), m_provider(m_lrclibProvider)
 {
-    connect(m_provider, &LyricsProvider::completed, this, &LyricsService::completed);
-    connect(m_provider, &LyricsProvider::failed, this, &LyricsService::failed);
+    for (auto *source : {m_lrclibProvider, static_cast<LyricsProvider *>(m_kugouProvider)}) {
+        connect(source, &LyricsProvider::completed, this, &LyricsService::completed);
+        connect(source, &LyricsProvider::failed, this, &LyricsService::failed);
+    }
+    connect(m_kugouProvider, &KugouProvider::resolved, this, [this](quint64 token, const LyricsDocument &document) {
+        if (token == m_token) apply(document, true);
+    });
 }
 
 void LyricsService::cancel()
 {
     ++m_token;
-    m_provider->cancel();
+    m_lrclibProvider->cancel();
+    m_kugouProvider->cancel();
     m_candidates.clear();
     m_snapshot.remove(QStringLiteral("candidates"));
 }
@@ -29,6 +37,7 @@ void LyricsService::cancel()
 void LyricsService::clear(quint64 revision)
 {
     cancel();
+    m_provider = m_lrclibProvider;
     m_query = {};
     m_revision = revision;
     m_snapshot = {};
@@ -36,9 +45,10 @@ void LyricsService::clear(quint64 revision)
 }
 
 void LyricsService::load(const LyricsQuery &query, const QString &path, const QString &customLyrics, quint64 revision,
-                         bool metadataReady, bool force, const QByteArray &storedAsr)
+                         bool metadataReady, bool force)
 {
     cancel();
+    m_provider = m_lrclibProvider;
     m_revision = revision;
     m_query = query;
     m_manual = false;
@@ -56,35 +66,6 @@ void LyricsService::load(const LyricsQuery &query, const QString &path, const QS
         }
     }
     QFile local(localPath);
-    // Collect available alternatives without changing playback priority, requesting
-    // recognition, or exposing the raw transcription metadata to clients.
-    LyricsDocument customDocument;
-    customDocument.source = QStringLiteral("custom");
-    customDocument.syncedLyrics = customLyrics;
-    customDocument.validate();
-    rememberComparison(customDocument);
-    const auto cached = m_cache.read(query);
-    if (cached)
-        rememberComparison(*cached);
-    LyricsDocument asrDocument;
-    asrDocument.source = QStringLiteral("aliyun_asr");
-    if (storedAsr.size() <= 2 * 1024 * 1024) {
-        asrDocument.asrLyrics = QString::fromUtf8(storedAsr);
-        rememberComparison(asrDocument);
-    }
-    if (local.exists()) {
-        const auto asrName = audio.completeBaseName() + QStringLiteral(".asr.json");
-        for (const auto &sidecar : sidecars) {
-            if (sidecar.fileName().compare(asrName, Qt::CaseInsensitive) != 0)
-                continue;
-            QFile asrFile(sidecar.absoluteFilePath());
-            if (asrFile.open(QIODevice::ReadOnly) && asrFile.size() <= 2 * 1024 * 1024) {
-                asrDocument.asrLyrics = QString::fromUtf8(asrFile.read(2 * 1024 * 1024 + 1));
-                rememberComparison(asrDocument);
-            }
-            break;
-        }
-    }
     if (local.exists()) {
         // Presence of a sidecar is authoritative, including malformed or unreadable
         // files.
@@ -107,21 +88,9 @@ void LyricsService::load(const LyricsQuery &query, const QString &path, const QS
             apply(document, false);
         return;
     }
-    const auto asrName = audio.completeBaseName() + QStringLiteral(".asr.json");
-    for (const auto &sidecar : sidecars) {
-        if (sidecar.fileName().compare(asrName, Qt::CaseInsensitive) == 0) {
-            importAsr(query, sidecar.absoluteFilePath(), revision);
-            return;
-        }
-    }
     if (!force) {
-        if (!storedAsr.isEmpty()) {
-            applyAsr(query, storedAsr, revision, false);
-            return;
-        }
+        const auto cached = m_cache.read(query);
         if (cached) {
-            if (!cached->asrLyrics.isEmpty())
-                emit transcriptionReady(query.trackId, cached->asrLyrics.toUtf8());
             m_snapshot.insert(QStringLiteral("cached"), true);
             apply(*cached, false);
             return;
@@ -154,53 +123,18 @@ void LyricsService::load(const LyricsQuery &query, const QString &path, const QS
     m_provider->request(query, m_token, false);
 }
 
-void LyricsService::importAsr(const LyricsQuery &query, const QString &path, quint64 revision)
+void LyricsService::search(const LyricsQuery &query, quint64 revision, const QString &source)
 {
     cancel();
-    if (m_query.trackId != query.trackId)
-        m_snapshot = {};
-    m_query = query;
-    m_revision = revision;
-    QFile file(path);
-    if (!QFileInfo(file).isFile() || !file.open(QIODevice::ReadOnly) || file.size() > 2 * 1024 * 1024) {
-        publish(QStringLiteral("error"), QStringLiteral("local_read"));
-        return;
-    }
-    applyAsr(query, file.read(2 * 1024 * 1024 + 1), revision);
-}
-
-void LyricsService::applyAsr(const LyricsQuery &query, const QByteArray &json, quint64 revision, bool persist)
-{
-    cancel();
-    if (m_query.trackId != query.trackId)
-        m_snapshot = {};
-    m_query = query;
-    m_revision = revision;
-    const auto lines = json.size() <= 2 * 1024 * 1024 ? AsrParser::parse(json) : QVector<LyricLine>{};
-    if (lines.isEmpty()) {
-        publish(QStringLiteral("error"), QStringLiteral("invalid_asr"));
-        return;
-    }
-    LyricsDocument document;
-    document.source = QStringLiteral("aliyun_asr");
-    document.matched = query;
-    document.asrLyrics = AsrParser::serialize(lines);
-    m_snapshot.remove(QStringLiteral("cached"));
-    if (persist)
-        emit transcriptionReady(query.trackId, json);
-    m_snapshot.insert(QStringLiteral("stored"), !persist);
-    apply(document, false);
-}
-
-void LyricsService::search(const LyricsQuery &query, quint64 revision)
-{
-    cancel();
+    m_provider = source == QStringLiteral("kugou") ? static_cast<LyricsProvider *>(m_kugouProvider) : m_lrclibProvider;
     if (m_query.trackId != query.trackId)
         m_snapshot = {};
     m_revision = revision;
     m_query = query;
     m_search = true;
     m_manual = true;
+    m_snapshot.insert(QStringLiteral("search_source"), source);
+    m_snapshot.remove(QStringLiteral("search_stage"));
     if (m_offline) {
         publish(QStringLiteral("offline"));
         return;
@@ -217,16 +151,28 @@ void LyricsService::select(int index, quint64 revision)
 {
     if (revision != m_revision || index < 0 || index >= m_candidates.size())
         return;
-    const auto document = m_candidates.at(index).document;
+    if (m_offline && m_provider == m_kugouProvider) {
+        cancel();
+        publish(QStringLiteral("offline"));
+        return;
+    }
+    const auto candidate = m_candidates.at(index);
     cancel();
-    apply(document, true);
+    if (m_provider == m_kugouProvider) {
+        m_snapshot.insert(QStringLiteral("search_stage"), candidate.songResult ? QStringLiteral("lyrics") : QStringLiteral("download"));
+        publish(candidate.songResult ? QStringLiteral("searching") : QStringLiteral("loading"));
+        m_kugouProvider->choose(candidate, m_token);
+    } else {
+        apply(candidate.document, true);
+    }
 }
 
 void LyricsService::setOffline(bool offline)
 {
     m_offline = offline;
     const QString state = m_snapshot.value(QStringLiteral("state")).toString();
-    if (offline && (state == QStringLiteral("loading") || state == QStringLiteral("searching"))) {
+    if (offline && (state == QStringLiteral("loading") || state == QStringLiteral("searching") ||
+                    state == QStringLiteral("candidates"))) {
         cancel();
         publish(QStringLiteral("offline"));
     } else {
@@ -293,6 +239,18 @@ void LyricsService::completed(quint64 token, const QVector<LyricsCandidate> &can
     if (token != m_token)
         return;
     m_candidates = rankCandidates(m_query, candidates);
+    if (m_provider == m_kugouProvider) {
+        if (m_candidates.isEmpty()) {
+            publish(QStringLiteral("not_found"));
+            return;
+        }
+        m_snapshot.insert(QStringLiteral("search_stage"), m_candidates.first().songResult ? QStringLiteral("songs") : QStringLiteral("lyrics"));
+        QJsonArray array;
+        for (const auto &candidate : m_candidates) array.append(candidate.toJson());
+        m_snapshot.insert(QStringLiteral("candidates"), array);
+        publish(QStringLiteral("candidates"));
+        return;
+    }
     if (!m_manual && confident(m_query, m_candidates)) {
         apply(m_candidates.first().document, true);
     } else if (!m_search) {
@@ -333,25 +291,11 @@ void LyricsService::publish(const QString &state, const QString &error)
 
 void LyricsService::apply(const LyricsDocument &document, bool cache)
 {
-    rememberComparison(document);
     m_snapshot.remove(QStringLiteral("candidates"));
     m_snapshot.insert(QStringLiteral("document"), document.toJson());
     const bool cacheFailed = cache && !m_cache.write(m_query, document);
     m_snapshot.insert(QStringLiteral("cache_warning"), cacheFailed);
     publish(document.instrumental ? QStringLiteral("instrumental") : QStringLiteral("ready"));
-}
-
-void LyricsService::rememberComparison(const LyricsDocument &document)
-{
-    auto comparison = m_snapshot.value(QStringLiteral("comparison")).toObject();
-    // Parse each format independently even if a cache entry contains both.
-    auto lrc = document;
-    lrc.asrLyrics.clear();
-    if (!LrcParser::parse(lrc.syncedLyrics).isEmpty())
-        comparison.insert(QStringLiteral("lrc"), lrc.toJson());
-    if (!AsrParser::parse(document.asrLyrics.toUtf8()).isEmpty())
-        comparison.insert(QStringLiteral("asr"), document.toJson());
-    m_snapshot.insert(QStringLiteral("comparison"), comparison);
 }
 
 } // namespace nekotune
