@@ -1,8 +1,24 @@
 #include "ipc/api_context.h"
 namespace nekotune {
+namespace {
+Result<std::optional<QVector<int>>> requestedSongs(const QJsonObject &params) {
+    if (!params.contains("song_ids"))
+        return std::optional<QVector<int>>{};
+    const auto values = params.value("song_ids");
+    if (!values.isArray() || values.toArray().isEmpty())
+        return failure("song_ids must be a non-empty array");
+    QVector<int> ids;
+    for (const auto &value : values.toArray()) {
+        if (!positiveId(value) || ids.contains(value.toInt()))
+            return failure("song_ids must contain unique positive ids");
+        ids.append(value.toInt());
+    }
+    return std::optional<QVector<int>>{ids};
+}
+}
 void registerLibraryApi(IpcRouter &router, ApiContext &api) {
     router.registerMethod("library.list", [&api](const auto &, auto done) {
-        done(success({{"library", toJson(api.library.snapshot())}}));
+        done(success({{"library", api.libraryStatus()}}));
     });
     router.registerMethod(
         "library.import",
@@ -125,7 +141,12 @@ void registerLibraryApi(IpcRouter &router, ApiContext &api) {
                 done(error(failure("Invalid song id")));
                 return;
             }
-            auto result = api.collections.playLibrary(ids, params.value("song_id").toInt());
+            auto selected = requestedSongs(params);
+            if (!selected) {
+                done(error(selected.error()));
+                return;
+            }
+            auto result = api.collections.playLibrary(ids, params.value("song_id").toInt(), selected.value());
             if (!result) {
                 done(error(result.error()));
                 return;
@@ -175,7 +196,12 @@ void registerLibraryApi(IpcRouter &router, ApiContext &api) {
                         done(error(failure("Invalid song id")));
                         return;
                     }
-                    finish(api.collections.playPlaylist(id.value(), params.value("song_id").toInt()));
+                    auto selected = requestedSongs(params);
+                    if (!selected) {
+                        done(error(selected.error()));
+                        return;
+                    }
+                    finish(api.collections.playPlaylist(id.value(), params.value("song_id").toInt(), selected.value()));
                     return;
                 }
                 if (action == "remove" || params.contains("song_id")) {

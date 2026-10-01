@@ -57,6 +57,7 @@ Popup {
     modal: true
     padding: 24
     background: Rectangle {
+            objectName: "shortcutBlocker"
         color: metadataEditor.shell.surfaceRaised
         radius: 16
         border.color: metadataEditor.shell.border
@@ -76,15 +77,9 @@ Popup {
             }
             IconButton {
                 kind: "close"
+                tooltipText: metadataEditor.translator.text("close", metadataEditor.translator.language)
                 onClicked: metadataEditor.close()
             }
-        }
-        Label {
-            Layout.fillWidth: true
-            text: metadataEditor.shell.databasePath ? metadataEditor.translator.text("database", metadataEditor.translator.language) + ": " + metadataEditor.shell.databasePath : metadataEditor.translator.text("database_unavailable", metadataEditor.translator.language)
-            color: metadataEditor.shell.subtle
-            elide: Text.ElideMiddle
-            font.pixelSize: 11
         }
         TextField {
             id: titleField

@@ -5,6 +5,7 @@ import QtQuick.Layouts
 Item {
     id: root
 
+    property int topInset: 0
     property var lyricsController: null
     property var song: ({})
     property var lyrics: ({})
@@ -26,8 +27,6 @@ Item {
 
     readonly property bool hasSong: Boolean(root.song && root.song.song_id)
     readonly property string coverUrl: String(root.song.cover_url || "")
-        || (!root.lyrics.offline && root.lyrics.track_id === root.song.song_hash
-            ? String((root.lyrics.document || {}).cover_url || "") : "")
     readonly property real targetArtSize: root.width < 1100 ? 224 : 280
 
     signal addRequested()
@@ -41,6 +40,7 @@ Item {
     RowLayout {
         anchors.fill: parent
         anchors.margins: 24
+        anchors.topMargin: 24 + root.topInset
         spacing: 28
 
         // Left Column: Artwork Card & Track Typography (Centered & Fixed Max Width)
@@ -124,7 +124,7 @@ Item {
             Layout.fillHeight: true
             Layout.topMargin: 20
             Layout.bottomMargin: 20
-            width: 1
+            Layout.preferredWidth: 1
             color: root.lineColor
         }
 
@@ -148,7 +148,7 @@ Item {
 
             Rectangle {
                 Layout.fillWidth: true
-                height: root.errorText.length > 0 ? 32 : 0
+                Layout.preferredHeight: root.errorText.length > 0 ? 32 : 0
                 visible: root.errorText.length > 0
                 color: "#38202B"
                 radius: 8

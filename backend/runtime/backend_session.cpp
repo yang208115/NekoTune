@@ -18,10 +18,12 @@ BackendSession::BackendSession()
       m_tagRepository(m_database), m_library(m_songs, m_tagRepository, m_database),
       m_playlists(m_playlistRepository), m_tags(m_tagRepository),
       m_queue(m_queueRepository, m_songs, m_database), m_player(m_audio, m_queue),
-      m_lyrics(m_player, createLyrics()), m_collections(m_songs, m_queueRepository, m_playlistRepository,
-                                                        m_database, m_library, m_queue, m_player),
+      m_lyrics(m_player, createLyrics()), m_covers(std::make_unique<LyricsStorage>()),
+      m_collections(m_songs, m_queueRepository, m_playlistRepository, m_database, m_library, m_queue,
+                    m_player),
       m_api{m_player,      m_queue,  m_library, m_playlists, m_tags,
-            m_collections, m_lyrics, m_imports, m_kugou,     m_database.databasePath()},
+            m_collections, m_lyrics, m_imports, m_kugou,     m_database.databasePath(),
+            m_covers},
       m_downloads(m_library, m_imports, m_router.commands()),
       m_server(m_router, [this] { return m_api.status(); }) {
     connect(&m_kugou, &KugouService::audioReady, &m_downloads, &DownloadService::importDownloaded);
@@ -41,9 +43,10 @@ BackendSession::BackendSession()
     connect(&m_library, &LibraryService::metadataChanged, &m_player, &PlayerEngine::metadataUpdated);
     connect(&m_library, &LibraryService::metadataChanged, this,
             [playlistsChanged](const SongMetadata &) { playlistsChanged(); });
-    connect(&m_queue, &QueueService::changed, this, [this] {
-        m_server.broadcastEvent({{"event", "queue.changed"}, {"queue", queueJson(m_queue.queue())}});
-    });
+    auto queueChanged = [this] {
+        m_server.broadcastEvent({{"event", "queue.changed"}, {"queue", m_api.queueItems()}});
+    };
+    connect(&m_queue, &QueueService::changed, this, queueChanged);
     connect(&m_player, &PlayerEngine::stateChanged, this, [this](PlayerState state) {
         m_server.broadcastEvent({{"event", "player.state_changed"}, {"state", toString(state)}});
     });
@@ -57,16 +60,25 @@ BackendSession::BackendSession()
     connect(&m_player, &PlayerEngine::volumeChanged, this, [this](double volume) {
         m_server.broadcastEvent({{"event", "player.volume_changed"}, {"volume", volume}});
     });
-    connect(&m_player, &PlayerEngine::trackChanged, this, [this] {
+    auto trackChanged = [this] {
         m_server.broadcastEvent(
-            {{"event", "player.track_changed"}, {"song", toJson(m_player.snapshot()).value("song")}});
-    });
+            {{"event", "player.track_changed"}, {"song", m_api.playbackStatus().value("song")}});
+    };
+    connect(&m_player, &PlayerEngine::trackChanged, this, trackChanged);
     connect(&m_player, &PlayerEngine::errorOccurred, this, [this](const QString &message) {
         m_server.broadcastEvent({{"event", "player.error"}, {"message", message}});
     });
     connect(&m_lyrics, &LyricsController::changed, this, [this](const LyricsSnapshot &state) {
+        m_covers.updateLyrics(state);
         m_server.broadcastEvent({{"event", "lyrics.changed"}, {"lyrics", toJson(state)}});
     });
+    connect(&m_covers, &CoverService::changed, this,
+            [libraryChanged, playlistsChanged, queueChanged, trackChanged] {
+                trackChanged();
+                libraryChanged();
+                playlistsChanged();
+                queueChanged();
+            });
     connect(&m_kugou, &KugouService::eventReady, this,
             [this](const KugouEvent &event) { m_server.broadcastEvent(toJson(event)); });
     connect(&m_downloads, &DownloadService::finished, this,

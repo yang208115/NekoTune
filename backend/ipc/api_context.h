@@ -1,5 +1,6 @@
 #pragma once
 #include "application/collection_service.h"
+#include "application/cover_service.h"
 #include "application/kugou_service.h"
 #include "application/lyrics_controller.h"
 #include "application/tag_service.h"
@@ -20,6 +21,11 @@ struct ApiContext {
     IFileInspector &imports;
     KugouService &kugou;
     QString databasePath;
+    CoverService &covers;
+    QJsonObject playbackStatus() const;
+    QJsonObject libraryStatus() const;
+    QJsonArray queueItems() const;
+    QJsonObject withCover(QJsonObject song) const;
     QJsonObject status() const;
     QJsonObject queueStatus() const;
     QJsonArray playlistList() const;

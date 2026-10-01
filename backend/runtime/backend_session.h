@@ -34,6 +34,7 @@ class BackendSession final : public QObject {
     QtPlaybackBackend m_audio;
     PlayerEngine m_player;
     LyricsController m_lyrics;
+    CoverService m_covers;
     ImportExecutor m_imports;
     KugouMusicService m_kugouBackend;
     KugouService m_kugou{m_kugouBackend};

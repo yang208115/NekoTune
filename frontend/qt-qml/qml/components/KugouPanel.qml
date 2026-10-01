@@ -8,6 +8,10 @@ Item {
     id: root
     required property var client
     required property var translator
+    signal settingsRequested()
+    function focusSearch() { searchField.forceActiveFocus(); searchField.selectAll() }
+    property string submittedQuery: ""
+    property string selectedHash: ""
     property var results: []
     property int page: 1
     property bool waiting: false
@@ -44,6 +48,7 @@ Item {
                 root.message = root.t("kugou_code_sent")
             } else if (event === "kugou.logged_in") {
                 codeField.text = ""
+                loginPopup.close()
                 root.message = root.t("kugou_login_success")
             } else if (event === "kugou.download_finished") {
                 root.downloading = false
@@ -81,191 +86,146 @@ Item {
         }
     }
 
+    function downloadSong(hash) {
+        root.downloading = true
+        root.received = 0
+        root.total = 0
+        root.message = ""
+        root.client.kugouDownload(hash)
+    }
     ColumnLayout {
         anchors.fill: parent
-        spacing: 14
-
-        Label {
-            text: root.t("kugou_music")
-            color: "#F5F1FA"
-            font.pixelSize: 25
-            font.weight: Font.DemiBold
-        }
-
-        Rectangle {
-            Layout.fillWidth: true
-            implicitHeight: accountColumn.implicitHeight + 28
-            radius: 12
-            color: "#211C2D"
-            border.color: "#332C41"
-            ColumnLayout {
-                id: accountColumn
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.top: parent.top
-                anchors.margins: 14
-                spacing: 10
-                Label {
-                    text: root.account.logged_in ? root.t("kugou_logged_in")
-                        : root.account.configured ? root.t("kugou_login_prompt") : root.t("kugou_key_missing")
-                    color: root.account.logged_in ? "#98D8BC" : "#D7CFE2"
-                    wrapMode: Text.WordWrap
-                    Layout.fillWidth: true
-                }
-                RowLayout {
-                    visible: !root.account.logged_in
-                    Layout.fillWidth: true
-                    spacing: 8
-                    TextField {
-                        id: mobileField
-                        Layout.preferredWidth: 190
-                        placeholderText: root.t("kugou_mobile")
-                        inputMethodHints: Qt.ImhDigitsOnly
-                        maximumLength: 11
-                        enabled: !root.waiting && !root.account.busy && root.account.configured
-                    }
-                    Button {
-                        text: root.t("kugou_send_code")
-                        enabled: !root.waiting && !root.account.busy && root.account.configured
-                        onClicked: {
-                            root.waiting = true
-                            root.message = ""
-                            root.client.kugouSendCode(mobileField.text.trim())
-                        }
-                    }
-                    TextField {
-                        id: codeField
-                        Layout.preferredWidth: 130
-                        placeholderText: root.t("kugou_code")
-                        echoMode: TextInput.Password
-                        inputMethodHints: Qt.ImhDigitsOnly
-                        maximumLength: 8
-                        enabled: !root.waiting && !root.account.busy && root.account.configured
-                    }
-                    Button {
-                        text: root.t("kugou_login")
-                        enabled: !root.waiting && !root.account.busy && root.account.configured
-                        onClicked: {
-                            const code = codeField.text.trim()
-                            codeField.text = ""
-                            root.waiting = true
-                            root.message = ""
-                            root.client.kugouLogin(mobileField.text.trim(), code)
-                        }
-                    }
-                }
-            }
-        }
-
+        spacing: 16
         RowLayout {
             Layout.fillWidth: true
-            spacing: 8
-            TextField {
-                id: searchField
+            Label { Layout.fillWidth: true; text: root.t("kugou_music"); color: "#F5F1FA"; font.pixelSize: 26; font.weight: Font.DemiBold }
+            TextButton {
+                text: root.t(root.account.logged_in ? "account_logged_in" : "kugou_login")
+                subtle: true
+                enabled: !root.waiting && !root.account.busy
+                onClicked: loginPopup.open()
+            }
+        }
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 12
+            InputField {
+                id: searchField; objectName: "kugouSearchField"
                 Layout.fillWidth: true
                 placeholderText: root.t("kugou_search_hint")
                 enabled: !root.waiting && !root.account.busy
-                onAccepted: searchButton.clicked()
+                onAccepted: if (searchButton.enabled) searchButton.clicked()
+                Accessible.name: placeholderText
             }
-            Button {
+            TextButton {
                 id: searchButton
                 text: root.t("kugou_search")
                 enabled: !root.waiting && !root.account.busy && searchField.text.trim().length > 0
                 onClicked: {
                     root.waiting = true
                     root.message = ""
-                    root.client.kugouSearch(searchField.text.trim(), 1)
+                    root.submittedQuery = searchField.text.trim()
+                    root.client.kugouSearch(root.submittedQuery, 1)
                 }
             }
-            Button {
-                text: root.t("kugou_previous_page")
-                enabled: !root.waiting && !root.account.busy && root.page > 1
-                onClicked: { root.waiting = true; root.client.kugouSearch(searchField.text.trim(), root.page - 1) }
-            }
-            Label { text: String(root.page); color: "#D7CFE2" }
-            Button {
-                text: root.t("kugou_next_page")
-                enabled: !root.waiting && !root.account.busy && root.results.length > 0
-                onClicked: { root.waiting = true; root.client.kugouSearch(searchField.text.trim(), root.page + 1) }
-            }
-        }
-
-        Label {
-            Layout.fillWidth: true
-            visible: root.waiting || root.activeDownload || root.message.length > 0
-            text: root.message || (root.activeDownload ? root.t("kugou_downloading") : root.t("kugou_waiting"))
-            color: "#D7CFE2"
-            wrapMode: Text.WordWrap
-        }
-        Button {
-            visible: root.pendingImportPath.length > 0
-            text: root.t("kugou_retry_import")
-            onClicked: root.client.importLibraryPath(root.pendingImportPath)
         }
         RowLayout {
             Layout.fillWidth: true
-            visible: root.activeDownload
-            ProgressBar {
-                Layout.fillWidth: true
-                from: 0
-                to: root.total > 0 ? root.total : 1
-                value: root.total > 0 ? root.received : 0
-                indeterminate: root.total <= 0
-            }
-            Button { text: root.t("cancel"); onClicked: root.client.kugouCancel() }
+            visible: !root.account.logged_in
+            Label { Layout.fillWidth: true; text: root.t("anonymous_search_hint"); color: "#AAA0B8"; font.pixelSize: 12; wrapMode: Text.WordWrap }
+            TextButton { text: root.t(root.account.configured ? "kugou_login" : "open_settings"); subtle: true; onClicked: root.account.configured ? loginPopup.open() : root.settingsRequested() }
         }
-
+        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: "#332C41" }
         ListView {
             id: resultList
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            clip: true
-            spacing: 6
+            objectName: "kugouResultList"
+            Layout.fillWidth: true; Layout.fillHeight: true; clip: true; spacing: 2
             model: root.results
-            ScrollBar.vertical: ScrollBar { }
-            delegate: Rectangle {
-                id: songRow
+            ScrollBar.vertical: ScrollBar {}
+            delegate: TrackRow {
                 required property var modelData
-                width: resultList.width - 10
-                height: 66
-                radius: 9
-                color: "#211C2D"
-                border.color: "#332C41"
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.margins: 10
-                    spacing: 10
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 2
-                        Label {
-                            Layout.fillWidth: true
-                            text: String(songRow.modelData.title || "") + " — " + String(songRow.modelData.artist || "")
-                            color: "#F5F1FA"
-                            elide: Text.ElideRight
-                        }
-                        Label {
-                            Layout.fillWidth: true
-                            text: String(songRow.modelData.album || "") + " · "
-                                + Math.floor(Number(songRow.modelData.duration_ms || 0) / 60000) + ":"
-                                + ("0" + (Math.floor(Number(songRow.modelData.duration_ms || 0) / 1000) % 60)).slice(-2)
-                            color: "#AAA0B8"
-                            elide: Text.ElideRight
-                        }
-                    }
-                    Button {
-                        text: root.t("kugou_download")
-                        enabled: root.account.logged_in && !root.waiting && !root.account.busy
-                        onClicked: {
-                            root.downloading = true
-                            root.received = 0
-                            root.total = 0
-                            root.message = ""
-                            root.client.kugouDownload(String(songRow.modelData.hash))
-                        }
+                required property int index
+                width: resultList.width
+                song: modelData; rowIndex: index
+                selected: root.selectedHash === String(modelData.hash)
+                downloadRow: true
+                downloadEnabled: root.account.logged_in && !root.waiting && !root.account.busy && !root.activeDownload
+                onSelectedRequested: root.selectedHash = String(modelData.hash)
+                onDownloadRequested: root.downloadSong(String(modelData.hash))
+            }
+            Label {
+                anchors.centerIn: parent
+                visible: resultList.count === 0
+                text: root.t(root.waiting ? "kugou_waiting" : root.submittedQuery ? "kugou_no_results" : "kugou_search_hint")
+                color: "#AAA0B8"; font.pixelSize: 14
+            }
+        }
+        Label {
+            Layout.fillWidth: true
+            visible: root.waiting || root.activeDownload || root.message.length > 0
+            text: root.message || root.t(root.activeDownload ? "kugou_downloading" : "kugou_waiting")
+            color: "#D7CFE2"; wrapMode: Text.WordWrap; textFormat: Text.PlainText; font.pixelSize: 12
+        }
+        TextButton { visible: root.pendingImportPath.length > 0; text: root.t("kugou_retry_import"); enabled: !root.waiting && !root.account.busy; onClicked: root.client.importLibraryPath(root.pendingImportPath) }
+        RowLayout {
+            Layout.fillWidth: true
+            visible: root.activeDownload
+            ProgressBar { Layout.fillWidth: true; from: 0; to: root.total > 0 ? root.total : 1; value: root.total > 0 ? root.received : 0; indeterminate: root.total <= 0 }
+            TextButton { text: root.t("cancel"); subtle: true; onClicked: root.client.kugouCancel() }
+        }
+        RowLayout {
+            Layout.alignment: Qt.AlignHCenter
+            visible: root.submittedQuery.length > 0
+            TextButton { text: root.t("kugou_previous_page"); subtle: true; enabled: !root.waiting && !root.account.busy && root.page > 1; onClicked: { root.waiting = true; root.client.kugouSearch(root.submittedQuery, root.page - 1) } }
+            Label { text: String(root.page); color: "#D7CFE2"; Layout.minimumWidth: 32; horizontalAlignment: Text.AlignHCenter }
+            TextButton { text: root.t("kugou_next_page"); subtle: true; enabled: !root.waiting && !root.account.busy && root.results.length > 0; onClicked: { root.waiting = true; root.client.kugouSearch(root.submittedQuery, root.page + 1) } }
+        }
+    }
+    Popup {
+        id: loginPopup
+        objectName: "kugouLoginPopup"
+        parent: Overlay.overlay; anchors.centerIn: parent
+        width: Math.min(460, parent.width - 40)
+        padding: 24; modal: true; focus: true
+        closePolicy: root.account.busy ? Popup.NoAutoClose : Popup.CloseOnEscape
+        onClosed: codeField.text = ""
+        background: Rectangle { objectName: "shortcutBlocker"; color: "#211C2D"; radius: 16; border.color: "#332C41" }
+        contentItem: ColumnLayout {
+            spacing: 16
+            Label { text: root.t("kugou_login"); color: "#F5F1FA"; font.pixelSize: 20; font.weight: Font.DemiBold }
+            Label {
+                Layout.fillWidth: true
+                text: root.t(root.account.logged_in ? "kugou_logged_in" : root.account.configured ? "kugou_login_prompt" : "kugou_key_missing")
+                color: root.account.logged_in ? "#98D8BC" : "#D7CFE2"; wrapMode: Text.WordWrap
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                visible: !root.account.logged_in && root.account.configured
+                InputField { id: mobileField; Layout.fillWidth: true; placeholderText: root.t("kugou_mobile"); inputMethodHints: Qt.ImhDigitsOnly; maximumLength: 11; enabled: !root.waiting && !root.account.busy }
+                TextButton {
+                    text: root.t("kugou_send_code")
+                    enabled: !root.waiting && !root.account.busy && mobileField.text.trim().length === 11
+                    onClicked: { root.waiting = true; root.message = ""; root.client.kugouSendCode(mobileField.text.trim()) }
+                }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                visible: !root.account.logged_in && root.account.configured
+                InputField { id: codeField; Layout.fillWidth: true; placeholderText: root.t("kugou_code"); echoMode: TextInput.Password; inputMethodHints: Qt.ImhDigitsOnly; maximumLength: 8; enabled: !root.waiting && !root.account.busy }
+                TextButton {
+                    text: root.t("kugou_login")
+                    enabled: !root.waiting && !root.account.busy && mobileField.text.trim().length === 11 && codeField.text.trim().length > 0
+                    onClicked: {
+                        const code = codeField.text.trim()
+                        codeField.text = ""
+                        root.waiting = true; root.message = ""
+                        root.client.kugouLogin(mobileField.text.trim(), code)
                     }
                 }
             }
+            TextButton { visible: !root.account.configured; text: root.t("open_settings"); onClicked: { loginPopup.close(); root.settingsRequested() } }
+            Label { Layout.fillWidth: true; visible: root.message.length > 0; text: root.message; color: "#D7CFE2"; wrapMode: Text.WordWrap; textFormat: Text.PlainText }
+            TextButton { Layout.alignment: Qt.AlignRight; text: root.t("close"); subtle: true; enabled: !root.account.busy; onClicked: loginPopup.close() }
         }
     }
 }

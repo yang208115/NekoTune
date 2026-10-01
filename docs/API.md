@@ -208,11 +208,20 @@ NekoTune 使用基于换行分隔的 JSON 协议，通过 Unix domain socket 进
 {"id":25,"method":"library.import","params":{"path":"/home/user/Music/NekoTune/song.mp3"}}
 ```
 
-`library.list` 返回 `data.library`，其中 `songs` 按 `song_id` 升序列出全部历史歌曲，`tags` 列出全局标签。每首歌曲包含 `song_id`、标题、作者、`tags`（`{id,name}` 数组）、`path` 和 `available`；后端依次从队列、歌单和持久化的导入路径寻找仍存在的文件。不可用歌曲仍会列出，`path` 为空、`available` 为 `false`。曲库变化会广播 `library.changed`，客户端应重新请求 `library.list`。
+`library.list` 返回 `data.library`，其中 `songs` 按 `song_id` 升序列出全部历史歌曲，`tags` 列出全局标签。每首歌曲包含 `song_id`、标题、作者、`tags`（`{id,name}` 数组）、`path`、`available` 和 `cover_url`；后端依次从队列、歌单和持久化的导入路径寻找仍存在的文件。不可用歌曲仍会列出，`path` 为空、`available` 为 `false`。曲库变化会广播 `library.changed`，客户端应重新请求 `library.list`。
+
+曲库、歌单、队列和播放状态中的歌曲对象统一提供 `cover_url`：优先使用同目录同名 `.jpg`、`.jpeg`、`.png`、`.webp` 的 `file:` URL，其次使用按音频 hash 关联的已选歌词／歌词缓存封面，无封面时为空字符串。离线模式仅返回本地封面。歌词封面或离线状态变化后，后端同步广播 `library.changed`、`playlist.changed`、`queue.changed` 和 `player.track_changed`，客户端直接使用歌曲对象的 `cover_url`。
 
 `tag.create` 传入 `name`；`tag.rename` 传入 `id`、`name`；`tag.delete` 传入 `id`。名称去首尾空白后须为 1–64 字符，按大小写折叠后的名称唯一。删除标签只移除歌曲上的关联，不删除歌曲、歌单或文件。
 
 `library.play` 接收可选的 `tag_ids` 整数数组，并以“同时拥有全部所选标签”筛选；未传或空数组表示全部歌曲。可选 `song_id` 指定起播歌曲。后端按 `song_id` 升序生成队列，跳过文件不可用的歌曲，并在成功响应中返回 `data.skipped_song_ids`。无可播放歌曲、指定起播歌曲不可用或不匹配、队列保存失败时返回错误，原队列不变。
+
+`library.play` 和 `playlist.play` 均支持可选的非空 `song_ids` 数组，表示当前可见歌曲及其顺序；数组必须包含互不重复的正整数。曲库歌曲须存在并满足 `tag_ids`，歌单歌曲须属于指定歌单；`song_id` 若提供，须属于这个列表且可播放。缺省时保持原有全曲库／全歌单顺序。曲库继续跳过不可用文件；歌单仍在任一选中歌曲文件缺失时失败。无效列表、起播歌曲不匹配或保存失败均不改变原队列、当前歌曲和播放状态。
+
+```json
+{"id":25,"method":"library.play","params":{"tag_ids":[1],"song_ids":[9,7],"song_id":7}}
+{"id":26,"method":"playlist.play","params":{"id":2,"song_ids":[9,7],"song_id":9}}
+```
 
 `library.delete` 接收非空、无重复的 `song_ids` 整数数组。成功时在同一数据库事务中移除对应的曲库记录、标签关联、所有歌单关联及队列项，返回 `data.deleted_count`，并广播曲库、歌单和队列变化；本地音乐文件不会删除。任何 ID 无效或数据库写入失败时整批不删除。若正在播放的歌曲被删除，尝试继续播放后续队列项；没有后续项则停止。
 

@@ -1,6 +1,8 @@
 #include "controllers/library_controller.h"
 #include <QJsonArray>
 #include <QSet>
+#include <QFileInfo>
+#include <algorithm>
 LibraryController::LibraryController(IpcClient &client) : FeatureController(client) {
     connect(&client, &IpcClient::eventReceived, this, [this](const QJsonObject &event) {
         auto name = event.value("event").toString();
@@ -36,6 +38,7 @@ void LibraryController::apply(const QJsonObject &data) {
     nextTags.removeIf([&](const QVariant &id) { return !tags.contains(id.toInt()); });
     if (nextTags != m_tagIds) {
         m_tagIds = nextTags;
+        clearSelection();
         emit filterChanged();
     }
     auto selected = m_songIds;
@@ -59,10 +62,31 @@ void LibraryController::filter() {
                 match = false;
                 break;
             }
-        if (match)
+        const auto query = m_searchText.trimmed();
+        const auto searchable = song.value("title").toString() + " " + song.value("artist").toString()
+                                + " " + QFileInfo(song.value("path").toString()).fileName();
+        if (match && (query.isEmpty() || searchable.contains(query, Qt::CaseInsensitive)))
             items.append(value);
     }
     m_filtered.update(items);
+    auto selected = m_songIds;
+    selected.removeIf([&items](const auto &id) {
+        return std::none_of(items.cbegin(), items.cend(), [&id](const auto &item) {
+            return item.toMap().value("song_id").toInt() == id.toInt();
+        });
+    });
+    if (selected != m_songIds) {
+        m_songIds = selected;
+        emit selectionChanged();
+    }
+}
+void LibraryController::setSearchText(const QString &text) {
+    if (text == m_searchText)
+        return;
+    m_searchText = text;
+    clearSelection();
+    filter();
+    emit filterChanged();
 }
 void LibraryController::setSelectedTagIds(const QVariantList &ids) {
     QVariantList normalized;
@@ -85,11 +109,41 @@ void LibraryController::toggleTag(int id) {
     setSelectedTagIds(next);
 }
 void LibraryController::toggleSelection(int id) {
+    const auto items = m_filtered.items();
+    if (std::none_of(items.cbegin(), items.cend(), [id](const auto &item) {
+            return item.toMap().value("song_id").toInt() == id;
+        }))
+        return;
     if (m_songIds.contains(id))
         m_songIds.removeAll(id);
     else
         m_songIds.append(id);
     emit selectionChanged();
+}
+void LibraryController::selectRow(int id, bool extend, bool range) {
+    const auto items = m_filtered.items();
+    int row = -1, anchor = -1;
+    for (int index = 0; index < items.size(); ++index) {
+        const auto songId = items[index].toMap().value("song_id").toInt();
+        if (songId == id) row = index;
+        if (songId == m_selectionAnchor) anchor = index;
+    }
+    if (row < 0) return;
+    if (range && anchor >= 0) {
+        if (!extend) m_songIds.clear();
+        for (int index = std::min(row, anchor); index <= std::max(row, anchor); ++index) {
+            const auto songId = items[index].toMap().value("song_id").toInt();
+            if (!m_songIds.contains(songId)) m_songIds.append(songId);
+        }
+        emit selectionChanged();
+    } else if (extend) {
+        toggleSelection(id);
+        m_selectionAnchor = id;
+    } else {
+        m_songIds = {id};
+        m_selectionAnchor = id;
+        emit selectionChanged();
+    }
 }
 void LibraryController::toggleSelectAll() {
     QVariantList ids;
@@ -104,6 +158,7 @@ void LibraryController::toggleSelectAll() {
     emit selectionChanged();
 }
 void LibraryController::clearSelection() {
+    m_selectionAnchor = 0;
     if (m_songIds.isEmpty())
         return;
     m_songIds.clear();
@@ -111,6 +166,11 @@ void LibraryController::clearSelection() {
 }
 void LibraryController::playLibrary(const QVariantList &tagIds, int songId) {
     QJsonObject params{{"tag_ids", QJsonArray::fromVariantList(tagIds)}};
+    if (tagIds == m_tagIds) {
+        QJsonArray ids;
+        for (const auto &item : m_filtered.items()) ids.append(item.toMap().value("song_id").toInt());
+        params.insert("song_ids", ids);
+    }
     if (songId > 0)
         params.insert("song_id", songId);
     send("library.play", params, [this](const QJsonObject &data, const QString &error) {

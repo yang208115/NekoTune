@@ -8,13 +8,16 @@
 #include "ipc/serialization.h"
 #include "runtime/backend_runtime.h"
 #include "support/store_fixture.h"
+#include <QCryptographicHash>
 #include <QDataStream>
 #include <QFile>
+#include <QImage>
 #include <QJSValue>
 #include <QJsonDocument>
 #include <QLocalSocket>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QQuickItem>
 #include <QQuickStyle>
 #include <QQuickWindow>
 #include <QSqlQuery>
@@ -22,6 +25,15 @@
 #include <QtTest>
 
 using namespace nekotune;
+
+static QQuickItem *visualItem(QQuickItem *parent, const QString &name) {
+    if (parent->objectName() == name)
+        return parent;
+    for (auto *child : parent->childItems())
+        if (auto *found = visualItem(child, name))
+            return found;
+    return nullptr;
+}
 
 class FakeAudio final : public IPlaybackBackend {
   public:
@@ -310,7 +322,220 @@ class RefactorTest final : public QObject {
         QTest::qWait(5);
         runtime.stop();
     }
+    void orderedVisiblePlaybackPreservesQueueOnFailure() {
+        BackendRuntime runtime;
+        QVERIFY(runtime.start());
+        RpcPeer peer;
+        QVERIFY(peer.connect(m_socket));
+        peer.call("lyrics.set_offline", {{"offline", true}});
+        QVector<int> ids;
+        for (int index = 0; index < 3; ++index) {
+            const auto path = m_directory.filePath(QString("visible-%1.wav").arg(index));
+            writeAudio(path, char(100 + index));
+            auto result = peer.call("library.import", {{"path", path}});
+            QCOMPARE(result.value("status").toString(), QString("ok"));
+            ids.append(result.value("data").toObject().value("song_id").toInt());
+            QCOMPARE(peer.call("song.update_metadata", {{"song_id", ids.last()}, {"tags", QJsonArray{"Visible"}}})
+                         .value("status").toString(), QString("ok"));
+        }
+        const auto library = peer.call("library.list").value("data").toObject().value("library").toObject();
+        int tagId = 0;
+        for (const auto &tag : library.value("tags").toArray())
+            if (tag.toObject().value("name").toString() == "Visible") tagId = tag.toObject().value("id").toInt();
+        QVERIFY(tagId > 0);
+        const auto playlist = peer.call("playlist.create", {{"name", "Visible result"}})
+                                  .value("data").toObject().value("playlist_id").toInt();
+        for (int id : ids)
+            QCOMPARE(peer.call("playlist.add", {{"id", playlist}, {"song_id", id}}).value("status").toString(), QString("ok"));
+        const QJsonArray visible{ids[2], ids[0]};
+        auto result = peer.call("library.play", {{"tag_ids", QJsonArray{tagId}}, {"song_ids", visible}, {"song_id", ids[0]}});
+        QCOMPARE(result.value("status").toString(), QString("ok"));
+        auto snapshot = result.value("data").toObject();
+        auto queue = snapshot.value("queue").toArray();
+        QCOMPARE(queue.size(), 2);
+        QCOMPARE(queue[0].toObject().value("song_id").toInt(), ids[2]);
+        QCOMPARE(queue[1].toObject().value("song_id").toInt(), ids[0]);
+        QCOMPARE(queue[1].toObject().value("state").toString(), QString("current"));
+        for (const auto &invalid : {QJsonArray{}, QJsonArray{ids[0], ids[0]}, QJsonArray{999999}, QJsonArray{"bad"}}) {
+            auto failed = peer.call("library.play", {{"song_ids", invalid}});
+            QCOMPARE(failed.value("status").toString(), QString("error"));
+            QCOMPARE(peer.call("player.status").value("data").toObject().value("queue").toArray(), queue);
+        }
+        auto outside = peer.call("library.play", {{"song_ids", visible}, {"song_id", ids[1]}});
+        QCOMPARE(outside.value("status").toString(), QString("error"));
+        QCOMPARE(peer.call("player.status").value("data").toObject().value("queue").toArray(), queue);
+        result = peer.call("playlist.play", {{"id", playlist}, {"song_ids", visible}, {"song_id", ids[2]}});
+        QCOMPARE(result.value("status").toString(), QString("ok"));
+        queue = result.value("data").toObject().value("queue").toArray();
+        QCOMPARE(queue.size(), 2);
+        QCOMPARE(queue[0].toObject().value("song_id").toInt(), ids[2]);
+        QCOMPARE(queue[0].toObject().value("state").toString(), QString("current"));
+        QCOMPARE(peer.call("playlist.play", {{"id", playlist}, {"song_ids", QJsonArray{999999}}}).value("status").toString(), QString("error"));
+        QCOMPARE(peer.call("player.status").value("data").toObject().value("queue").toArray(), queue);
+        {
+            auto database = QSqlDatabase::addDatabase("QSQLITE", "visible-failure");
+            database.setDatabaseName(m_database);
+            QVERIFY(database.open());
+            QSqlQuery sql(database);
+            QVERIFY(sql.exec("CREATE TRIGGER fail_visible_queue BEFORE DELETE ON queue_items BEGIN SELECT RAISE(FAIL, 'visible save failed'); END"));
+            // Let the real audio backend finish loading before comparing rollback state.
+            QTRY_COMPARE(peer.call("player.status").value("data").toObject().value("state").toString(),
+                         QString("playing"));
+            const auto before = peer.call("player.status").value("data").toObject();
+            QCOMPARE(peer.call("library.play", {{"song_ids", QJsonArray{ids[1]}}}).value("status").toString(), QString("error"));
+            const auto after = peer.call("player.status").value("data").toObject();
+            QCOMPARE(after.value("queue"), before.value("queue"));
+            QCOMPARE(after.value("song"), before.value("song"));
+            QCOMPARE(after.value("state"), before.value("state"));
+            QVERIFY(sql.exec("DROP TRIGGER fail_visible_queue"));
+            database.close();
+        }
+        QSqlDatabase::removeDatabase("visible-failure");
+        // Calls without the new field retain the full collection.
+        result = peer.call("library.play", {{"tag_ids", QJsonArray{tagId}}});
+        QCOMPARE(result.value("status").toString(), QString("ok"));
+        QCOMPARE(result.value("data").toObject().value("queue").toArray().size(), 3);
+        result = peer.call("playlist.play", {{"id", playlist}});
+        QCOMPARE(result.value("status").toString(), QString("ok"));
+        QCOMPARE(result.value("data").toObject().value("queue").toArray().size(), 3);
+        // An import, even with an active track, must not replace or append to the queue.
+        const auto beforeImport = peer.call("player.status").value("data").toObject().value("queue");
+        auto importPath = m_directory.filePath("import-only.wav");
+        writeAudio(importPath, char(120));
+        QCOMPARE(peer.call("library.import", {{"path", importPath}}).value("status").toString(), QString("ok"));
+        QCOMPARE(peer.call("player.status").value("data").toObject().value("queue"), beforeImport);
+        QVERIFY(QFile::remove(m_directory.filePath("visible-0.wav")));
+        QCOMPARE(peer.call("playlist.play", {{"id", playlist}, {"song_ids", visible}}).value("status").toString(), QString("error"));
+        QCOMPARE(peer.call("player.status").value("data").toObject().value("queue"), beforeImport);
+        result = peer.call("library.play", {{"tag_ids", QJsonArray{tagId}}, {"song_ids", visible}, {"song_id", ids[2]}});
+        QCOMPARE(result.value("status").toString(), QString("ok"));
+        QCOMPARE(result.value("data").toObject().value("skipped_song_ids").toArray(), QJsonArray{ids[0]});
+        QCOMPARE(result.value("data").toObject().value("queue").toArray().size(), 1);
+        const auto retained = peer.call("player.status").value("data").toObject().value("queue");
+        QCOMPARE(peer.call("library.play", {{"song_ids", visible}, {"song_id", ids[0]}}).value("status").toString(), QString("error"));
+        QCOMPARE(peer.call("player.status").value("data").toObject().value("queue"), retained);
+        runtime.stop();
+        BackendRuntime restored;
+        QVERIFY(restored.start());
+        RpcPeer reopened;
+        QVERIFY(reopened.connect(m_socket));
+        const auto restoredQueue = reopened.call("player.status").value("data").toObject().value("queue").toArray();
+        QCOMPARE(restoredQueue.size(), 1);
+        QCOMPARE(restoredQueue[0].toObject().value("song_id").toInt(), ids[2]);
+        QCOMPARE(restoredQueue[0].toObject().value("state").toString(), QString("current"));
+        restored.stop();
+    }
+    void artworkMatchesAcrossIpcCollections() {
+        const auto path = m_directory.filePath("covers.wav");
+        writeAudio(path, char(83));
+        QFile audio(path);
+        QVERIFY(audio.open(QIODevice::ReadOnly));
+        LyricsQuery query;
+        query.trackId = QString::fromLatin1(
+            QCryptographicHash::hash(audio.readAll(), QCryptographicHash::Sha256).toHex());
+        audio.close();
+        LyricsDocument document;
+        document.source = "kugou";
+        document.plainLyrics = "Cached lyrics prevent network requests";
+        document.coverUrl = "https://imge.kugou.com/cached-cover.jpg";
+        QVERIFY(LyricsCache().write(query, document));
+
+        BackendRuntime runtime;
+        QVERIFY(runtime.start());
+        RpcPeer peer;
+        QVERIFY(peer.connect(m_socket));
+        peer.call("queue.clear");
+        const auto imported = peer.call("library.import", {{"path", path}});
+        QCOMPARE(imported.value("status").toString(), QString("ok"));
+        const int songId = imported.value("data").toObject().value("song_id").toInt();
+        const auto playlist = peer.call("playlist.create", {{"name", "Artwork"}})
+                                  .value("data")
+                                  .toObject()
+                                  .value("playlist_id")
+                                  .toInt();
+        QVERIFY(playlist > 0);
+        QCOMPARE(
+            peer.call("playlist.add", {{"id", playlist}, {"song_id", songId}}).value("status").toString(),
+            QString("ok"));
+        auto libraryCover = [&] {
+            const auto songs = peer.call("library.list")
+                                   .value("data")
+                                   .toObject()
+                                   .value("library")
+                                   .toObject()
+                                   .value("songs")
+                                   .toArray();
+            for (const auto &song : songs)
+                if (song.toObject().value("song_id").toInt() == songId)
+                    return song.toObject().value("cover_url").toString();
+            return QString("missing song");
+        };
+        QCOMPARE(libraryCover(),
+                 document.coverUrl); // Artwork is available before first playback.
+        QCOMPARE(peer.call("player.play", {{"path", path}}).value("status").toString(), QString("ok"));
+        IpcClient client;
+        AppControllers controllers(client);
+        QTRY_VERIFY(client.connected());
+        auto modelCover = [&] {
+            for (const auto &song : controllers.library->songs()->items())
+                if (song.toMap().value("song_id").toInt() == songId)
+                    return song.toMap().value("cover_url").toString();
+            return QString("missing song");
+        };
+        QTRY_COMPARE(modelCover(), document.coverUrl);
+        QTRY_COMPARE(controllers.playback->song().value("cover_url").toString(), document.coverUrl);
+        auto verifyCovers = [&](const QString &expected) {
+            QCOMPARE(libraryCover(), expected);
+            const auto status = peer.call("player.status").value("data").toObject();
+            QCOMPARE(status.value("song").toObject().value("cover_url").toString(), expected);
+            QCOMPARE(status.value("queue").toArray().first().toObject().value("cover_url").toString(),
+                     expected);
+            const auto queue = peer.call("queue.status").value("data").toObject().value("items").toArray();
+            QCOMPARE(queue.first().toObject().value("cover_url").toString(), expected);
+            for (const auto &list : status.value("playlists").toArray())
+                if (list.toObject().value("id").toInt() == playlist)
+                    QCOMPARE(list.toObject()
+                                 .value("items")
+                                 .toArray()
+                                 .first()
+                                 .toObject()
+                                 .value("cover_url")
+                                 .toString(),
+                             expected);
+        };
+        verifyCovers(document.coverUrl);
+        peer.call("lyrics.set_offline", {{"offline", true}});
+        QTRY_COMPARE(libraryCover(), QString());
+        QTRY_COMPARE(modelCover(), QString());
+        QTRY_COMPARE(controllers.playback->song().value("cover_url").toString(), QString());
+        verifyCovers({});
+        QImage image(40, 40, QImage::Format_RGB32);
+        image.fill(QColor("#E8A9C3"));
+        const auto coverPath = m_directory.filePath("covers.png");
+        QVERIFY(image.save(coverPath));
+        verifyCovers(QUrl::fromLocalFile(coverPath).toString());
+        QVERIFY(QFile::remove(coverPath));
+        document.coverUrl = "https://imge.kugou.com/new-selection.jpg";
+        QVERIFY(LyricsCache().write(query, document));
+        peer.call("lyrics.set_offline", {{"offline", false}});
+        QTRY_COMPARE(libraryCover(), document.coverUrl);
+        QTRY_COMPARE(modelCover(), document.coverUrl);
+        QTRY_COMPARE(controllers.playback->song().value("cover_url").toString(), document.coverUrl);
+        verifyCovers(document.coverUrl);
+        runtime.stop();
+
+        QVERIFY(runtime.start());
+        RpcPeer restored;
+        QVERIFY(restored.connect(m_socket));
+        const auto status = restored.call("player.status").value("data").toObject();
+        QCOMPARE(status.value("song").toObject().value("cover_url").toString(), document.coverUrl);
+        runtime.stop();
+    }
     void realQmlMetadataSelectionAndMute() {
+        QImage coverImage(40, 40, QImage::Format_RGB32);
+        coverImage.fill(QColor("#E8A9C3"));
+        const auto coverPath = m_directory.filePath("test.png");
+        QVERIFY(coverImage.save(coverPath));
         BackendRuntime runtime;
         QVERIFY(runtime.start());
         RpcPeer peer;
@@ -333,31 +558,91 @@ class RefactorTest final : public QObject {
         auto *root = engine.rootObjects().first();
         QTRY_VERIFY(client.connected());
         QTRY_VERIFY(controllers.library->songs()->count() > 0);
+        QCOMPARE(root->property("viewMode").toString(), QString("library"));
+        QVERIFY(root->property("nowPlayingOpen").toBool() == false);
+
         controllers.library->toggleSelection(songId);
         QCOMPARE(controllers.library->selectedSongIds().size(), 1);
         peer.call("player.play", {{"path", m_audio}});
         QTest::qWait(300);
+        auto *coverWindow = qobject_cast<QQuickWindow *>(root);
+        QVERIFY(coverWindow);
+        QQuickItem *coverRow = nullptr;
+        QTRY_VERIFY(
+            (coverRow = visualItem(coverWindow->contentItem(), "libraryRow" + QString::number(songId))));
+        auto *rowCover = coverRow->findChild<QQuickItem *>("trackCover");
+        auto *playerCover = root->findChild<QQuickItem *>("nowPlayingCover");
+        QVERIFY(rowCover && playerCover);
+        const auto coverUrl = QUrl::fromLocalFile(coverPath);
+        QTRY_COMPARE(rowCover->property("source").toUrl(), coverUrl);
+        QTRY_COMPARE(playerCover->property("source").toUrl(), coverUrl);
+        QTRY_COMPARE(rowCover->property("status").toInt(), 1); // Image.Ready
+        QTRY_COMPARE(playerCover->property("status").toInt(), 1);
+        const auto coverScreenshot = qEnvironmentVariable("NEKOTUNE_COVER_SCREENSHOT");
+        if (!coverScreenshot.isEmpty()) {
+            QTest::qWait(100);
+            QVERIFY(coverWindow->grabWindow().save(coverScreenshot));
+        }
         QCOMPARE(controllers.library->selectedSongIds().size(), 1);
         controllers.playback->setVolume(0);
         QTRY_COMPARE(controllers.playback->volume(), 0.0);
         QCOMPARE(root->property("volume").toDouble(), 0.0);
+        root->setProperty("viewMode", "kugou");
+        QVERIFY(QMetaObject::invokeMethod(root, "openNowPlaying"));
+        QVERIFY(root->property("nowPlayingOpen").toBool());
+        QCOMPARE(root->property("viewMode").toString(), QString("kugou"));
+        root->setProperty("queueOpen", true);
+        QVERIFY(root->findChild<QQuickItem *>("queueDrawer")->isVisible());
+        QVERIFY(QMetaObject::invokeMethod(root, "closeNowPlaying"));
+        QCOMPARE(root->property("viewMode").toString(), QString("kugou"));
+        QVERIFY(!root->property("queueOpen").toBool());
+        auto *controls = root->findChild<QQuickItem *>("transportControls");
+        QVERIFY(controls);
+        for (int width : {1000, 1360}) {
+            root->setProperty("width", width);
+            QTest::qWait(30);
+            QCOMPARE(qRound(controls->mapToScene(QPointF(controls->width() / 2, 0)).x()), width / 2);
+        }
+        root->setProperty("viewMode", "library");
+
         controllers.playback->toggleMute();
         QTRY_VERIFY(controllers.playback->volume() > 0);
+        QTRY_COMPARE(controllers.lyrics->current().value("state").toString(), QString("ready"));
         auto *editor = root->findChild<QObject *>("metadataEditor");
         QVERIFY(editor);
         const QVariant record = QVariantMap{{"song_id", songId}, {"title", "Incomplete list row"}};
         QVERIFY(QMetaObject::invokeMethod(editor, "openForSong", Q_ARG(QVariant, record)));
         QTRY_VERIFY(editor->property("tagsReady").toBool());
+        QTRY_VERIFY(root->property("popupActive").toBool());
         auto *title = editor->findChild<QObject *>("metadataTitleField");
         auto *lyrics = editor->findChild<QObject *>("metadataLyricsField");
         QVERIFY(title && lyrics);
         QCOMPARE(lyrics->property("text").toString(), QString("Keep my custom lyrics"));
+        QCOMPARE(controllers.lyrics->current().value("document").toMap().value("plain_text").toString(),
+                 QString("Keep my custom lyrics"));
         title->setProperty("text", "Edited through QML");
         QVERIFY(QMetaObject::invokeMethod(editor, "save"));
         QTRY_VERIFY(!editor->property("visible").toBool());
+        QTRY_VERIFY(!root->property("popupActive").toBool());
         auto metadata = peer.call("song.metadata", {{"song_id", songId}}).value("data").toObject();
         QCOMPARE(metadata.value("custom_title").toString(), QString("Edited through QML"));
         QCOMPARE(metadata.value("lyrics").toString(), QString("Keep my custom lyrics"));
+        auto *uiWindow = qobject_cast<QQuickWindow *>(root);
+        QVERIFY(uiWindow);
+        const auto firstId =
+            controllers.library->filteredSongs()->items().first().toMap().value("song_id").toInt();
+        auto *firstRow = visualItem(uiWindow->contentItem(), "libraryRow" + QString::number(firstId));
+        QVERIFY(firstRow);
+        QSignalSpy selectionBehindDrawer(firstRow, SIGNAL(selectedRequested(int)));
+        QVERIFY(selectionBehindDrawer.isValid());
+        root->setProperty("queueOpen", true);
+        QTest::qWait(30);
+        auto *drawer = root->findChild<QQuickItem *>("queueDrawer");
+        const auto point = QPoint(qRound(drawer->mapToScene(QPointF(4, 0)).x()),
+                                  qRound(firstRow->mapToScene(QPointF(0, firstRow->height() / 2)).y()));
+        QTest::mouseClick(uiWindow, Qt::LeftButton, Qt::NoModifier, point);
+        QCOMPARE(selectionBehindDrawer.count(), 0);
+        root->setProperty("queueOpen", false);
         for (const QString page : {"queue", "library", "lyrics", "kugou", "settings", "lyrics_debug"}) {
             root->setProperty("viewMode", page);
             QTest::qWait(30);
@@ -366,11 +651,13 @@ class RefactorTest final : public QObject {
                                               Q_ARG(QVariant, QVariant(page))));
             QCOMPARE(status.toInt(), 1);
         }
-        // Registration alone is enough to expose a new page; Main.qml has no feature branch for it.
-        const QString extraQml =
-            "import QtQuick; Item { required property var shell; required property var controllers; required "
-            "property var transport; required property var translator; signal importRequested(int id); "
-            "signal editRequested(var song) }";
+        // Registration alone is enough to expose a new page; Main.qml has no
+        // feature branch for it.
+        const QString extraQml = "import QtQuick; Item { required property var shell; required "
+                                 "property var controllers; required "
+                                 "property var transport; required property var translator; signal "
+                                 "importRequested(int id); "
+                                 "signal editRequested(var song) }";
         auto pagesValue = root->property("pages");
         auto pages = pagesValue.value<QJSValue>().toVariant().toList();
         QVERIFY(!pages.isEmpty());
@@ -401,11 +688,124 @@ class RefactorTest final : public QObject {
         if (!screenshot.isEmpty()) {
             auto *window = qobject_cast<QQuickWindow *>(root);
             QVERIFY(window);
-            for (const QString page : {"queue", "library", "lyrics", "settings", "kugou", "lyrics_debug"}) {
-                root->setProperty("viewMode", page);
-                QTest::qWait(100);
-                QVERIFY(window->grabWindow().save(screenshot + "-" + page + ".png"));
+            const auto playlistId = peer.call("playlist.create", {{"name", "夜色收藏 · Night collection"}})
+                                        .value("data")
+                                        .toObject()
+                                        .value("playlist_id")
+                                        .toInt();
+            const auto emptyPlaylistId = peer.call("playlist.create", {{"name", "新的歌单 · New playlist"}})
+                                             .value("data")
+                                             .toObject()
+                                             .value("playlist_id")
+                                             .toInt();
+            const QStringList titles{"夜に駆ける",
+                                     "月光下的归途",
+                                     "A quiet evening, a very long song title that should stay readable",
+                                     "星屑と小さな猫",
+                                     "雨后的城市 · Acoustic version",
+                                     "晚风与耳机"};
+            const QStringList artists{"YOASOBI",  "NekoTune",       "Night Radio Ensemble",
+                                      "月夜楽団", "Indie Sessions", "夜樱电台"};
+            for (int index = 0; index < titles.size(); ++index) {
+                auto path = m_directory.filePath(QString("preview-%1.wav").arg(index));
+                writeAudio(path, char(30 + index));
+                auto id = peer.call("library.import", {{"path", path}})
+                              .value("data")
+                              .toObject()
+                              .value("song_id")
+                              .toInt();
+                QVERIFY(id > 0);
+                peer.call("song.update_metadata",
+                          {{"song_id", id},
+                           {"title", titles[index]},
+                           {"artist", artists[index]},
+                           {"lyrics", "[00:00.00]夜色轻轻落在肩上\n[00:05.00]让旋律陪伴这段时光\n[00:"
+                                      "10.00]月光穿过城市的窗\n[00:15.00]此刻只想静静听歌"}});
+                peer.call("playlist.add", {{"id", playlistId}, {"song_id", id}});
             }
+            peer.call("playlist.play", {{"id", playlistId}});
+            QTRY_VERIFY(controllers.playlists->model()->count() >= 2);
+            QTRY_VERIFY(controllers.library->songs()->count() >= titles.size());
+            QTest::qWait(200);
+            auto loadedPage = [root](const QString &id) {
+                QVariant item;
+                QMetaObject::invokeMethod(root, "pageItem", Q_RETURN_ARG(QVariant, item),
+                                          Q_ARG(QVariant, QVariant(id)));
+                return item.value<QObject *>();
+            };
+            auto *onlinePage = loadedPage("kugou");
+            QVERIFY(onlinePage);
+            auto *online = onlinePage->findChild<QObject *>("kugouPanel");
+            QVERIFY(online);
+            QVariantList results;
+            for (int index = 0; index < titles.size(); ++index)
+                results.append(QVariantMap{{"title", titles[index]},
+                                           {"artist", artists[index]},
+                                           {"hash", QString("fixture-%1").arg(index)},
+                                           {"duration_ms", 210000}});
+            online->setProperty("results", results);
+            for (const QString language : {"zh", "en"}) {
+                translator.setLanguage(language);
+                for (int width : {1000, 1360}) {
+                    root->setProperty("width", width);
+                    root->setProperty("height", width == 1000 ? 640 : 860);
+                    auto capture = [&](const QString &state) {
+                        QTest::qWait(250);
+                        const auto path =
+                            screenshot + "-" + language + "-" + QString::number(width) + "-" + state + ".png";
+                        QVERIFY(window->grabWindow().save(path));
+                    };
+                    root->setProperty("currentPlaylist", playlistId);
+                    root->setProperty("nowPlayingOpen", false);
+                    for (const QString page :
+                         {"library", "queue", "lyrics", "settings", "kugou", "lyrics_debug"}) {
+                        root->setProperty("debugEnabled", page == "lyrics_debug");
+                        root->setProperty("viewMode", page);
+                        capture(page);
+                    }
+                    root->setProperty("debugEnabled", false);
+                    root->setProperty("viewMode", "library");
+                    root->setProperty("queueOpen", true);
+                    capture("drawer");
+                    root->setProperty("queueOpen", false);
+                    root->setProperty("currentPlaylist", emptyPlaylistId);
+                    root->setProperty("viewMode", "queue");
+                    capture("empty-playlist");
+                    root->setProperty("currentPlaylist", playlistId);
+                    auto *queuePage = loadedPage("queue");
+                    QVERIFY(queuePage);
+                    auto *panel = queuePage->findChild<QObject *>("queuePanel");
+                    QVERIFY(panel);
+                    QVERIFY(QMetaObject::invokeMethod(panel, "newPlaylist"));
+                    panel->setProperty("operationError", "Could not save playlist. Please retry.");
+                    capture("playlist-error");
+                    QVERIFY(
+                        QMetaObject::invokeMethod(panel->findChild<QObject *>("playlistNamePopup"), "close"));
+                    root->setProperty("viewMode", "lyrics");
+                    auto *lyricsPage = loadedPage("lyrics");
+                    QVERIFY(lyricsPage);
+                    auto *lyricsPopup = lyricsPage->findChild<QObject *>("lyricsSearchPopup");
+                    QVERIFY(lyricsPopup);
+                    QVERIFY(QMetaObject::invokeMethod(lyricsPopup, "openForSong"));
+                    capture("lyrics-search");
+                    auto *source = lyricsPopup->findChild<QObject *>("lyricsSearchSource");
+                    QVERIFY(source);
+                    auto *sourcePopup = source->property("popup").value<QObject *>();
+                    QVERIFY(sourcePopup);
+                    QVERIFY(QMetaObject::invokeMethod(sourcePopup, "open"));
+                    capture("lyrics-source");
+                    QVERIFY(QMetaObject::invokeMethod(sourcePopup, "close"));
+                    QVERIFY(QMetaObject::invokeMethod(lyricsPopup, "close"));
+                    QVERIFY(QMetaObject::invokeMethod(editor, "openForSong",
+                                                      Q_ARG(QVariant, root->property("song"))));
+                    QTRY_VERIFY(editor->property("tagsReady").toBool());
+                    capture("metadata");
+                    QVERIFY(QMetaObject::invokeMethod(editor, "close"));
+                }
+            }
+            translator.setLanguage("zh");
+            root->setProperty("width", 1360);
+            root->setProperty("height", 860);
             root->setProperty("viewMode", "library");
             QTest::qWait(100);
             QVERIFY(window->grabWindow().save(screenshot));

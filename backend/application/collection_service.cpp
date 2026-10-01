@@ -2,6 +2,7 @@
 #include "application/transaction.h"
 #include <QFileInfo>
 #include <QSet>
+#include <algorithm>
 namespace nekotune {
 CollectionService::CollectionService(ISongRepository &songs, IQueueRepository &queueRepo,
                                      IPlaylistRepository &playlists, ITransaction &transaction,
@@ -68,7 +69,8 @@ Result<void> CollectionService::addQueueItemToPlaylist(int id, int queueId) {
     emit playlistsChanged();
     return {};
 }
-Result<void> CollectionService::playPlaylist(int id, int songId) {
+Result<void> CollectionService::playPlaylist(int id, int songId,
+                                            const std::optional<QVector<int>> &songIds) {
     auto playlist = m_playlists.playlistById(id);
     if (!playlist)
         return failure(QStringLiteral("Playlist does not exist"));
@@ -77,7 +79,22 @@ Result<void> CollectionService::playPlaylist(int id, int songId) {
     auto next = m_queue.queue();
     next.clear();
     int start = songId ? -1 : 0;
-    for (const auto &record : playlist->items) {
+    auto records = playlist->items;
+    if (songIds) {
+        records.clear();
+        QSet<int> seen;
+        for (int requested : *songIds) {
+            auto found = std::find_if(playlist->items.cbegin(), playlist->items.cend(),
+                                      [requested](const auto &record) { return record.songId == requested; });
+            if (found == playlist->items.cend() || seen.contains(requested))
+                return failure(QStringLiteral("Invalid song list for playlist"));
+            seen.insert(requested);
+            records.append(*found);
+        }
+        if (records.isEmpty())
+            return failure(QStringLiteral("No songs selected"));
+    }
+    for (const auto &record : records) {
         auto song = m_songs.songById(record.songId);
         if (!song || !QFileInfo(record.path).isFile())
             return failure(QStringLiteral("Playlist file is unavailable: %1").arg(record.path));
@@ -93,7 +110,8 @@ Result<void> CollectionService::playPlaylist(int id, int songId) {
         emit libraryChanged();
     return result;
 }
-Result<CollectionPlayResult> CollectionService::playLibrary(const QVector<int> &tagIds, int songId) {
+Result<CollectionPlayResult> CollectionService::playLibrary(const QVector<int> &tagIds, int songId,
+                                                            const std::optional<QVector<int>> &songIds) {
     auto library = m_library.snapshot();
     QSet<int> available;
     for (const auto &tag : library.tags)
@@ -101,11 +119,26 @@ Result<CollectionPlayResult> CollectionService::playLibrary(const QVector<int> &
     for (int id : tagIds)
         if (!available.contains(id))
             return failure(QStringLiteral("Tag does not exist"));
+    auto records = library.songs;
+    if (songIds) {
+        records.clear();
+        QSet<int> seen;
+        for (int requested : *songIds) {
+            auto found = std::find_if(library.songs.cbegin(), library.songs.cend(),
+                                      [requested](const auto &item) { return item.metadata.id == requested; });
+            if (found == library.songs.cend() || seen.contains(requested))
+                return failure(QStringLiteral("Invalid song list for library"));
+            seen.insert(requested);
+            records.append(*found);
+        }
+        if (records.isEmpty())
+            return failure(QStringLiteral("No songs selected"));
+    }
     auto next = m_queue.queue();
     next.clear();
     CollectionPlayResult result;
     int start = songId ? -1 : 0;
-    for (const auto &item : library.songs) {
+    for (const auto &item : records) {
         QSet<int> assigned;
         for (const auto &tag : item.tags)
             assigned.insert(tag.id);
@@ -115,6 +148,8 @@ Result<CollectionPlayResult> CollectionService::playLibrary(const QVector<int> &
                 matches = false;
                 break;
             }
+        if (!matches && songIds)
+            return failure(QStringLiteral("Selected song does not match the tags"));
         if (!matches)
             continue;
         if (item.path.isEmpty()) {

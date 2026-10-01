@@ -1,5 +1,4 @@
 #include "core/player_engine.h"
-#include <QDir>
 #include <QFileInfo>
 #include <cmath>
 namespace nekotune {
@@ -42,7 +41,7 @@ PlayerEngine::PlayerEngine(IPlaybackBackend &backend, QueueService &queue)
 }
 PlaybackSnapshot PlayerEngine::snapshot() const {
     PlaybackSnapshot result{
-        m_state, m_backend.position(), m_backend.duration(), m_backend.volume(), {}, m_metadata, {}};
+        m_state, m_backend.position(), m_backend.duration(), m_backend.volume(), {}, m_metadata};
     const auto &queue = m_queue.queue();
     if (queue.currentIndex() < 0)
         return result;
@@ -54,13 +53,6 @@ PlaybackSnapshot PlayerEngine::snapshot() const {
         result.metadata.title = QFileInfo(song.path).completeBaseName();
     if (!song.metadata.artist.isEmpty())
         result.metadata.artist = song.metadata.artist;
-    const QFileInfo audio(song.path);
-    const auto base = QDir(audio.absolutePath()).filePath(audio.completeBaseName());
-    for (const auto &suffix : {".jpg", ".jpeg", ".png", ".webp"})
-        if (QFileInfo(base + QLatin1String(suffix)).isFile()) {
-            result.coverUrl = QUrl::fromLocalFile(base + QLatin1String(suffix)).toString();
-            break;
-        }
     return result;
 }
 void PlayerEngine::setState(PlayerState state) {

@@ -8,6 +8,7 @@ class LibraryController final : public FeatureController {
     Q_PROPERTY(RecordModel *filteredSongs READ filteredSongs CONSTANT)
     Q_PROPERTY(QVariantList selectedTagIds READ selectedTagIds WRITE setSelectedTagIds NOTIFY filterChanged)
     Q_PROPERTY(QVariantList selectedSongIds READ selectedSongIds NOTIFY selectionChanged)
+    Q_PROPERTY(QString searchText READ searchText WRITE setSearchText NOTIFY filterChanged)
     Q_PROPERTY(QVariantMap editing READ editing NOTIFY editingChanged)
     Q_PROPERTY(bool metadataReady READ metadataReady NOTIFY editingChanged)
   public:
@@ -17,11 +18,14 @@ class LibraryController final : public FeatureController {
     RecordModel *filteredSongs() { return &m_filtered; }
     QVariantList selectedTagIds() const { return m_tagIds; }
     QVariantList selectedSongIds() const { return m_songIds; }
+    QString searchText() const { return m_searchText; }
+    void setSearchText(const QString &text);
     QVariantMap editing() const { return m_editing; }
     bool metadataReady() const { return m_metadataReady; }
     void setSelectedTagIds(const QVariantList &ids);
     Q_INVOKABLE void toggleTag(int id);
     Q_INVOKABLE void toggleSelection(int id);
+    Q_INVOKABLE void selectRow(int id, bool extend = false, bool range = false);
     Q_INVOKABLE void toggleSelectAll();
     Q_INVOKABLE void clearSelection();
     Q_INVOKABLE void refreshLibrary();
@@ -44,6 +48,8 @@ class LibraryController final : public FeatureController {
     void filter();
     RecordModel m_songs{"song_id"}, m_tags{"id"}, m_filtered{"song_id"};
     QVariantList m_tagIds, m_songIds;
+    QString m_searchText;
+    int m_selectionAnchor = 0;
     QVariantMap m_editing;
     bool m_metadataReady = false;
     int m_editingId = 0;

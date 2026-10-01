@@ -13,6 +13,7 @@ class ComponentTestSetup : public QObject {
         m_library.tags()->update(library.value("tags").toList());
         m_library.setSelectedTagIds({-1});
         m_library.setSelectedTagIds({});
+        m_library.setSearchText({});
         m_library.clearSelection();
     }
   public slots:

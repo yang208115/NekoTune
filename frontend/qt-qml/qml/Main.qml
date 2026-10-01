@@ -20,7 +20,9 @@ ApplicationWindow {
     property var transport: ipcClient
     property var translator: i18n
     property bool debugEnabled: Boolean(lyricsDebugEnabled)
-    property string viewMode: "queue"
+    property string viewMode: "library"
+    property bool nowPlayingOpen: false
+    property bool queueOpen: false
     property int currentPlaylist: 0
     property var pages: PageRegistry.pages
     readonly property var theme: palette
@@ -54,14 +56,16 @@ ApplicationWindow {
     FileDialog {
         id: files
         property int playlistId: 0
+        property string targetCollection: "library"
         title: root.translator.text("open_music", root.translator.language)
         fileMode: FileDialog.OpenFiles
         nameFilters: [root.translator.text("audio_files", root.translator.language) + " (*.mp3 *.m4a *.aac *.wav *.flac *.ogg)", root.translator.text("all_files", root.translator.language) + " (*)"]
         onAccepted: {
             for (let index = 0; index < selectedFiles.length; ++index) {
-                if (playlistId) root.app.playlists.managePlaylist("add", {id: playlistId, path: String(selectedFiles[index])})
-                else if (index === 0 && !root.hasSong) root.app.playback.playPath(String(selectedFiles[index]))
-                else root.app.queue.addPath(String(selectedFiles[index]))
+                const path = String(selectedFiles[index])
+                if (targetCollection === "playlist") root.app.playlists.managePlaylist("add", {id: playlistId, path: path})
+                else if (targetCollection === "queue") root.app.queue.addPath(path)
+                else root.app.library.importLibraryPath(path)
             }
         }
     }
@@ -72,48 +76,161 @@ ApplicationWindow {
         const loader = pageRepeater.itemAt(index) as Loader
         return loader ? loader.status : -1
     }
+    function pageItem(id) {
+        const index = root.pages.findIndex(page => page.id === id)
+        const loader = pageRepeater.itemAt(index) as Loader
+        return loader ? loader.item : null
+    }
     function queuePage() {
         const index = root.pages.findIndex(page => page.id === "queue")
         const loader = pageRepeater.itemAt(index) as Loader
         return loader ? loader.item : null
     }
+    function navigate(id, playlistId) {
+        nowPlayingOpen = false
+        queueOpen = false
+        if (id === "queue") currentPlaylist = Number(playlistId || 0)
+        viewMode = id
+    }
+    function openNowPlaying() { if (hasSong) { nowPlayingOpen = true; queueOpen = false } }
+    function closeNowPlaying() {
+        nowPlayingOpen = false
+        queueOpen = false
+        if (viewMode === "lyrics") viewMode = "library"
+    }
+    function openImport(target, playlistId) { files.targetCollection = target; files.playlistId = Number(playlistId || 0); files.open() }
+    function currentPage() { return pageItem(viewMode) }
+    readonly property bool editingText: {
+        let item = activeFocusItem
+        while (item) {
+            if (item instanceof TextInput || item instanceof TextEdit) return true
+            item = item.parent
+        }
+        return false
+    }
+    readonly property bool popupActive: Boolean(Overlay.overlay && Overlay.overlay.children.some(item => item.visible && item.background && item.background.objectName === "shortcutBlocker"))
+    Shortcut { sequence: "Space"; enabled: root.transport.connected && (root.hasSong || root.queue.length > 0) && !root.editingText && !root.popupActive; onActivated: root.app.playback.togglePlayPause() }
+    Shortcut {
+        sequence: "Ctrl+F"
+        enabled: !root.nowPlayingOpen && !root.popupActive
+        onActivated: {
+            const page = root.queueOpen ? queuePanel : root.currentPage()
+            if (page && typeof page.focusSearch === "function") page.focusSearch()
+        }
+    }
+    Shortcut {
+        sequence: "Ctrl+O"
+        enabled: root.transport.connected && !root.popupActive
+        onActivated: root.openImport(root.queueOpen ? "queue" : root.viewMode === "queue" && root.currentPlaylist ? "playlist" : "library", root.currentPlaylist)
+    }
+    Shortcut { sequence: "Escape"; enabled: !root.popupActive; onActivated: { if (root.queueOpen) root.queueOpen = false; else root.closeNowPlaying() } }
+    Connections {
+        target: root.app.playlists
+        function onPlaylistCreated(id) { root.navigate("queue", id) }
+    }
+    onViewModeChanged: queueOpen = false
+    onCurrentPlaylistChanged: if (!currentPlaylist && viewMode === "queue") viewMode = "library"
     ColumnLayout {
         anchors.fill: parent
         spacing: 0
-        RowLayout {
+        Item {
+            id: workspace
             Layout.fillWidth: true
             Layout.fillHeight: true
-            spacing: 0
-            Sidebar {
-                shell: root; controllers: root.app; transport: root.transport; translator: root.translator
-                pages: root.pages
-                currentPlaylist: root.currentPlaylist
-                onPlaylistRequested: id => { root.currentPlaylist = id; root.viewMode = "queue"; if (root.queuePage()) root.queuePage().currentPlaylist = id }
-                onNewPlaylistRequested: { root.viewMode = "queue"; if (root.queuePage()) root.queuePage().newPlaylist() }
-                onNewTagRequested: tagEditor.openNew()
-                onEditTagRequested: tag => tagEditor.openForTag(tag)
-            }
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                color: "#110f17"
-                Repeater {
-                    id: pageRepeater
-                    model: root.pages
-                    delegate: Loader {
-                        id: pageLoader
-                        required property var modelData
+            RowLayout {
+                anchors.fill: parent
+                spacing: 0
+                Sidebar {
+                    shell: root; controllers: root.app; transport: root.transport; translator: root.translator
+                    pages: root.pages
+                    currentPlaylist: root.currentPlaylist
+                    visible: !root.nowPlayingOpen && root.viewMode !== "lyrics"
+                    onPlaylistRequested: id => root.navigate("queue", id)
+                    onNewPlaylistRequested: if (root.queuePage()) root.queuePage().newPlaylist()
+                }
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    color: root.color
+                    ColumnLayout {
                         anchors.fill: parent
-                        active: !modelData.debug || root.debugEnabled
-                        visible: root.viewMode === modelData.id
-                        objectName: modelData.id === "lyrics_debug" ? "lyricsDebugPageLoader" : modelData.id + "PageLoader"
-                        Component.onCompleted: if (active) setSource(Qt.resolvedUrl(modelData.source), {shell: root, controllers: root.app, transport: root.transport, translator: root.translator})
-                        Connections {
-                            target: pageLoader.item
-                            function onImportRequested(id) { files.playlistId = id; files.open() }
-                            function onEditRequested(song) { metadataEditor.openForSong(song) }
+                        spacing: 0
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: errorLabel.implicitHeight + 20
+                            visible: Boolean(root.transport.error)
+                            color: "#38202B"
+                            Label {
+                                id: errorLabel
+                                anchors.fill: parent; anchors.margins: 10
+                                text: root.transport.error; textFormat: Text.PlainText
+                                color: "#FF9BAE"; wrapMode: Text.WordWrap; font.pixelSize: 12
+                            }
+                        }
+                        Item {
+                            Layout.fillWidth: true; Layout.fillHeight: true
+                            Repeater {
+                                id: pageRepeater
+                                model: root.pages
+                                delegate: Loader {
+                                    id: pageLoader
+                                    required property var modelData
+                                    anchors.fill: parent
+                                    active: !modelData.debug || root.debugEnabled
+                                    visible: modelData.id === "lyrics" ? root.nowPlayingOpen || root.viewMode === "lyrics"
+                                             : !root.nowPlayingOpen && root.viewMode === modelData.id
+                                    objectName: modelData.id === "lyrics_debug" ? "lyricsDebugPageLoader" : modelData.id + "PageLoader"
+                                    Component.onCompleted: if (active) setSource(Qt.resolvedUrl(modelData.source), {shell: root, controllers: root.app, transport: root.transport, translator: root.translator})
+                                    Connections {
+                                        target: pageLoader.item
+                                        ignoreUnknownSignals: true
+                                        function onImportRequested(id) { root.openImport(id ? "playlist" : modelData.id === "queue" ? "queue" : "library", id) }
+                                        function onEditRequested(song) { metadataEditor.openForSong(song) }
+                                        function onNewTagRequested() { tagEditor.openNew() }
+                                        function onEditTagRequested(tag) { tagEditor.openForTag(tag) }
+                                    }
+                                }
+                            }
                         }
                     }
+                }
+            }
+            Rectangle {
+                id: drawer
+                objectName: "queueDrawer"
+                anchors.top: parent.top; anchors.bottom: parent.bottom; anchors.right: parent.right
+                width: root.width < 1200 ? 360 : 400
+                visible: root.queueOpen
+                color: root.surfaceRaised
+                border.color: root.border
+                z: 10
+                MouseArea {
+                    anchors.fill: parent
+                    acceptedButtons: Qt.AllButtons
+                    onWheel: wheel => wheel.accepted = true
+                }
+                QueuePanel {
+                    id: queuePanel
+                    objectName: "queueDrawerPanel"
+                    anchors.fill: parent; anchors.margins: 16
+                    compact: true
+                    connected: root.transport.connected
+                    queueController: root.app.queue
+                    playlistController: root.app.playlists
+                    queue: root.queue
+                    queueModel: root.app.queue.model
+                    playlists: root.app.playlists.model.items
+                    duration: root.duration
+                    currentSong: root.song; playbackState: root.playbackState
+                    onAddRequested: root.openImport("queue", 0)
+                    onClearRequested: root.app.queue.clearQueue()
+                    onPlayRequested: id => root.app.queue.playQueueItem(id)
+                    onTogglePlayPauseRequested: root.app.playback.togglePlayPause()
+                    onRemoveRequested: id => root.app.queue.removeQueueItem(id)
+                    onEditRequested: song => metadataEditor.openForSong(song)
+                    onPlaylistRequested: (action, params) => root.app.playlists.managePlaylist(action, params)
+                    onLibraryRequested: root.navigate("library")
+                    onCloseRequested: root.queueOpen = false
                 }
             }
         }

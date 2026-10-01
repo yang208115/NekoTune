@@ -24,6 +24,7 @@ Button {
     Accessible.name: button.text
 
     contentItem: Text {
+        textFormat: Text.PlainText
         text: button.text
         color: !button.enabled ? "#736A83" : button.subtle ? button.subtleText : button.primaryText
         font: button.font

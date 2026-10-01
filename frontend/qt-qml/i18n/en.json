@@ -1,6 +1,5 @@
 {
   "lyrics_debug_page": "Lyrics debug",
-
   "connected": "Connected",
   "offline": "Offline",
   "now_playing": "Now playing",
@@ -152,5 +151,30 @@
   "kugou_cover_existing": "Existing cover kept.",
   "kugou_cover_none": "No cover available.",
   "kugou_cover_error": "Cover failed; audio is still available.",
-  "kugou_cover_skipped": "Cover skipped."
+  "kugou_cover_skipped": "Cover skipped.",
+  "local_music": "Local music",
+  "play_all": "Play all",
+  "import_music": "Import music",
+  "local_search_hint": "Search title, artist or filename",
+  "no_search_results": "No matching songs",
+  "add_to_queue": "Add to queue",
+  "remove_from_library": "Remove from library",
+  "remove_from_playlist": "Remove from playlist",
+  "remove_from_queue": "Remove from queue",
+  "selected_count": "%1 selected",
+  "track_actions": "More actions",
+  "locate_current": "Show current track",
+  "browse_library": "Browse library",
+  "return_to_browse": "Return to browsing",
+  "clear_queue_hint": "Clear the queue and stop playback. Your library, playlists and local files are kept.",
+  "no_playlist_short": "No playlists yet",
+  "unknown_artist": "Unknown artist",
+  "stop": "Stop playback",
+  "playback_progress": "Playback position",
+  "account_logged_in": "Signed in",
+  "anonymous_search_hint": "Search freely. Sign in to download songs to your library.",
+  "open_settings": "Open settings",
+  "general_settings": "General",
+  "language": "Interface language",
+  "lyrics_online_mode": "Allow online lyrics"
 }

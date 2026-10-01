@@ -1,358 +1,173 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import QtQuick.Shapes
 import "../components"
+
 Rectangle {
     id: bar
     required property var shell
     required property var controller
     required property var translator
     signal editRequested(var song)
-
+    property bool addPending: false
+    property string addError: ""
+    readonly property int leftWidth: shell.width < 1200 ? 220 : 280
+    readonly property int rightWidth: shell.width < 1200 ? 220 : 240
+    readonly property string coverUrl: String(shell.song.cover_url || "")
     Layout.fillWidth: true
     Layout.preferredHeight: 96
-    color: bar.shell.bgSidebar
-    border.color: bar.shell.border
-    border.width: 1
-
+    color: shell.bgSidebar
+    function t(key) { return translator.text(key, translator.language) }
+    function formatTime(ms, isDuration) {
+        if (isDuration && Number(ms) <= 0) return "--:--"
+        const seconds = Math.max(0, Math.floor(Number(ms || 0) / 1000))
+        return Math.floor(seconds / 60) + ":" + ("0" + seconds % 60).slice(-2)
+    }
+    Rectangle { anchors.top: parent.top; width: parent.width; height: 1; color: "#332C41" }
     RowLayout {
-        anchors.fill: parent
-        anchors.leftMargin: 20
-        anchors.rightMargin: 20
-        spacing: 16
-
-        // Left Section: Mini Cover & Title & Edit Button (220-280px)
-        Item {
-            Layout.preferredWidth: bar.shell.width < 1200 ? 220 : 280
-            Layout.fillHeight: true
-
-            RowLayout {
-                anchors.fill: parent
-                spacing: 12
-
-                Rectangle {
-                    Layout.preferredWidth: 48
-                    Layout.preferredHeight: 48
-                    radius: 8
-                    clip: true
-                    color: bar.shell.surface
-                    border.color: bar.shell.border
-                    border.width: 1
-
-                    Image {
-                        anchors.fill: parent
-                        source: "qrc:/artwork/default-cover.png"
-                        fillMode: Image.PreserveAspectCrop
-                        opacity: bar.shell.hasSong ? 1.0 : 0.4
-                    }
-
-                    Image {
-                        anchors.fill: parent
-                        source: bar.shell.hasSong ? (String(bar.shell.song.cover_url || "")
-                                || (!bar.shell.lyrics.offline && bar.shell.lyrics.track_id === bar.shell.song.song_hash
-                                    ? String((bar.shell.lyrics.document || {}).cover_url || "") : "")) : ""
-                        fillMode: Image.PreserveAspectCrop
-                        asynchronous: true
-                        visible: status === Image.Ready
-                    }
-
-                    TapHandler {
-                        enabled: bar.shell.hasSong
-                        onTapped: bar.shell.viewMode = (bar.shell.viewMode === "queue" ? "lyrics" : "queue")
-                    }
-                }
-
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 3
-
-                    Label {
-                        Layout.fillWidth: true
-                        text: bar.shell.hasSong ? (bar.shell.song.title || bar.translator.text("untitled", bar.translator.language)) : bar.translator.text("no_track_selected", bar.translator.language)
-                        color: bar.shell.ink
-                        font.pixelSize: 13
-                        font.weight: Font.DemiBold
-                        elide: Text.ElideRight
-                    }
-                    Label {
-                        Layout.fillWidth: true
-                        text: bar.shell.hasSong ? (bar.shell.song.artist || bar.translator.text("artist_author", bar.translator.language)) : bar.translator.text("choose_audio", bar.translator.language)
-                        color: bar.shell.muted
-                        font.pixelSize: 11
-                        elide: Text.ElideRight
-                    }
-                }
-
-                // Edit Button for current song
-                IconButton {
-                    kind: "edit"
-                    tooltipText: bar.translator.text("edit_track_info", bar.translator.language)
-                    glyphColor: bar.shell.muted
-                    hoverGlyphColor: bar.shell.lavender
-                    enabled: bar.shell.hasSong
-                    visible: bar.shell.hasSong
-                    implicitWidth: 32
-                    implicitHeight: 32
-                    iconSize: 16
-                    onClicked: bar.editRequested(bar.shell.song)
-                }
+        anchors.left: parent.left; anchors.leftMargin: 16; anchors.verticalCenter: parent.verticalCenter
+        width: bar.leftWidth
+        spacing: 10
+        Button {
+            objectName: "nowPlayingCoverButton"
+            implicitWidth: 48; implicitHeight: 48
+            enabled: bar.shell.hasSong
+            Accessible.name: bar.t("now_playing")
+            background: Rectangle { color: "#17141F"; radius: 8 }
+            contentItem: Item {
+                Image { anchors.fill: parent; source: "qrc:/artwork/default-cover.png"; fillMode: Image.PreserveAspectCrop; mipmap: true }
+                Image { objectName: "nowPlayingCover"; anchors.fill: parent; source: bar.shell.hasSong ? bar.coverUrl : ""; fillMode: Image.PreserveAspectCrop; asynchronous: true; visible: status === Image.Ready }
             }
+            onClicked: bar.shell.openNowPlaying()
+            ToolTip.visible: hovered || activeFocus
+            ToolTip.text: bar.t("now_playing")
         }
-
-        // Center Section: Standard Media Controls & Generous Progress Slider
-        ColumnLayout {
+        Button {
             Layout.fillWidth: true
-            Layout.fillHeight: true
-            Layout.alignment: Qt.AlignHCenter
-            spacing: 4
-
-            // Media Control Buttons
-            RowLayout {
-                Layout.alignment: Qt.AlignHCenter
-                spacing: 20
-
-                // Previous Track (|◀)
-                Button {
-                    id: prevBtn
-                    implicitWidth: 36
-                    implicitHeight: 36
-                    hoverEnabled: true
-                    enabled: bar.shell.queue.length > 0
-                    background: Rectangle {
-                        radius: 18
-                        color: prevBtn.down ? bar.shell.bgSelected : prevBtn.hovered ? bar.shell.bgHover : "transparent"
-                    }
-                    contentItem: Item {
-                        anchors.centerIn: parent
-                        width: 16; height: 14
-                        opacity: prevBtn.enabled ? 1.0 : 0.35
-
-                        Rectangle {
-                            anchors.left: parent.left
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: 2.5; height: 13; radius: 1.25
-                            color: bar.shell.ink
-                        }
-                        Shape {
-                            anchors.right: parent.right
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: 11; height: 13
-                            ShapePath {
-                                fillColor: bar.shell.ink
-                                strokeColor: bar.shell.ink
-                                strokeWidth: 1
-                                joinStyle: ShapePath.RoundJoin
-                                startX: 11; startY: 0
-                                PathLine { x: 0; y: 6.5 }
-                                PathLine { x: 11; y: 13 }
-                                PathLine { x: 11; y: 0 }
-                            }
-                        }
-                    }
-                    onClicked: bar.controller.previous()
-                }
-
-                // Main Play/Pause Button (Section 5: 48x48 Circular, Section 3: textOnAccent #21172F)
-                Button {
-                    id: mainPlayButton
-                    hoverEnabled: true
-                    implicitWidth: 48
-                    implicitHeight: 48
-                    enabled: bar.shell.hasSong || bar.shell.queue.length > 0
-
-                    background: Rectangle {
-                        id: mainPlayBg
-                        radius: 24
-                        color: !mainPlayButton.enabled ? "#2A2338"
-                               : mainPlayButton.down ? "#B7A0ED"
-                               : mainPlayButton.hovered ? "#DBCDFF"
-                               : bar.shell.lavender
-
-                        // Focus ring (Section 7.1 & 11)
-                        Rectangle {
-                            anchors.fill: parent
-                            anchors.margins: -4
-                            radius: parent.radius + 4
-                            color: "transparent"
-                            border.color: bar.shell.lavender
-                            border.width: 2
-                            visible: mainPlayButton.activeFocus
-                        }
-
-                        Behavior on color { ColorAnimation { duration: 120 } }
-                    }
-
-                    contentItem: Item {
-                        anchors.fill: parent
-
-                        // Pause State (Two perfect rounded bars)
-                        Row {
-                            anchors.centerIn: parent
-                            spacing: 4.5
-                            visible: bar.shell.isPlaying
-
-                            Rectangle {
-                                width: 3.5
-                                height: 16
-                                radius: 1.75
-                                color: "#21172F"
-                            }
-                            Rectangle {
-                                width: 3.5
-                                height: 16
-                                radius: 1.75
-                                color: "#21172F"
-                            }
-                        }
-
-                        // Play State (Optically centered solid triangle)
-                        Shape {
-                            anchors.centerIn: parent
-                            anchors.horizontalCenterOffset: 1.5
-                            width: 14
-                            height: 16
-                            visible: !bar.shell.isPlaying
-
-                            ShapePath {
-                                fillColor: "#21172F"
-                                strokeColor: "#21172F"
-                                strokeWidth: 1
-                                joinStyle: ShapePath.RoundJoin
-                                capStyle: ShapePath.RoundCap
-                                startX: 0; startY: 0
-                                PathLine { x: 14; y: 8 }
-                                PathLine { x: 0; y: 16 }
-                                PathLine { x: 0; y: 0 }
-                            }
-                        }
-                    }
-
-                    onClicked: bar.controller.togglePlayPause()
-                }
-
-                // Next Track (▶|)
-                Button {
-                    id: nextBtn
-                    implicitWidth: 36
-                    implicitHeight: 36
-                    hoverEnabled: true
-                    enabled: bar.shell.queue.length > 0 && bar.shell.currentIndex < bar.shell.queue.length - 1
-                    background: Rectangle {
-                        radius: 18
-                        color: nextBtn.down ? bar.shell.bgSelected : nextBtn.hovered ? bar.shell.bgHover : "transparent"
-                    }
-                    contentItem: Item {
-                        anchors.centerIn: parent
-                        width: 16; height: 14
-                        opacity: nextBtn.enabled ? 1.0 : 0.35
-
-                        Shape {
-                            anchors.left: parent.left
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: 11; height: 13
-                            ShapePath {
-                                fillColor: bar.shell.ink
-                                strokeColor: bar.shell.ink
-                                strokeWidth: 1
-                                joinStyle: ShapePath.RoundJoin
-                                startX: 0; startY: 0
-                                PathLine { x: 11; y: 6.5 }
-                                PathLine { x: 0; y: 13 }
-                                PathLine { x: 0; y: 0 }
-                            }
-                        }
-                        Rectangle {
-                            anchors.right: parent.right
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: 2.5; height: 13; radius: 1.25
-                            color: bar.shell.ink
-                        }
-                    }
-                    onClicked: bar.controller.next()
-                }
+            enabled: bar.shell.hasSong
+            padding: 0
+            Accessible.name: bar.shell.hasSong ? String(bar.shell.song.title) : bar.t("no_track_selected")
+            background: Item {}
+            contentItem: ColumnLayout {
+                spacing: 4
+                Label { Layout.fillWidth: true; text: bar.shell.hasSong ? bar.shell.song.title || bar.t("untitled") : bar.t("no_track_selected"); color: "#F5F1FA"; font.pixelSize: 13; font.weight: Font.DemiBold; elide: Text.ElideRight; textFormat: Text.PlainText }
+                Label { Layout.fillWidth: true; text: bar.shell.hasSong ? bar.shell.song.artist || bar.t("unknown_artist") : bar.t("browse_library"); color: "#AAA0B8"; font.pixelSize: 12; elide: Text.ElideRight; textFormat: Text.PlainText }
             }
-
-            // Progress Slider Row (Spacious & Tactile)
-            RowLayout {
-                Layout.fillWidth: true
-                Layout.maximumWidth: 640
-                Layout.alignment: Qt.AlignHCenter
-                spacing: 12
-
-                Label {
-                    text: formatTime(timelineSlider.pressed
-                                     ? timelineSlider.valueAt(timelineSlider.position)
-                                     : timelineSlider.value, false)
-                    color: bar.shell.subtle
-                    font.pixelSize: 11
-                    font.family: bar.shell.theme.fontFamilyMonospace
-                }
-
-                SeekSlider {
-                    id: timelineSlider
-                    Layout.fillWidth: true
-                    duration: bar.shell.duration
-                    playbackPosition: bar.shell.position
-                    activeColor: bar.shell.lavender
-                    baseColor: bar.shell.border
-                    onSeekRequested: positionMs => bar.controller.seek(positionMs)
-                }
-
-                Label {
-                    text: formatTime(bar.shell.duration, true)
-                    color: bar.shell.subtle
-                    font.pixelSize: 11
-                    font.family: bar.shell.theme.fontFamilyMonospace
-                }
-            }
+            onClicked: bar.shell.openNowPlaying()
+            ToolTip.visible: hovered || activeFocus
+            ToolTip.text: String(bar.shell.song.title || "")
         }
-
-        // Right Section: Volume & Lyrics Switch (160-220px)
-        RowLayout {
-            Layout.preferredWidth: bar.shell.width < 1200 ? 180 : 220
-            Layout.fillHeight: true
-            spacing: 12
-
-            Item { Layout.fillWidth: true }
-
-            IconButton {
-                kind: "volume"
-                glyphColor: bar.shell.muted
-                hoverGlyphColor: bar.shell.lavender
-                implicitWidth: 32
-                implicitHeight: 32
-                iconSize: 18
-                onClicked: bar.controller.toggleMute()
-            }
-
-            PlayerSlider {
-                Layout.preferredWidth: bar.shell.width < 1200 ? 72 : 88
-                from: 0
-                to: 1
-                value: bar.shell.volume
-                activeColor: bar.shell.lavender
-                baseColor: bar.shell.border
-                onMoved: bar.controller.setVolume(value)
-            }
-
-            // Toggle Lyrics View Button
-            IconButton {
-                kind: "lyrics"
-                glyphColor: bar.shell.viewMode === "lyrics" ? bar.shell.lavender : bar.shell.muted
-                hoverGlyphColor: bar.shell.lavender
-                fillColor: bar.shell.viewMode === "lyrics" ? bar.shell.bgSelected : "transparent"
-                hoverColor: bar.shell.bgHover
-                implicitWidth: 36
-                implicitHeight: 36
-                iconSize: 18
-                onClicked: bar.shell.viewMode = (bar.shell.viewMode === "queue" ? "lyrics" : "queue")
-            }
+        IconButton {
+            id: songMore
+            kind: "more"; implicitWidth: 32; implicitHeight: 36
+            enabled: bar.shell.hasSong
+            tooltipText: bar.t("track_actions")
+            onClicked: songMenu.openAt(songMore)
         }
     }
-    function formatTime(ms, isDuration) {
-        if (isDuration && (!ms || Number(ms) <= 0)) return "--:--"
-        const seconds = Math.max(0, Math.floor(Number(ms || 0) / 1000))
-        return Math.floor(seconds / 60) + ":" + String(seconds % 60).padStart(2, "0")
+    ColumnLayout {
+        objectName: "transportControls"
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.verticalCenter: parent.verticalCenter
+        width: Math.min(640, bar.width - 2 * (Math.max(bar.leftWidth, bar.rightWidth) + 32))
+        spacing: 4
+        RowLayout {
+            Layout.alignment: Qt.AlignHCenter
+            spacing: 16
+            IconButton { objectName: "previousTrackButton"; kind: "previous"; tooltipText: bar.t("previous"); enabled: bar.shell.transport.connected && bar.shell.queue.length > 0; onClicked: bar.controller.previous() }
+            IconButton {
+                objectName: "mainPlayButton"
+                kind: bar.shell.isPlaying ? "pause" : "play"
+                tooltipText: bar.t(bar.shell.isPlaying ? "pause" : "play")
+                implicitWidth: 48; implicitHeight: 48; iconSize: 26; cornerRadius: 24
+                fillColor: "#CBB8FF"; hoverColor: "#DBCDFF"; pressedColor: "#B7A0ED"
+                glyphColor: "#21172F"; hoverGlyphColor: "#21172F"
+                enabled: bar.shell.transport.connected && (bar.shell.hasSong || bar.shell.queue.length > 0)
+                onClicked: bar.controller.togglePlayPause()
+            }
+            IconButton { objectName: "nextTrackButton"; kind: "next"; tooltipText: bar.t("next"); enabled: bar.shell.transport.connected && bar.shell.queue.length > 0; onClicked: bar.controller.next() }
+        }
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 8
+            Label { Layout.preferredWidth: 40; text: bar.formatTime(timeline.pressed ? timeline.valueAt(timeline.position) : timeline.value, false); color: "#AAA0B8"; font.pixelSize: 12; horizontalAlignment: Text.AlignRight }
+            SeekSlider {
+                id: timeline; objectName: "playbackSeekSlider"
+                Layout.fillWidth: true
+                duration: bar.shell.duration; playbackPosition: bar.shell.position
+                onSeekRequested: value => bar.controller.seek(value)
+                Accessible.name: bar.t("playback_progress")
+            }
+            Label { Layout.preferredWidth: 40; text: bar.formatTime(bar.shell.duration, true); color: "#AAA0B8"; font.pixelSize: 12 }
+        }
+    }
+    RowLayout {
+        anchors.right: parent.right; anchors.rightMargin: 16; anchors.verticalCenter: parent.verticalCenter
+        width: bar.rightWidth
+        spacing: 4
+        IconButton { kind: bar.shell.volume > 0 ? "volume" : "mute"; tooltipText: bar.t("volume"); enabled: bar.shell.transport.connected; implicitWidth: 32; onClicked: bar.controller.toggleMute() }
+        PlayerSlider {
+            Layout.fillWidth: true; Layout.minimumWidth: 60; Layout.maximumWidth: 90
+            from: 0; to: 1; value: bar.shell.volume
+            enabled: bar.shell.transport.connected
+            onMoved: bar.controller.setVolume(value)
+            Accessible.name: bar.t("volume")
+        }
+        IconButton {
+            objectName: "nowPlayingButton"
+            kind: "lyrics"; tooltipText: bar.t("now_playing")
+            glyphColor: bar.shell.nowPlayingOpen ? "#CBB8FF" : "#AAA0B8"
+            enabled: bar.shell.hasSong
+            onClicked: bar.shell.nowPlayingOpen ? bar.shell.closeNowPlaying() : bar.shell.openNowPlaying()
+        }
+        Item {
+            Layout.preferredWidth: 44; Layout.preferredHeight: 44
+            IconButton { objectName: "queueToggleButton"; anchors.fill: parent; kind: "queue"; tooltipText: bar.t("queue") + " (" + bar.shell.queue.length + ")"; glyphColor: bar.shell.queueOpen ? "#CBB8FF" : "#AAA0B8"; onClicked: bar.shell.queueOpen = !bar.shell.queueOpen }
+            Label { anchors.right: parent.right; anchors.top: parent.top; text: String(bar.shell.queue.length); color: "#CBB8FF"; font.pixelSize: 10; visible: bar.shell.queue.length > 0 }
+        }
+    }
+    ActionMenu {
+        id: songMenu
+        actions: [
+            {key: "edit", label: bar.t("edit_info"), enabled: bar.shell.transport.connected},
+            {key: "playlist", label: bar.t("add_to_playlist"), enabled: bar.shell.transport.connected},
+            {key: "stop", label: bar.t("stop"), enabled: bar.shell.transport.connected}
+        ]
+        onChosen: action => {
+            if (action === "edit") bar.editRequested(bar.shell.song)
+            else if (action === "stop") bar.controller.stop()
+            else { bar.addError = ""; picker.open() }
+        }
+    }
+    Popup {
+        id: picker
+        parent: Overlay.overlay; anchors.centerIn: parent
+        width: 360; height: Math.min(400, parent.height - 40); padding: 20
+        modal: true; focus: true
+        closePolicy: bar.addPending ? Popup.NoAutoClose : Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        background: Rectangle { objectName: "shortcutBlocker"; color: "#211C2D"; radius: 16; border.color: "#332C41" }
+        ColumnLayout {
+            anchors.fill: parent; spacing: 12
+            Label { text: bar.t("add_to_playlist"); color: "#F5F1FA"; font.pixelSize: 18 }
+            ListView {
+                Layout.fillWidth: true; Layout.fillHeight: true; clip: true
+                model: bar.shell.app.playlists.model
+                ScrollBar.vertical: ScrollBar {}
+                delegate: TextButton {
+                    required property var modelData
+                    width: ListView.view.width; text: modelData.name; subtle: true
+                    enabled: !bar.addPending && bar.shell.transport.connected
+                    onClicked: { bar.addPending = true; bar.shell.app.playlists.managePlaylist("add", {id: Number(modelData.id), song_id: Number(bar.shell.song.song_id)}) }
+                }
+                Label { width: parent.width; anchors.centerIn: parent; wrapMode: Text.WordWrap; visible: bar.shell.app.playlists.model.count === 0; text: bar.t("no_playlists"); color: "#AAA0B8" }
+            }
+            Label { Layout.fillWidth: true; text: bar.addError; visible: Boolean(bar.addError); color: "#FF9BAE"; wrapMode: Text.WordWrap; textFormat: Text.PlainText }
+            TextButton { Layout.alignment: Qt.AlignRight; text: bar.t("cancel"); subtle: true; enabled: !bar.addPending; onClicked: picker.close() }
+        }
+    }
+    Connections {
+        target: bar.shell.app.playlists
+        function onRequestSucceeded(method) { if (method === "playlist.add" && bar.addPending) { bar.addPending = false; picker.close() } }
+        function onRequestFailed(method, message) { if (method === "playlist.add" && bar.addPending) { bar.addPending = false; bar.addError = message } }
     }
 }

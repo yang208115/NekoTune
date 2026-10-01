@@ -1,9 +1,34 @@
 #include "ipc/api_context.h"
 #include <QFileInfo>
 namespace nekotune {
-QJsonObject ApiContext::status() const {
+QJsonObject ApiContext::withCover(QJsonObject song) const {
+    if (!song.isEmpty())
+        song.insert("cover_url",
+                    covers.resolve(song.value("path").toString(), song.value("song_hash").toString()));
+    return song;
+}
+QJsonObject ApiContext::playbackStatus() const {
     auto state = toJson(player.snapshot());
-    state.insert("queue", queueJson(queue.queue()));
+    state.insert("song", withCover(state.value("song").toObject()));
+    return state;
+}
+QJsonObject ApiContext::libraryStatus() const {
+    auto state = toJson(library.snapshot());
+    QJsonArray songs;
+    for (const auto &song : state.value("songs").toArray())
+        songs.append(withCover(song.toObject()));
+    state.insert("songs", songs);
+    return state;
+}
+QJsonArray ApiContext::queueItems() const {
+    QJsonArray items;
+    for (const auto &item : queueJson(queue.queue()))
+        items.append(withCover(item.toObject()));
+    return items;
+}
+QJsonObject ApiContext::status() const {
+    auto state = playbackStatus();
+    state.insert("queue", queueItems());
     state.insert("playlists", playlistList());
     state.insert("database_path", databasePath);
     state.insert("lyrics", toJson(lyrics.snapshot()));
@@ -11,7 +36,7 @@ QJsonObject ApiContext::status() const {
     return state;
 }
 QJsonObject ApiContext::queueStatus() const {
-    return {{"current_index", queue.queue().currentIndex()}, {"items", queueJson(queue.queue())}};
+    return {{"current_index", queue.queue().currentIndex()}, {"items", queueItems()}};
 }
 QJsonArray ApiContext::playlistList() const {
     QJsonArray result;
@@ -27,7 +52,7 @@ QJsonArray ApiContext::playlistList() const {
             item.insert("title", song.value().customTitle.trimmed().isEmpty()
                                      ? QFileInfo(record.path).completeBaseName()
                                      : song.value().customTitle.trimmed());
-            items.append(item);
+            items.append(withCover(item));
         }
         result.append(QJsonObject{{"id", playlist.id}, {"name", playlist.name}, {"items", items}});
     }

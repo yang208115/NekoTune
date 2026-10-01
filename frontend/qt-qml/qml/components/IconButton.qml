@@ -93,6 +93,16 @@ Button {
                 ctx.lineTo(w * 0.22, h * 0.76)
                 ctx.closePath()
                 ctx.fill()
+            } else if (k === "return") {
+                ctx.beginPath()
+                ctx.moveTo(w * .65, h * .2); ctx.lineTo(w * .35, h * .5); ctx.lineTo(w * .65, h * .8)
+                ctx.stroke()
+            } else if (k === "locate") {
+                ctx.beginPath(); ctx.arc(w * .5, h * .5, w * .25, 0, Math.PI * 2)
+                ctx.moveTo(w * .5, h * .1); ctx.lineTo(w * .5, h * .35)
+                ctx.moveTo(w * .5, h * .65); ctx.lineTo(w * .5, h * .9)
+                ctx.moveTo(w * .1, h * .5); ctx.lineTo(w * .35, h * .5)
+                ctx.moveTo(w * .65, h * .5); ctx.lineTo(w * .9, h * .5); ctx.stroke()
             } else if (k === "close") {
                 ctx.beginPath()
                 ctx.moveTo(w * 0.28, h * 0.28)
@@ -160,7 +170,7 @@ Button {
                 ctx.lineTo(w * 0.22, h * 0.6)
                 ctx.closePath()
                 ctx.stroke()
-            } else if (k === "volume") {
+            } else if (k === "volume" || k === "mute") {
                 ctx.beginPath()
                 ctx.moveTo(w * 0.2, h * 0.4)
                 ctx.lineTo(w * 0.36, h * 0.4)
@@ -171,7 +181,10 @@ Button {
                 ctx.closePath()
                 ctx.fill()
                 ctx.beginPath()
-                ctx.arc(w * 0.52, h * 0.5, w * 0.22, -Math.PI * 0.3, Math.PI * 0.3)
+                if (k === "mute") {
+                    ctx.moveTo(w * .66, h * .35); ctx.lineTo(w * .9, h * .65)
+                    ctx.moveTo(w * .9, h * .35); ctx.lineTo(w * .66, h * .65)
+                } else ctx.arc(w * 0.52, h * 0.5, w * 0.22, -Math.PI * 0.3, Math.PI * 0.3)
                 ctx.stroke()
             } else if (k === "lyrics") {
                 ctx.beginPath()

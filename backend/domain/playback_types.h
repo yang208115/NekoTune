@@ -9,6 +9,5 @@ struct PlaybackSnapshot {
     double volume = .8;
     std::optional<QueueItem> song;
     AudioMetadata metadata;
-    QString coverUrl;
 };
 } // namespace nekotune

@@ -25,7 +25,7 @@ add_library(nekotune_application STATIC
  core/player_engine.cpp application/library_service.cpp application/queue_service.cpp
  application/playlist_service.cpp application/tag_service.cpp application/collection_service.cpp
  application/lyrics_controller.cpp application/download_service.cpp application/command_scheduler.cpp application/kugou_service.h
- application/lyrics_service.cpp
+ application/lyrics_service.cpp application/cover_service.cpp
 )
 target_link_libraries(nekotune_application PUBLIC nekotune_domain)
 

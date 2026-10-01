@@ -20,7 +20,8 @@ LyricsController::LyricsController(IpcClient &client) : FeatureController(client
             [this](const QString &, const QJsonObject &data) { apply(data); });
 }
 void LyricsController::apply(const QJsonObject &data) {
-    if (!data.contains("lyrics"))
+    // Metadata responses contain a lyrics string, while playback snapshots contain an object.
+    if (!data.value("lyrics").isObject())
         return;
     auto next = data.value("lyrics").toObject().toVariantMap();
     if (next == m_current)

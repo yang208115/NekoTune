@@ -13,6 +13,8 @@ Item {
     property bool failed: false
     property var account: ({})
     property bool connected: true
+    property string databasePath: ""
+    property bool showDataLocation: false
 
     function t(key) { return translator.text(key, translator.language) }
 
@@ -34,8 +36,13 @@ Item {
         }
     }
 
-    ColumnLayout {
+    ScrollView {
+        id: settingsScroll
         anchors.fill: parent
+        clip: true
+        contentWidth: availableWidth
+    ColumnLayout {
+        width: settingsScroll.availableWidth
         spacing: 14
 
         Label {
@@ -43,6 +50,21 @@ Item {
             color: "#F5F1FA"
             font.pixelSize: 25
             font.weight: Font.DemiBold
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            implicitHeight: 112
+            radius: 12; color: "#17141F"; border.color: "#332C41"
+            ColumnLayout {
+                anchors.fill: parent; anchors.margins: 18; spacing: 12
+                Label { text: root.t("general_settings"); color: "#F5F1FA"; font.pixelSize: 18 }
+                RowLayout {
+                    Label { Layout.fillWidth: true; text: root.t("language"); color: "#D7CFE2"; font.pixelSize: 14 }
+                    TextButton { text: "中文"; subtle: root.translator.language !== "zh"; onClicked: root.translator.language = "zh" }
+                    TextButton { text: "English"; subtle: root.translator.language !== "en"; onClicked: root.translator.language = "en" }
+                }
+            }
         }
 
         Rectangle {
@@ -87,7 +109,7 @@ Item {
                     Layout.fillWidth: true
                     spacing: 8
 
-                    TextField {
+                    InputField {
                         id: keyField
                         objectName: "kugouKeyField"
                         Layout.fillWidth: true
@@ -99,7 +121,7 @@ Item {
                         onAccepted: saveButton.clicked()
                     }
 
-                    Button {
+                    TextButton {
                         id: saveButton
                         objectName: "kugouSaveKeyButton"
                         text: root.t("kugou_key_save")
@@ -115,7 +137,7 @@ Item {
                     }
                 }
 
-                Button {
+                TextButton {
                     objectName: "kugouClearKeyButton"
                     visible: Boolean(root.account.key_saved)
                     text: root.t("kugou_key_clear")
@@ -138,6 +160,16 @@ Item {
             }
         }
 
-        Item { Layout.fillHeight: true }
+        TextButton { visible: Boolean(root.databasePath); text: root.t("database"); subtle: true; onClicked: root.showDataLocation = !root.showDataLocation }
+        TextArea {
+            Layout.fillWidth: true
+            visible: root.showDataLocation && Boolean(root.databasePath)
+            text: root.databasePath
+            readOnly: true; selectByMouse: true; wrapMode: TextEdit.WrapAnywhere
+            color: "#AAA0B8"; font.pixelSize: 12
+            background: Rectangle { color: "#17141F"; radius: 8 }
+            Accessible.name: root.t("database")
+        }
+    }
     }
 }

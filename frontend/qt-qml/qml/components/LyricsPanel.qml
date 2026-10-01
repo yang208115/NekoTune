@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-ColumnLayout {
+Item {
     id: root
     property var controller: null
     property var song: ({})
@@ -17,12 +17,14 @@ ColumnLayout {
     readonly property var document: current.document || ({})
     readonly property var candidates: current.candidates || []
     readonly property bool busy: current.state === "loading" || current.state === "searching" || current.state === "waiting_metadata"
-    spacing: 6
 
     onSongChanged: {
         if (searchPopup.trackId !== String(song.song_hash || "")) searchPopup.close()
     }
 
+    ColumnLayout {
+        anchors.fill: parent
+        spacing: 6
     RowLayout {
         Layout.fillWidth: true
         spacing: 6
@@ -30,7 +32,7 @@ ColumnLayout {
         Label {
             Layout.fillWidth: true
             text: i18n.text("lyrics", i18n.language) + (document.source ? " · " + document.source : "")
-            color: "#837c91"
+            color: "#AAA0B8"
             font.pixelSize: 12
             font.weight: Font.Medium
             elide: Text.ElideRight
@@ -38,19 +40,28 @@ ColumnLayout {
 
         TextButton {
             text: i18n.text("lyrics_search", i18n.language) + (root.candidates.length ? " (" + root.candidates.length + ")" : "")
-            implicitHeight: 28
+            implicitHeight: 40
             subtle: true
             enabled: root.connected
             onClicked: searchPopup.openForSong()
         }
 
-        TextButton {
-            text: i18n.text("lyrics_refresh", i18n.language)
-            implicitHeight: 28
-            implicitWidth: 64
-            subtle: true
-            enabled: root.connected && !root.busy && !root.current.offline
-            onClicked: root.controller.refreshLyrics(String(root.song.song_hash || ""))
+        IconButton {
+            id: lyricsMore
+            kind: "more"
+            tooltipText: i18n.text("track_actions", i18n.language)
+            onClicked: lyricsMenu.openAt(lyricsMore)
+        }
+        ActionMenu {
+            id: lyricsMenu
+            actions: [
+                {key: "refresh", label: i18n.text("lyrics_refresh", i18n.language), enabled: root.connected && !root.busy && !root.current.offline},
+                {key: "offline", label: i18n.text(root.current.offline ? "lyrics_online_mode" : "lyrics_offline_mode", i18n.language), enabled: root.connected}
+            ]
+            onChosen: action => {
+                if (action === "refresh") root.controller.refreshLyrics(String(root.song.song_hash || ""))
+                else root.controller.setLyricsOffline(!root.current.offline)
+            }
         }
     }
 
@@ -61,7 +72,7 @@ ColumnLayout {
         text: root.current.cache_warning ? i18n.text("lyrics_cache_warning", i18n.language)
              : root.current.state === "error" ? i18n.text("lyrics_error_" + root.current.error, i18n.language)
              : i18n.text("lyrics_" + (root.current.state || "loading"), i18n.language)
-        color: root.current.state === "error" ? "#e8a9c3" : "#8e879c"
+        color: root.current.state === "error" ? "#FF9BAE" : "#AAA0B8"
         wrapMode: Text.Wrap
         textFormat: Text.PlainText
         font.pixelSize: 12
@@ -77,9 +88,12 @@ ColumnLayout {
         onSeekRequested: pos => root.seekRequested(pos)
     }
 
+    }
+
     // Search Lyrics Modal Popup
     Popup {
         id: searchPopup
+        objectName: "lyricsSearchPopup"
         property string trackId: ""
         function openForSong() {
             trackId = String(root.song.song_hash || "")
@@ -97,6 +111,7 @@ ColumnLayout {
         focus: true
         padding: 22
         background: Rectangle {
+            objectName: "shortcutBlocker"
             color: "#211C2D"
             radius: 16
             border.color: "#332C41"
@@ -188,30 +203,53 @@ ColumnLayout {
                     model: root.controller ? root.controller.sources : []
                     textRole: "name"
                     valueRole: "id"
-                    Layout.preferredWidth: 120
+                    Layout.preferredWidth: 160
+                    implicitHeight: 40
                     palette.button: "#241e31"
                     palette.buttonText: "#f6f3fa"
                     palette.text: "#f6f3fa"
                     palette.base: "#241e31"
                     palette.highlight: "#4b3e67"
+                    background: Rectangle { color: "#17141F"; radius: 8; border.color: sourceBox.activeFocus ? "#CBB8FF" : "#8D809F" }
+                    delegate: ItemDelegate {
+                        id: sourceDelegate
+                        required property var modelData
+                        required property int index
+                        width: sourceBox.width - 12
+                        text: String(modelData.name)
+                        highlighted: sourceBox.highlightedIndex === index
+                        contentItem: Label { text: sourceDelegate.text; textFormat: Text.PlainText; color: "#D7CFE2"; font.pixelSize: 13 }
+                        background: Rectangle { radius: 6; color: sourceDelegate.highlighted ? "#322743" : "transparent" }
+                    }
+                    popup: Popup {
+                        y: sourceBox.height + 4
+                        width: sourceBox.width
+                        padding: 6
+                        implicitHeight: Math.min(contentItem.implicitHeight + 12, 240)
+                        background: Rectangle { objectName: "shortcutBlocker"; color: "#211C2D"; radius: 8; border.color: "#332C41" }
+                        contentItem: ListView { clip: true; implicitHeight: contentHeight; model: sourceBox.popup.visible ? sourceBox.delegateModel : null; currentIndex: sourceBox.highlightedIndex; ScrollIndicator.vertical: ScrollIndicator {} }
+                    }
                 }
                 CheckBox {
+                    id: offlineCheckbox
+                    implicitHeight: 40
+                    indicator: Rectangle { width: 18; height: 18; anchors.verticalCenter: parent.verticalCenter; radius: 4; color: offlineCheckbox.checked ? "#CBB8FF" : "#17141F"; border.color: "#8D809F"; Rectangle { width: 8; height: 8; anchors.centerIn: parent; radius: 2; color: "#21172F"; visible: offlineCheckbox.checked } }
                     text: i18n.text("lyrics_offline_mode", i18n.language)
                     checked: Boolean(root.current.offline)
                     enabled: root.connected
                     onClicked: root.controller.setLyricsOffline(checked)
                     contentItem: Text {
-                        text: parent.text
+                        text: offlineCheckbox.text
                         font.pixelSize: 12
-                        color: "#b0a8bd"
-                        leftPadding: parent.indicator.width + 6
+                        color: "#D7CFE2"
+                        leftPadding: offlineCheckbox.indicator.width + 6
                         verticalAlignment: Text.AlignVCenter
                     }
                 }
                 Item { Layout.fillWidth: true }
                 TextButton {
                     text: i18n.text("lyrics_search", i18n.language)
-                    implicitWidth: 90
+                    implicitWidth: Math.max(120, implicitContentWidth + leftPadding + rightPadding)
                     enabled: root.connected && titleField.text.trim().length > 0 && !root.current.offline
                     onClicked: root.controller.searchLyrics(searchPopup.trackId, titleField.text, artistField.text,
                                                       albumField.text, String(sourceBox.currentValue || "lrclib"))
@@ -225,14 +263,14 @@ ColumnLayout {
                       : root.current.state === "candidates" && root.current.search_stage === "songs"
                         ? i18n.text("lyrics_choose_song", i18n.language)
                         : i18n.text("lyrics_" + (root.current.state || "idle"), i18n.language)
-                color: "#8e879c"
+                color: "#AAA0B8"
                 font.pixelSize: 12
                 wrapMode: Text.Wrap
             }
 
             Rectangle {
                 Layout.fillWidth: true
-                height: 1
+                Layout.preferredHeight: 1
                 color: "#282335"
             }
 
@@ -304,7 +342,7 @@ ColumnLayout {
                                 Layout.fillWidth: true
                                 text: (candDelegate.modelData.album ? candDelegate.modelData.album + " · " : "")
                                       + (candDelegate.modelData.duration ? Math.round(Number(candDelegate.modelData.duration) / 1000) + "s" : "")
-                                color: "#8e879c"
+                                color: "#AAA0B8"
                                 font.pixelSize: 11
                                 elide: Text.ElideRight
                             }

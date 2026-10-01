@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import "../components"
 PlayerPanel {
     id: page
@@ -18,6 +19,12 @@ PlayerPanel {
     playbackState: shell.playbackState
     connected: transport.connected
     errorText: transport.error
+    topInset: 52
+    IconButton {
+        anchors.left: parent.left; anchors.top: parent.top; anchors.leftMargin: 24; anchors.topMargin: 8
+        kind: "return"; tooltipText: page.translator.text("return_to_browse", page.translator.language)
+        onClicked: page.shell.closeNowPlaying()
+    }
     onAddRequested: page.importRequested(0)
     onTogglePlayPauseRequested: controllers.playback.togglePlayPause()
     onNextRequested: controllers.playback.next()

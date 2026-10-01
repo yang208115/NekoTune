@@ -8,5 +8,5 @@ Item {
     required property var transport
     signal importRequested(int playlistId)
     signal editRequested(var song)
-    SettingsPanel { anchors.fill: parent; anchors.margins: 20; client: page.controllers.settings; account: page.controllers.kugou.account; connected: page.transport.connected; translator: page.translator }
+    SettingsPanel { databasePath: page.shell.databasePath; anchors.fill: parent; anchors.margins: 20; client: page.controllers.settings; account: page.controllers.kugou.account; connected: page.transport.connected; translator: page.translator }
 }

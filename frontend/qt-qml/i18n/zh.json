@@ -1,6 +1,5 @@
 {
   "lyrics_debug_page": "歌词调试",
-
   "connected": "已连接",
   "offline": "未连接",
   "now_playing": "正在播放",
@@ -152,5 +151,30 @@
   "kugou_cover_existing": "原有封面已保留。",
   "kugou_cover_none": "没有可用封面。",
   "kugou_cover_error": "封面获取失败，音频已保留。",
-  "kugou_cover_skipped": "封面下载已跳过。"
+  "kugou_cover_skipped": "封面下载已跳过。",
+  "local_music": "本地音乐",
+  "play_all": "播放全部",
+  "import_music": "导入音乐",
+  "local_search_hint": "搜索歌名、歌手或文件名",
+  "no_search_results": "没有匹配的歌曲",
+  "add_to_queue": "加入当前队列",
+  "remove_from_library": "从曲库移除",
+  "remove_from_playlist": "从歌单移除",
+  "remove_from_queue": "从队列移除",
+  "selected_count": "已选 %1 首",
+  "track_actions": "更多操作",
+  "locate_current": "定位正在播放的歌曲",
+  "browse_library": "浏览曲库",
+  "return_to_browse": "返回浏览",
+  "clear_queue_hint": "清空当前队列并停止播放；曲库、歌单和本地文件保留。",
+  "no_playlist_short": "还没有歌单",
+  "unknown_artist": "未知歌手",
+  "stop": "停止播放",
+  "playback_progress": "播放进度",
+  "account_logged_in": "已登录",
+  "anonymous_search_hint": "可直接搜索歌曲，登录后可下载到本地曲库。",
+  "open_settings": "前往设置",
+  "general_settings": "常规",
+  "language": "界面语言",
+  "lyrics_online_mode": "允许在线歌词"
 }

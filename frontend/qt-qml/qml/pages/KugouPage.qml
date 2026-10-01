@@ -8,5 +8,6 @@ Item {
     required property var transport
     signal importRequested(int playlistId)
     signal editRequested(var song)
-    KugouPanel { anchors.fill: parent; anchors.margins: 20; client: page.controllers.kugou; translator: page.translator }
+    function focusSearch() { panel.focusSearch() }
+    KugouPanel { id: panel; objectName: "kugouPanel"; onSettingsRequested: page.shell.navigate("settings"); anchors.fill: parent; anchors.margins: 20; client: page.controllers.kugou; translator: page.translator }
 }

@@ -6,6 +6,10 @@
         <file>i18n/zh.json</file>
         <file>qml/Main.qml</file>
         <file>qml/components/AlbumArt.qml</file>
+        <file>qml/components/InputField.qml</file>
+        <file>qml/components/ActionMenu.qml</file>
+        <file>qml/components/TrackRow.qml</file>
+        <file>qml/components/ConfirmationDialog.qml</file>
         <file>qml/components/IconButton.qml</file>
         <file>qml/components/LrcLyrics.qml</file>
         <file>qml/components/LyricsDebugPanel.qml</file>

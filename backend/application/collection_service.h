@@ -2,6 +2,7 @@
 #include "application/library_service.h"
 #include "application/playlist_service.h"
 #include "core/player_engine.h"
+#include <optional>
 namespace nekotune {
 struct CollectionPlayResult {
     QVector<int> skippedSongIds;
@@ -16,8 +17,10 @@ class CollectionService final : public QObject {
     Result<void> addFileToPlaylist(int id, const ImportedFile &file);
     Result<void> addSongToPlaylist(int id, int songId);
     Result<void> addQueueItemToPlaylist(int id, int queueId);
-    Result<void> playPlaylist(int id, int songId = 0);
-    Result<CollectionPlayResult> playLibrary(const QVector<int> &tagIds, int songId = 0);
+    Result<void> playPlaylist(int id, int songId = 0,
+                              const std::optional<QVector<int>> &songIds = std::nullopt);
+    Result<CollectionPlayResult> playLibrary(const QVector<int> &tagIds, int songId = 0,
+                                             const std::optional<QVector<int>> &songIds = std::nullopt);
     Result<int> deleteSongs(const QVector<int> &ids);
   signals:
     void libraryChanged();

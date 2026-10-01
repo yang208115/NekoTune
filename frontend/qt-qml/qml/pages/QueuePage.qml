@@ -10,12 +10,19 @@ Item {
     signal editRequested(var song)
     property alias currentPlaylist: panel.currentPlaylist
     onCurrentPlaylistChanged: if (shell) shell.currentPlaylist = currentPlaylist
+    function focusSearch() { panel.focusSearch() }
     function newPlaylist() { panel.newPlaylist() }
     QueuePanel {
         id: panel
+        currentPlaylist: page.shell.currentPlaylist
         objectName: "queuePanel"
         anchors.fill: parent
         anchors.margins: 20
+        playlistController: page.controllers.playlists
+        queueController: page.controllers.queue
+        connected: page.transport.connected
+        onQueueAddRequested: path => page.controllers.queue.addPath(path)
+        onLibraryRequested: page.shell.navigate("library")
         queue: page.controllers.queue.model.items
         queueModel: page.controllers.queue.model
         playlists: page.controllers.playlists.model.items

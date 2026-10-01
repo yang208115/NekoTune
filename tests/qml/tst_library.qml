@@ -60,9 +60,50 @@ Item {
             compare(playSpy.count, 1)
             compare(playSpy.signalArguments[0][0].length, 2)
             compare(playSpy.signalArguments[0][1], 0)
+            testLibrary.selectRow(1)
+            waitForRendering(panel)
             mouseClick(findChild(panel, "playLibrarySongButton1"))
             compare(playSpy.count, 2)
             compare(playSpy.signalArguments[1][1], 1)
+        }
+
+        function test_clickSelectsAndDoubleClickPlaysOnce() {
+            waitForRendering(panel)
+            const row = findChild(panel, "libraryRow1")
+            verify(row !== null)
+            mouseClick(row, 180, 32)
+            compare(playSpy.count, 0)
+            compare(panel.selectedSongIds.length, 1)
+            compare(panel.selectedSongIds[0], 1)
+            wait(500)
+            mouseDoubleClickSequence(row, 180, 32)
+            compare(playSpy.count, 1)
+            compare(playSpy.signalArguments[0][1], 1)
+            mouseClick(findChild(panel, "librarySelectSong1"))
+            compare(playSpy.count, 1)
+        }
+
+        function test_searchAndDesktopSelection() {
+            testLibrary.selectRow(1)
+            testLibrary.selectRow(2, true)
+            compare(panel.selectedSongIds.length, 2)
+            testLibrary.selectRow(3, false, true)
+            compare(panel.selectedSongIds.length, 2)
+            compare(panel.selectedSongIds[0], 2)
+            compare(panel.selectedSongIds[1], 3)
+            testLibrary.searchText = "ROCK ONLY"
+            compare(panel.filteredSongs.length, 1)
+            compare(panel.filteredSongs[0].song_id, 2)
+            compare(panel.selectedSongIds.length, 0)
+            testLibrary.selectRow(1)
+            compare(panel.selectedSongIds.length, 0)
+            testLibrary.searchText = ""
+            testLibrary.selectedTagIds = [1, 2]
+            testLibrary.searchText = "both"
+            compare(panel.filteredSongs.length, 1)
+            testLibrary.searchText = "not present"
+            compare(panel.filteredSongs.length, 0)
+            compare(panel.playableCount, 0)
         }
 
         function test_selectFilteredAndDeleteConfirmation() {
@@ -95,7 +136,7 @@ Item {
 
         function test_addFromLibraryUsesSongId() {
             waitForRendering(panel)
-            mouseClick(findChild(panel, "libraryAddSongButton1"))
+            panel.songAction("playlist", panel.filteredSongs[0])
             const popup = findChild(panel, "libraryPlaylistPopup")
             tryCompare(popup, "opened", true)
             panel.addSongToPlaylist(8)
@@ -103,6 +144,12 @@ Item {
             compare(playlistSpy.signalArguments[0][0], "add")
             compare(playlistSpy.signalArguments[0][1].id, 8)
             compare(playlistSpy.signalArguments[0][1].song_id, 1)
+            compare(panel.addPending, true)
+            panel.playlistFailed("Storage unavailable")
+            compare(panel.operationError, "Storage unavailable")
+            compare(popup.opened, true)
+            panel.addSongToPlaylist(8)
+            panel.playlistSucceeded()
             tryCompare(popup, "opened", false)
         }
     }

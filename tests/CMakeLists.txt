@@ -26,6 +26,10 @@ add_executable(nekotune_lyrics_test lyrics_test.cpp)
 target_link_libraries(nekotune_lyrics_test PRIVATE nekotune_core Qt6::Test)
 add_test(NAME nekotune_lyrics_test COMMAND nekotune_lyrics_test)
 
+add_executable(nekotune_cover_test cover_test.cpp)
+target_link_libraries(nekotune_cover_test PRIVATE nekotune_core Qt6::Test)
+add_test(NAME nekotune_cover_test COMMAND nekotune_cover_test)
+
 add_executable(nekotune_kugou_music_test kugou_music_test.cpp)
 target_link_libraries(nekotune_kugou_music_test PRIVATE nekotune_core Qt6::Test)
 add_test(NAME nekotune_kugou_music_test COMMAND nekotune_kugou_music_test)

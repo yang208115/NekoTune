@@ -30,8 +30,10 @@ Popup {
     height: (tagId ? 238 : 180) + (saveError ? 48 : 0)
     modal: true
     focus: true
+    closePolicy: pending ? Popup.NoAutoClose : Popup.CloseOnEscape
     padding: 18
-    background: Rectangle { color: tagEditor.shell.surfaceRaised; radius: 14; border.color: tagEditor.shell.border }
+    background: Rectangle {
+            objectName: "shortcutBlocker"; color: tagEditor.shell.surfaceRaised; radius: 14; border.color: tagEditor.shell.border }
     ColumnLayout {
         anchors.fill: parent
         spacing: 10
@@ -40,9 +42,10 @@ Popup {
             color: tagEditor.shell.ink
             font.pixelSize: 16
         }
-        TextField {
+        InputField {
             id: tagNameField
             Layout.fillWidth: true
+            enabled: !tagEditor.pending
             maximumLength: 64
             placeholderText: tagEditor.translator.text("tag_name", tagEditor.translator.language)
             color: tagEditor.shell.ink
@@ -82,6 +85,7 @@ Popup {
             TextButton {
                 text: tagEditor.translator.text("cancel", tagEditor.translator.language)
                 subtle: true
+                enabled: !tagEditor.pending
                 onClicked: tagEditor.close()
             }
             TextButton {
@@ -100,7 +104,7 @@ Popup {
     Connections {
         target: tagEditor.controller
         function onRequestSucceeded(method) {
-            if (tagEditor.pending && method.startsWith("tag.")) tagEditor.close()
+            if (tagEditor.pending && method.startsWith("tag.")) { tagEditor.pending = false; tagEditor.close() }
         }
         function onRequestFailed(method, message) {
             if (tagEditor.pending && method.startsWith("tag.")) {

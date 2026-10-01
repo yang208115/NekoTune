@@ -61,7 +61,6 @@ QJsonObject toJson(const PlaybackSnapshot &state) {
         song.insert("title", state.metadata.title);
         song.insert("artist", state.metadata.artist);
         song.insert("album", state.metadata.album);
-        song.insert("cover_url", state.coverUrl);
     }
     return {{"state", toString(state.state)},
             {"position", state.position},
