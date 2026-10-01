@@ -57,6 +57,20 @@ QJsonObject IpcRouter::dispatch(const QJsonObject &request) const
                                                         : m_player.removeFromQueue(queueId.toInt());
     } else if (method.startsWith(QStringLiteral("playlist."))) {
         result = m_player.managePlaylist(method.mid(9), params);
+    } else if (method == QStringLiteral("library.list")) {
+        result = m_player.listLibrary();
+    } else if (method == QStringLiteral("library.import")) {
+        const auto path = params.value(QStringLiteral("path"));
+        if (!path.isString() || path.toString().isEmpty()) return error(QStringLiteral("path is required"));
+        result = m_player.importLibrarySong(path.toString());
+    } else if (method.startsWith(QStringLiteral("kugou."))) {
+        result = m_player.kugouAction(method.mid(6), params);
+    } else if (method == QStringLiteral("library.delete")) {
+        result = m_player.deleteLibrarySongs(params);
+    } else if (method == QStringLiteral("library.play")) {
+        result = m_player.playLibrary(params);
+    } else if (method.startsWith(QStringLiteral("tag."))) {
+        result = m_player.manageTag(method.mid(4), params);
     } else if (method == QStringLiteral("queue.clear")) {
         result = m_player.clearQueue();
     } else if (method == QStringLiteral("queue.status")) {

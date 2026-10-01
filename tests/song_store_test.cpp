@@ -3,6 +3,7 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
+#include <QFile>
 #include <QTemporaryDir>
 #include <QSqlQuery>
 #include <QJsonObject>
@@ -14,11 +15,14 @@ class SongStoreTest final : public QObject {
 private slots:
     void usesBuildDatabasePathInDevelopment();
     void storesAndUpdatesSongMetadata();
+    void remembersImportedPathsAcrossRestart();
     void preservesLegacyAsrTables();
     void storesAndRestoresQueue();
     void migratesLegacyQueue();
     void migratesFoldersToPlaylists();
     void storesIndependentPlaylists();
+    void storesMultipleTagsWithoutChangingCollections();
+    void deletesSongsAtomicallyAcrossCollections();
     void rejectsInvalidFolderMigration();
 };
 
@@ -121,6 +125,37 @@ void SongStoreTest::storesAndUpdatesSongMetadata()
     QCOMPARE(songs.size(), 1);
     QCOMPARE(songs.at(0).id, first->id);
     QCOMPARE(songs.at(0).customTitle, QStringLiteral("My Title"));
+}
+
+void SongStoreTest::remembersImportedPathsAcrossRestart()
+{
+    QTemporaryDir dir;
+    const auto database = dir.filePath(QStringLiteral("paths.sqlite3"));
+    int songId = 0;
+    {
+        nekotune::SongStore store(database);
+        const auto song = store.getOrCreateSong(QStringLiteral("same-content"), QStringLiteral("/old/song.mp3"),
+                                                QStringLiteral("Song"), QStringLiteral("Singer"));
+        QVERIFY(song);
+        QCOMPARE(song->customTitle, QStringLiteral("Song"));
+        QCOMPARE(song->artist, QStringLiteral("Singer"));
+        songId = song->id;
+        const auto imported = store.getOrCreateSong(QStringLiteral("same-content"), QStringLiteral("/new/song.mp3"),
+                                                    QStringLiteral("Overwritten"), QStringLiteral("Other"));
+        QVERIFY(imported);
+        QCOMPARE(imported->id, songId);
+        QCOMPARE(imported->customTitle, QStringLiteral("Song"));
+        QCOMPARE(imported->artist, QStringLiteral("Singer"));
+        QVERIFY(store.pathsForSong(songId).contains(QStringLiteral("/new/song.mp3")));
+        QVERIFY(store.loadQueue().items.isEmpty());
+    }
+    {
+        nekotune::SongStore store(database);
+        QVERIFY2(store.isReady(), qPrintable(store.errorString()));
+        QCOMPARE(store.songs().size(), 1);
+        QVERIFY(store.pathsForSong(songId).contains(QStringLiteral("/new/song.mp3")));
+        QVERIFY(store.songPaths().value(songId).contains(QStringLiteral("/new/song.mp3")));
+    }
 }
 
 void SongStoreTest::migratesLegacyQueue()
@@ -227,6 +262,135 @@ void SongStoreTest::storesIndependentPlaylists()
         QCOMPARE(store.loadQueue().items.size(), 1);
         QCOMPARE(store.songs().size(), 2);
         QVERIFY(store.createPlaylist("New") > live);
+    }
+}
+
+void SongStoreTest::storesMultipleTagsWithoutChangingCollections()
+{
+    QTemporaryDir dir;
+    const auto path = dir.filePath(QStringLiteral("tags.sqlite3"));
+    int firstId = 0;
+    int secondId = 0;
+    int nightId = 0;
+    {
+        nekotune::SongStore store(path);
+        QVERIFY2(store.isReady(), qPrintable(store.errorString()));
+        const auto first = store.getOrCreateSong(QStringLiteral("same-hash"), QStringLiteral("/music/first.wav"));
+        const auto second = store.getOrCreateSong(QStringLiteral("other-hash"), QStringLiteral("/music/second.wav"));
+        QVERIFY(first && second);
+        firstId = first->id;
+        secondId = second->id;
+        const int playlistA = store.createPlaylist(QStringLiteral("A"));
+        const int playlistB = store.createPlaylist(QStringLiteral("B"));
+        QVERIFY(store.addPlaylistSong(playlistA, {QStringLiteral("/music/first.wav"), firstId}));
+        QVERIFY(store.addPlaylistSong(playlistB, {QStringLiteral("/music/first.wav"), firstId}));
+        QVERIFY2(store.updateMetadata(firstId, QStringLiteral("First"), {}, {},
+                                      QStringList{QStringLiteral(" Rock "), QStringLiteral("rock"), QStringLiteral("夜晚")}),
+                 qPrintable(store.errorString()));
+        QVERIFY(store.updateMetadata(secondId, {}, {}, {}, QStringList{QStringLiteral("ROCK")}));
+        QCOMPARE(store.tags().size(), 2);
+        QCOMPARE(store.songTags().value(firstId).size(), 2);
+        QCOMPARE(store.songTags().value(secondId).size(), 1);
+        QVERIFY(store.updateMetadata(firstId, QStringLiteral("First again"), {}, {}));
+        QCOMPARE(store.songTags().value(firstId).size(), 2);
+        const auto repeated = store.getOrCreateSong(QStringLiteral("same-hash"), QStringLiteral("/music/copy.wav"));
+        QCOMPARE(repeated->id, firstId);
+        QCOMPARE(store.songTags().value(repeated->id).size(), 2);
+        QVERIFY(!store.updateMetadata(firstId, QStringLiteral("Wrong"), {}, {},
+                                      QStringList{QString(65, QChar('x'))}));
+        QCOMPARE(store.songById(firstId)->customTitle, QStringLiteral("First again"));
+        QCOMPARE(store.songTags().value(firstId).size(), 2);
+        QVERIFY(!store.createTag(QStringLiteral("rOcK")));
+        for (const auto &tag : store.tags()) {
+            if (tag.name == QStringLiteral("夜晚")) nightId = tag.id;
+        }
+        QVERIFY(nightId > 0);
+        QVERIFY(store.renameTag(nightId, QStringLiteral("深夜")));
+        QVERIFY(!store.renameTag(nightId, QStringLiteral("rock")));
+        QCOMPARE(store.songTags().value(firstId).last().name, QStringLiteral("深夜"));
+        QVERIFY(store.saveQueue({{{QStringLiteral("/music/first.wav"), firstId}}, 0}));
+        QVERIFY(store.saveQueue({}));
+        QCOMPARE(store.playlists().size(), 2);
+        QCOMPARE(store.playlistById(playlistA)->items.size(), 1);
+        QCOMPARE(store.playlistById(playlistB)->items.size(), 1);
+    }
+    {
+        nekotune::SongStore store(path);
+        QVERIFY2(store.isReady(), qPrintable(store.errorString()));
+        QCOMPARE(store.songTags().value(firstId).size(), 2);
+        QCOMPARE(store.songTags().value(secondId).size(), 1);
+        QVERIFY(store.deleteTag(nightId));
+        QCOMPARE(store.songTags().value(firstId).size(), 1);
+        QCOMPARE(store.songs().size(), 2);
+        QCOMPARE(store.playlists().size(), 2);
+        QCOMPARE(store.loadQueue().items.size(), 0);
+    }
+}
+
+void SongStoreTest::deletesSongsAtomicallyAcrossCollections()
+{
+    QTemporaryDir dir;
+    QVERIFY(dir.isValid());
+    const auto filePath = dir.filePath(QStringLiteral("keep-on-disk.wav"));
+    QFile file(filePath);
+    QVERIFY(file.open(QIODevice::WriteOnly));
+    file.write("audio bytes");
+    file.close();
+
+    const auto dbPath = dir.filePath(QStringLiteral("delete.sqlite3"));
+    int retainedId = 0;
+    int deletedId = 0;
+    int playlistId = 0;
+    {
+        nekotune::SongStore store(dbPath, QStringLiteral("delete-rollback-test"));
+        QVERIFY2(store.isReady(), qPrintable(store.errorString()));
+        const auto retained = store.getOrCreateSong(QStringLiteral("retained"), filePath);
+        const auto deleted = store.getOrCreateSong(QStringLiteral("deleted"), filePath);
+        QVERIFY(retained && deleted);
+        retainedId = retained->id;
+        deletedId = deleted->id;
+        playlistId = store.createPlaylist(QStringLiteral("Favorites"));
+        QVERIFY(playlistId > 0);
+        QVERIFY(store.addPlaylistSong(playlistId, {filePath, retainedId}));
+        QVERIFY(store.addPlaylistSong(playlistId, {filePath, deletedId}));
+        QVERIFY(store.updateMetadata(deletedId, {}, {}, {}, QStringList{QStringLiteral("Delete me")}));
+        QVERIFY(store.saveQueue({{{filePath, deletedId}, {filePath, retainedId}}, 0}));
+
+        const nekotune::QueueSnapshot remaining {{{filePath, retainedId}}, 0};
+        QVERIFY(!store.deleteSongs({deletedId, 9999}, remaining));
+        QCOMPARE(store.songs().size(), 2);
+        QCOMPARE(store.playlistById(playlistId)->items.size(), 2);
+        QCOMPARE(store.loadQueue().items.size(), 2);
+        QVERIFY(!store.deleteSongs({deletedId, deletedId}, remaining));
+        QVERIFY(!store.deleteSongs({deletedId}, {{{filePath, deletedId}}, 0}));
+        QSqlQuery query(QSqlDatabase::database(QStringLiteral("delete-rollback-test")));
+        QVERIFY(query.exec(QStringLiteral("CREATE TRIGGER reject_second_delete BEFORE DELETE ON songs "
+                                         "WHEN OLD.id = %1 BEGIN SELECT RAISE(ABORT, 'blocked'); END")
+                               .arg(deletedId)));
+        QVERIFY(!store.deleteSongs({retainedId, deletedId}, {}));
+        QCOMPARE(store.songs().size(), 2);
+        QCOMPARE(store.playlistById(playlistId)->items.size(), 2);
+        QCOMPARE(store.loadQueue().items.size(), 2);
+        QVERIFY(query.exec(QStringLiteral("DROP TRIGGER reject_second_delete")));
+        QVERIFY2(store.deleteSongs({deletedId}, remaining), qPrintable(store.errorString()));
+        QVERIFY(!store.songById(deletedId));
+        QCOMPARE(store.songTags().value(deletedId).size(), 0);
+        QCOMPARE(store.playlistById(playlistId)->items.size(), 1);
+        QCOMPARE(store.playlistById(playlistId)->items[0].songId, retainedId);
+        QCOMPARE(store.loadQueue().items.size(), 1);
+        QCOMPARE(store.loadQueue().items[0].songId, retainedId);
+        QCOMPARE(store.loadQueue().currentIndex, 0);
+        QVERIFY(QFileInfo::exists(filePath));
+    }
+    {
+        nekotune::SongStore store(dbPath);
+        QVERIFY2(store.isReady(), qPrintable(store.errorString()));
+        QCOMPARE(store.songs().size(), 1);
+        QCOMPARE(store.playlistById(playlistId)->items.size(), 1);
+        QCOMPARE(store.loadQueue().items.size(), 1);
+        const auto importedAgain = store.getOrCreateSong(QStringLiteral("deleted"), filePath);
+        QVERIFY(importedAgain);
+        QVERIFY(importedAgain->id != deletedId);
     }
 }
 

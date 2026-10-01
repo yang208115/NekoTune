@@ -58,5 +58,90 @@ Item {
             compare(seekSpy.count, 1)
             compare(seekSpy.signalArguments[0][0], 560)
         }
+
+        function test_krcWordTimingAndEscaping() {
+            lyrics.lines = [{time_ms: 1000, duration_ms: 1000, text: "<a&b> c", words: [
+                {text: "<a&b> ", offset_ms: 0, time_ms: 1000, duration_ms: 300},
+                {text: "c", offset_ms: 500, time_ms: 1500, duration_ms: 300}
+            ]}]
+            lyrics.position = 1100
+            compare(lyrics.activeIndex, 0)
+            const row = findChild(lyrics, "lyricLine0")
+            const first = findChild(lyrics, "krcWord0_0")
+            const second = findChild(lyrics, "krcWord0_1")
+            const firstReveal = findChild(lyrics, "krcReveal0_0")
+            const secondReveal = findChild(lyrics, "krcReveal0_1")
+            const base = findChild(lyrics, "krcBaseText0_0")
+            verify(row !== null && first !== null && second !== null)
+            verify(firstReveal !== null && secondReveal !== null && base !== null)
+            compare(base.text, "<a&b> ")
+            compare(base.textFormat, Text.PlainText)
+            compare(row.activeWordIndex, 0)
+            compare(first.progress, 1 / 3)
+            compare(second.progress, 0)
+            verify(Math.abs(firstReveal.width - first.width / 3) < 0.1)
+            const stableHeight = row.height
+            lyrics.position = 1150
+            compare(first.progress, 0.5)
+            verify(Math.abs(firstReveal.width - first.width / 2) < 0.1)
+            compare(row.height, stableHeight)
+            lyrics.position = 1400
+            compare(row.activeWordIndex, -1)
+            compare(firstReveal.width, first.width)
+            lyrics.position = 1600
+            compare(row.activeWordIndex, 1)
+            compare(second.progress, 1 / 3)
+            verify(Math.abs(secondReveal.width - second.width / 3) < 0.1)
+            lyrics.lines = timedLines
+            lyrics.position = 2000
+            compare(findChild(lyrics, "lyricText1").textFormat, Text.PlainText)
+        }
+
+        function test_krcProgressFollowsPlaybackAndSeek() {
+            lyrics.lines = [{time_ms: 1000, duration_ms: 1000, text: "Hello", words: [
+                {text: "Hello", time_ms: 1000, duration_ms: 1000}
+            ]}]
+            lyrics.position = 1100
+            lyrics.playing = true
+            const word = findChild(lyrics, "krcWord0_0")
+            verify(word !== null)
+            const start = word.progress
+            wait(80)
+            verify(word.progress > start)
+            lyrics.playing = false
+            compare(word.progress, 0.1)
+            wait(60)
+            compare(word.progress, 0.1)
+            lyrics.position = 1600
+            compare(word.progress, 0.6)
+            lyrics.position = 1020
+            compare(word.progress, 0.02)
+        }
+
+        function test_adjacentLineScrollsContinuously() {
+            const rows = []
+            for (let index = 0; index < 14; index += 1)
+                rows.push({time_ms: index * 1000, text: "Line " + index})
+            lyrics.lines = rows
+            const list = findChild(lyrics, "lyricsList")
+            verify(list !== null)
+            lyrics.position = 5000
+            compare(lyrics.activeIndex, 5)
+            wait(40)
+            const before = list.contentY
+            const next = list.itemAtIndex(6)
+            verify(next !== null)
+            const target = Math.max(0, Math.min(next.y + next.height / 2 - list.height * 0.42,
+                                                 Math.max(0, list.contentHeight - list.height)))
+            verify(target > before + 10)
+            lyrics.position = 6000
+            compare(lyrics.activeIndex, 6)
+            wait(160)
+            verify(list.contentY > before + 1)
+            verify(list.contentY < target - 1)
+            wait(360)
+            verify(Math.abs(list.contentY - target) < 2)
+            compare(lyrics.userScrolling, false)
+        }
     }
 }

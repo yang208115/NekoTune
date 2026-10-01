@@ -13,10 +13,12 @@ ApplicationWindow {
     minimumHeight: 640
     visible: true
     title: "NekoTune"
-    color: "#0e0d12"
+    color: "#0E0D14"
 
     readonly property var song: ipcClient.status.song || ({})
     readonly property var queue: ipcClient.status.queue || []
+    readonly property var library: ipcClient.status.library || ({songs: [], tags: []})
+    property var selectedTagIds: []
     readonly property var lyrics: ipcClient.status.lyrics || ({})
     readonly property real duration: Number(ipcClient.status.duration || 0)
     readonly property real position: Number(ipcClient.status.position || 0)
@@ -26,6 +28,28 @@ ApplicationWindow {
     readonly property bool isPlaying: playbackState === "playing"
     readonly property bool hasSong: Boolean(song && song.song_id)
 
+    function librarySongById(id) {
+        const songs = root.library.songs || []
+        for (let index = 0; index < songs.length; index += 1)
+            if (Number(songs[index].song_id) === Number(id)) return songs[index]
+        return null
+    }
+
+    function toggleTag(id) {
+        const next = root.selectedTagIds.slice()
+        const index = next.indexOf(Number(id))
+        if (index < 0) next.push(Number(id))
+        else next.splice(index, 1)
+        root.selectedTagIds = next
+        root.viewMode = "library"
+    }
+
+    onLibraryChanged: {
+        const validIds = (root.library.tags || []).map(tag => Number(tag.id))
+        root.selectedTagIds = root.selectedTagIds.filter(id => validIds.indexOf(Number(id)) !== -1)
+        if (metadataEditor.visible && !metadataEditor.tagsReady) metadataEditor.loadTags()
+    }
+
     readonly property int currentIndex: {
         for (let index = 0; index < root.queue.length; index += 1) {
             if (root.queue[index].state === "current") return index
@@ -33,15 +57,21 @@ ApplicationWindow {
         return -1
     }
 
-    // High-end subtle palette (low-saturation dark lavender/rose system)
-    readonly property color ink: "#f6f3fa"
-    readonly property color muted: "#8e879c"
-    readonly property color subtle: "#645e73"
-    readonly property color border: "#211c2c"
-    readonly property color surface: "#13111b"
-    readonly property color surfaceRaised: "#1b1826"
-    readonly property color lavender: "#cbb8ff"
-    readonly property color rose: "#e8a9c3"
+    // High-end subtle palette (Design tokens from docs/ui-design-guidelines.md)
+    Theme { id: theme }
+
+    readonly property color ink: "#F5F1FA"           // text.primary
+    readonly property color subtle: "#D7CFE2"        // text.secondary
+    readonly property color muted: "#AAA0B8"         // text.muted
+    readonly property color border: "#332C41"        // border.subtle
+    readonly property color borderControl: "#8D809F" // border.control
+    readonly property color surface: "#17141F"       // bg.surface
+    readonly property color surfaceRaised: "#211C2D" // bg.raised
+    readonly property color bgSidebar: "#121019"     // bg.sidebar
+    readonly property color bgHover: "#2A2338"       // bg.hover
+    readonly property color bgSelected: "#322743"    // bg.selected
+    readonly property color lavender: "#CBB8FF"      // accent.primary
+    readonly property color rose: "#E8A9C3"          // accent.secondary
 
     // Main content page: queue, lyrics, or CLI-enabled lyrics diagnostics.
     property string viewMode: "queue"
@@ -68,23 +98,54 @@ ApplicationWindow {
     Popup {
         id: metadataEditor
         property int songId: 0
+        property var tagNames: []
+        property bool tagsReady: false
+        property bool pending: false
+        property string saveError: ""
+        function loadTags() {
+            const found = root.librarySongById(songId)
+            if (!found) return
+            tagNames = (found.tags || []).map(tag => tag.name)
+            tagsReady = true
+        }
+        function addTag() {
+            const name = tagInput.text.trim()
+            if (!name || name.length > 64) return
+            if (tagNames.some(tag => tag.toLocaleLowerCase() === name.toLocaleLowerCase())) {
+                tagInput.text = ""
+                return
+            }
+            tagNames = tagNames.concat([name])
+            tagInput.text = ""
+        }
         function openForSong(value) {
             songId = Number(value.song_id || 0)
             titleField.text = value.custom_title || value.title || ""
             artistField.text = value.artist || ""
             lyricsField.text = value.lyrics || ""
+            tagInput.text = ""
+            pending = false
+            saveError = ""
+            tagsReady = false
+            tagNames = []
+            loadTags()
+            if (!tagsReady && value.tags) {
+                tagNames = value.tags.map(tag => tag.name)
+                tagsReady = true
+            }
+            if (!tagsReady) ipcClient.refreshLibrary()
             open()
         }
         parent: Overlay.overlay
         anchors.centerIn: parent
         width: Math.min(580, parent.width - 48)
-        height: Math.min(520, parent.height - 48)
+        height: Math.min(600, parent.height - 48)
         modal: true
         padding: 24
         background: Rectangle {
             color: root.surfaceRaised
             radius: 16
-            border.color: "#352e46"
+            border.color: root.border
             border.width: 1
         }
         ColumnLayout {
@@ -114,32 +175,86 @@ ApplicationWindow {
             TextField {
                 id: titleField
                 Layout.fillWidth: true
-                Layout.preferredHeight: 38
+                Layout.preferredHeight: 40
                 placeholderText: i18n.text("custom_title", i18n.language)
                 color: root.ink
-                placeholderTextColor: root.subtle
+                placeholderTextColor: root.muted
                 leftPadding: 12
                 rightPadding: 12
                 background: Rectangle {
-                    color: "#110e18"
+                    color: root.surface
                     radius: 8
-                    border.color: titleField.activeFocus ? root.lavender : root.border
+                    border.color: titleField.activeFocus ? root.lavender : root.borderControl
+                    border.width: 1
                 }
             }
             TextField {
                 id: artistField
                 Layout.fillWidth: true
-                Layout.preferredHeight: 38
+                Layout.preferredHeight: 40
                 placeholderText: i18n.text("artist_author", i18n.language)
                 color: root.ink
-                placeholderTextColor: root.subtle
+                placeholderTextColor: root.muted
                 leftPadding: 12
                 rightPadding: 12
                 background: Rectangle {
-                    color: "#110e18"
+                    color: root.surface
                     radius: 8
-                    border.color: artistField.activeFocus ? root.lavender : root.border
+                    border.color: artistField.activeFocus ? root.lavender : root.borderControl
+                    border.width: 1
                 }
+            }
+            Label {
+                text: i18n.text("tags", i18n.language)
+                color: root.subtle
+                font.pixelSize: 12
+            }
+            Flow {
+                Layout.fillWidth: true
+                Layout.preferredHeight: Math.max(0, childrenRect.height)
+                spacing: 6
+                Repeater {
+                    model: metadataEditor.tagNames
+                    delegate: TextButton {
+                        required property var modelData
+                        required property int index
+                        text: String(modelData) + " ×"
+                        subtle: true
+                        implicitHeight: 28
+                        onClicked: {
+                            const next = metadataEditor.tagNames.slice()
+                            next.splice(index, 1)
+                            metadataEditor.tagNames = next
+                        }
+                    }
+                }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                TextField {
+                    id: tagInput
+                    Layout.fillWidth: true
+                    enabled: metadataEditor.tagsReady
+                    maximumLength: 64
+                    placeholderText: i18n.text("tag_name", i18n.language)
+                    color: root.ink
+                    placeholderTextColor: root.muted
+                    background: Rectangle { color: root.surface; radius: 8; border.color: root.borderControl }
+                    onAccepted: metadataEditor.addTag()
+                }
+                TextButton {
+                    text: i18n.text("add_tag", i18n.language)
+                    subtle: true
+                    enabled: metadataEditor.tagsReady && tagInput.text.trim().length > 0
+                    onClicked: metadataEditor.addTag()
+                }
+            }
+            Label {
+                visible: !metadataEditor.tagsReady || Boolean(metadataEditor.saveError)
+                text: !metadataEditor.tagsReady ? i18n.text("loading_tags", i18n.language)
+                                                : metadataEditor.saveError
+                color: root.rose
+                font.pixelSize: 11
             }
             TextArea {
                 id: lyricsField
@@ -147,13 +262,14 @@ ApplicationWindow {
                 Layout.fillHeight: true
                 placeholderText: i18n.text("lyrics", i18n.language)
                 color: root.ink
-                placeholderTextColor: root.subtle
+                placeholderTextColor: root.muted
                 wrapMode: TextEdit.Wrap
                 padding: 12
                 background: Rectangle {
-                    color: "#110e18"
+                    color: root.surface
                     radius: 8
-                    border.color: lyricsField.activeFocus ? root.lavender : root.border
+                    border.color: lyricsField.activeFocus ? root.lavender : root.borderControl
+                    border.width: 1
                 }
             }
             RowLayout {
@@ -166,11 +282,132 @@ ApplicationWindow {
                 }
                 TextButton {
                     text: i18n.text("save", i18n.language)
-                    enabled: metadataEditor.songId > 0
+                    enabled: metadataEditor.songId > 0 && metadataEditor.tagsReady && !metadataEditor.pending
                     onClicked: {
-                        ipcClient.updateSongMetadata(metadataEditor.songId, titleField.text, artistField.text, lyricsField.text)
-                        metadataEditor.close()
+                        metadataEditor.saveError = ""
+                        metadataEditor.pending = true
+                        ipcClient.updateSongMetadata(metadataEditor.songId, titleField.text,
+                                                     artistField.text, lyricsField.text,
+                                                     metadataEditor.tagNames)
                     }
+                }
+            }
+        }
+        Connections {
+            target: ipcClient
+            function onSongMetadataSaved(songId) {
+                if (songId === metadataEditor.songId) metadataEditor.close()
+            }
+            function onRequestFailed(method, message) {
+                if (method === "song.update_metadata" && metadataEditor.pending) {
+                    metadataEditor.pending = false
+                    metadataEditor.saveError = message
+                }
+            }
+        }
+    }
+
+    Popup {
+        id: tagEditor
+        property int tagId: 0
+        property bool pending: false
+        property string saveError: ""
+        function openNew() {
+            tagId = 0
+            tagNameField.text = ""
+            pending = false
+            saveError = ""
+            open()
+        }
+        function openForTag(tag) {
+            tagId = Number(tag.id)
+            tagNameField.text = String(tag.name)
+            pending = false
+            saveError = ""
+            open()
+        }
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: 340
+        height: (tagId ? 238 : 180) + (saveError ? 48 : 0)
+        modal: true
+        focus: true
+        padding: 18
+        background: Rectangle { color: root.surfaceRaised; radius: 14; border.color: root.border }
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 10
+            Label {
+                text: i18n.text(tagEditor.tagId ? "rename_tag" : "new_tag", i18n.language)
+                color: root.ink
+                font.pixelSize: 16
+            }
+            TextField {
+                id: tagNameField
+                Layout.fillWidth: true
+                maximumLength: 64
+                placeholderText: i18n.text("tag_name", i18n.language)
+                color: root.ink
+                placeholderTextColor: root.muted
+                background: Rectangle { color: root.surface; radius: 8; border.color: root.borderControl }
+            }
+            Label {
+                visible: tagEditor.tagId > 0
+                text: i18n.text("delete_tag_hint", i18n.language)
+                wrapMode: Text.WordWrap
+                color: root.muted
+                font.pixelSize: 11
+                Layout.fillWidth: true
+            }
+            Label {
+                visible: Boolean(tagEditor.saveError)
+                text: tagEditor.saveError
+                color: root.rose
+                wrapMode: Text.WordWrap
+                Layout.fillWidth: true
+                font.pixelSize: 11
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                TextButton {
+                    visible: tagEditor.tagId > 0
+                    text: i18n.text("delete_tag", i18n.language)
+                    subtle: true
+                    enabled: !tagEditor.pending
+                    onClicked: {
+                        tagEditor.pending = true
+                        tagEditor.saveError = ""
+                        ipcClient.manageTag("delete", {id: tagEditor.tagId})
+                    }
+                }
+                Item { Layout.fillWidth: true }
+                TextButton {
+                    text: i18n.text("cancel", i18n.language)
+                    subtle: true
+                    onClicked: tagEditor.close()
+                }
+                TextButton {
+                    text: i18n.text("save", i18n.language)
+                    enabled: tagNameField.text.trim().length > 0 && !tagEditor.pending
+                    onClicked: {
+                        tagEditor.pending = true
+                        tagEditor.saveError = ""
+                        ipcClient.manageTag(tagEditor.tagId ? "rename" : "create", {
+                            id: tagEditor.tagId, name: tagNameField.text.trim()
+                        })
+                    }
+                }
+            }
+        }
+        Connections {
+            target: ipcClient
+            function onRequestSucceeded(method) {
+                if (tagEditor.pending && method.startsWith("tag.")) tagEditor.close()
+            }
+            function onRequestFailed(method, message) {
+                if (tagEditor.pending && method.startsWith("tag.")) {
+                    tagEditor.pending = false
+                    tagEditor.saveError = message
                 }
             }
         }
@@ -187,11 +424,11 @@ ApplicationWindow {
             Layout.fillHeight: true
             spacing: 0
 
-            // Left Sidebar
+            // Left Sidebar (Section 5: 220 wide, 180 compact)
             Rectangle {
-                Layout.preferredWidth: 220
+                Layout.preferredWidth: root.width < 1200 ? 180 : 220
                 Layout.fillHeight: true
-                color: "#0d0b12"
+                color: root.bgSidebar
                 border.color: root.border
                 border.width: 1
 
@@ -207,8 +444,8 @@ ApplicationWindow {
                             Layout.preferredWidth: 32
                             Layout.preferredHeight: 32
                             radius: 8
-                            color: "#1f1b2b"
-                            border.color: "#352e46"
+                            color: root.surface
+                            border.color: root.border
                             Label {
                                 anchors.centerIn: parent
                                 text: "N"
@@ -228,7 +465,7 @@ ApplicationWindow {
                             }
                             Label {
                                 text: "LOCAL LISTENING"
-                                color: root.subtle
+                                color: root.muted
                                 font.pixelSize: 8
                                 font.letterSpacing: 0.8
                             }
@@ -241,7 +478,7 @@ ApplicationWindow {
                         color: root.border
                     }
 
-                    // Navigation Items
+                    // Navigation Items (Section 7.1)
                     ColumnLayout {
                         Layout.fillWidth: true
                         spacing: 4
@@ -251,10 +488,22 @@ ApplicationWindow {
                             Layout.fillWidth: true
                             Layout.preferredHeight: 38
                             radius: 8
-                            color: root.viewMode === "queue" ? "#1e1a2b" : navQueueHover.hovered ? "#161320" : "transparent"
+                            color: root.viewMode === "queue" ? root.bgSelected : navQueueHover.hovered ? root.bgHover : "transparent"
 
                             HoverHandler { id: navQueueHover; cursorShape: Qt.PointingHandCursor }
-                            TapHandler { onTapped: root.viewMode = "queue" }
+                            TapHandler { onTapped: { queuePanel.currentPlaylist = 0; root.viewMode = "queue" } }
+
+                            // 3px Moonlight purple indicator (Section 7.1)
+                            Rectangle {
+                                width: 3
+                                height: 18
+                                anchors.left: parent.left
+                                anchors.leftMargin: 2
+                                anchors.verticalCenter: parent.verticalCenter
+                                radius: 1.5
+                                color: root.lavender
+                                visible: root.viewMode === "queue"
+                            }
 
                             RowLayout {
                                 anchors.fill: parent
@@ -278,7 +527,7 @@ ApplicationWindow {
                                     Layout.preferredWidth: countTextLabel.implicitWidth + 10
                                     Layout.preferredHeight: 18
                                     radius: 9
-                                    color: "#272236"
+                                    color: root.bgHover
                                     visible: root.queue.length > 0
                                     Label {
                                         id: countTextLabel
@@ -296,10 +545,22 @@ ApplicationWindow {
                             Layout.fillWidth: true
                             Layout.preferredHeight: 38
                             radius: 8
-                            color: root.viewMode === "lyrics" ? "#1e1a2b" : navLyricsHover.hovered ? "#161320" : "transparent"
+                            color: root.viewMode === "lyrics" ? root.bgSelected : navLyricsHover.hovered ? root.bgHover : "transparent"
 
                             HoverHandler { id: navLyricsHover; cursorShape: Qt.PointingHandCursor }
                             TapHandler { onTapped: root.viewMode = "lyrics" }
+
+                            // 3px Moonlight purple indicator (Section 7.1)
+                            Rectangle {
+                                width: 3
+                                height: 18
+                                anchors.left: parent.left
+                                anchors.leftMargin: 2
+                                anchors.verticalCenter: parent.verticalCenter
+                                radius: 1.5
+                                color: root.lavender
+                                visible: root.viewMode === "lyrics"
+                            }
 
                             RowLayout {
                                 anchors.fill: parent
@@ -325,6 +586,117 @@ ApplicationWindow {
                     }
 
                     TextButton {
+                        Layout.fillWidth: true
+                        text: i18n.text("library", i18n.language)
+                        subtle: root.viewMode !== "library"
+                        onClicked: root.viewMode = "library"
+                    }
+
+                    TextButton {
+                        Layout.fillWidth: true
+                        text: i18n.text("kugou_music", i18n.language)
+                        subtle: root.viewMode !== "kugou"
+                        onClicked: root.viewMode = "kugou"
+                    }
+
+                    TextButton {
+                        Layout.fillWidth: true
+                        text: i18n.text("settings", i18n.language)
+                        subtle: root.viewMode !== "settings"
+                        onClicked: root.viewMode = "settings"
+                    }
+
+                    Flickable {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        clip: true
+                        contentWidth: width
+                        contentHeight: sidebarGroups.implicitHeight
+                        flickableDirection: Flickable.VerticalFlick
+                        Column {
+                            id: sidebarGroups
+                            width: parent.width
+                            spacing: 7
+                            Label {
+                                text: i18n.text("tags", i18n.language)
+                                color: root.muted
+                                font.pixelSize: 11
+                                font.weight: Font.DemiBold
+                            }
+                            TextButton {
+                                width: parent.width
+                                text: i18n.text("all_songs", i18n.language)
+                                subtle: true
+                                subtleBg: root.viewMode === "library" && root.selectedTagIds.length === 0
+                                    ? root.bgSelected : root.surface
+                                implicitHeight: 30
+                                onClicked: { root.selectedTagIds = []; root.viewMode = "library" }
+                            }
+                            TextButton {
+                                width: parent.width
+                                text: i18n.text("new_tag", i18n.language)
+                                subtle: true
+                                implicitHeight: 30
+                                onClicked: tagEditor.openNew()
+                            }
+                            Repeater {
+                                model: root.library.tags || []
+                                delegate: RowLayout {
+                                    required property var modelData
+                                    width: sidebarGroups.width
+                                    spacing: 3
+                                    TextButton {
+                                        Layout.fillWidth: true
+                                        text: modelData.name
+                                        subtle: true
+                                        subtleBg: root.selectedTagIds.indexOf(Number(modelData.id)) !== -1
+                                            ? root.bgSelected : root.surface
+                                        implicitHeight: 30
+                                        onClicked: root.toggleTag(Number(modelData.id))
+                                    }
+                                    TextButton {
+                                        text: "⋯"
+                                        subtle: true
+                                        implicitWidth: 30
+                                        implicitHeight: 30
+                                        onClicked: tagEditor.openForTag(modelData)
+                                    }
+                                }
+                            }
+                            Rectangle { width: parent.width; height: 1; color: root.border }
+                            Label {
+                                text: i18n.text("playlists", i18n.language)
+                                color: root.muted
+                                font.pixelSize: 11
+                                font.weight: Font.DemiBold
+                            }
+                            TextButton {
+                                width: parent.width
+                                text: i18n.text("new_playlist", i18n.language)
+                                subtle: true
+                                implicitHeight: 30
+                                onClicked: { root.viewMode = "queue"; queuePanel.newPlaylist() }
+                            }
+                            Repeater {
+                                model: ipcClient.status.playlists || []
+                                delegate: TextButton {
+                                    required property var modelData
+                                    width: sidebarGroups.width
+                                    text: modelData.name
+                                    subtle: true
+                                    subtleBg: root.viewMode === "queue" && queuePanel.currentPlaylist === Number(modelData.id)
+                                        ? root.bgSelected : root.surface
+                                    implicitHeight: 30
+                                    onClicked: {
+                                        queuePanel.currentPlaylist = Number(modelData.id)
+                                        root.viewMode = "queue"
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    TextButton {
                         objectName: "lyricsDebugNavigation"
                         Layout.fillWidth: true
                         visible: Boolean(lyricsDebugEnabled)
@@ -333,35 +705,42 @@ ApplicationWindow {
                         onClicked: root.viewMode = "lyrics_debug"
                     }
 
-                    Item { Layout.fillHeight: true }
-
                     // Sidebar Bottom Info & Language
                     ColumnLayout {
                         Layout.fillWidth: true
                         spacing: 8
 
+                        Label {
+                            Layout.fillWidth: true
+                            visible: Boolean(ipcClient.error)
+                            text: ipcClient.error
+                            color: root.rose
+                            font.pixelSize: 10
+                            wrapMode: Text.WordWrap
+                        }
+
                         RowLayout {
                             Layout.fillWidth: true
-                            // Connection Badge
+                            // Connection Badge (Section 3.2: statusSuccess #98D8BC, statusError #FF9BAE)
                             Rectangle {
                                 Layout.preferredHeight: 24
                                 Layout.fillWidth: true
                                 radius: 6
-                                color: ipcClient.connected ? "#15201c" : "#22171d"
+                                color: ipcClient.connected ? "#15221C" : "#38202B"
                                 Row {
                                     anchors.centerIn: parent
                                     spacing: 5
                                     Rectangle {
                                         anchors.verticalCenter: parent.verticalCenter
-                                        width: 4
-                                        height: 4
-                                        radius: 2
-                                        color: ipcClient.connected ? "#7adfc6" : root.rose
+                                        width: 5
+                                        height: 5
+                                        radius: 2.5
+                                        color: ipcClient.connected ? "#98D8BC" : "#FF9BAE"
                                     }
                                     Label {
                                         anchors.verticalCenter: parent.verticalCenter
                                         text: ipcClient.connected ? i18n.text("connected", i18n.language) : i18n.text("offline", i18n.language)
-                                        color: ipcClient.connected ? "#a5e8d6" : root.rose
+                                        color: ipcClient.connected ? "#98D8BC" : "#FF9BAE"
                                         font.pixelSize: 10
                                     }
                                 }
@@ -407,6 +786,7 @@ ApplicationWindow {
 
                 // Stack / Mode Switcher between Queue Table & Immersive Lyrics
                 QueuePanel {
+                    id: queuePanel
                     objectName: "queuePanel"
                     anchors.fill: parent
                     anchors.margins: 20
@@ -415,6 +795,8 @@ ApplicationWindow {
                     playbackState: root.playbackState
                     playlists: ipcClient.status.playlists || []
                     currentSong: root.song
+                    duration: root.duration
+                    lyrics: root.lyrics
 
                     onAddRequested: playlistId => { fileDialog.playlistId = playlistId; fileDialog.open() }
                     onClearRequested: ipcClient.clearQueue()
@@ -423,6 +805,48 @@ ApplicationWindow {
                     onRemoveRequested: id => ipcClient.removeQueueItem(id)
                     onEditRequested: songData => metadataEditor.openForSong(songData)
                     onPlaylistRequested: (action, params) => ipcClient.managePlaylist(action, params)
+                }
+
+                LibraryPanel {
+                    id: libraryPanel
+                    objectName: "libraryPanel"
+                    anchors.fill: parent
+                    anchors.margins: 20
+                    visible: root.viewMode === "library"
+                    library: root.library
+                    selectedTagIds: root.selectedTagIds
+                    playlists: ipcClient.status.playlists || []
+                    onImportRequested: { fileDialog.playlistId = 0; fileDialog.open() }
+                    onPlayRequested: (tagIds, songId) => ipcClient.playLibrary(tagIds, songId)
+                    onEditRequested: songData => metadataEditor.openForSong(songData)
+                    onPlaylistRequested: (action, params) => ipcClient.managePlaylist(action, params)
+                    onDeleteRequested: songIds => ipcClient.deleteLibrarySongs(songIds)
+                    Connections {
+                        target: ipcClient
+                        function onLibraryPlaybackSkipped(count) { libraryPanel.skippedCount = count }
+                        function onRequestSucceeded(method) {
+                            if (method === "library.delete") libraryPanel.deleteSucceeded()
+                        }
+                        function onRequestFailed(method, message) {
+                            if (method === "library.delete") libraryPanel.deleteFailed(message)
+                        }
+                    }
+                }
+
+                KugouPanel {
+                    anchors.fill: parent
+                    anchors.margins: 20
+                    visible: root.viewMode === "kugou"
+                    client: ipcClient
+                    translator: i18n
+                }
+
+                SettingsPanel {
+                    anchors.fill: parent
+                    anchors.margins: 20
+                    visible: root.viewMode === "settings"
+                    client: ipcClient
+                    translator: i18n
                 }
 
                 PlayerPanel {
@@ -449,11 +873,11 @@ ApplicationWindow {
             }
         }
 
-        // Global Bottom Player Bar (Robust, Spacious, Tactile)
+        // Global Bottom Player Bar (Section 5: 96px, robust and tactile)
         Rectangle {
             Layout.fillWidth: true
-            Layout.preferredHeight: 82
-            color: "#14111c"
+            Layout.preferredHeight: 96
+            color: root.bgSidebar
             border.color: root.border
             border.width: 1
 
@@ -463,9 +887,9 @@ ApplicationWindow {
                 anchors.rightMargin: 20
                 spacing: 16
 
-                // Left Section: Mini Cover & Title & Edit Button
+                // Left Section: Mini Cover & Title & Edit Button (220-280px)
                 Item {
-                    Layout.preferredWidth: 280
+                    Layout.preferredWidth: root.width < 1200 ? 220 : 280
                     Layout.fillHeight: true
 
                     RowLayout {
@@ -477,8 +901,8 @@ ApplicationWindow {
                             Layout.preferredHeight: 48
                             radius: 8
                             clip: true
-                            color: "#1c1826"
-                            border.color: "#2e283b"
+                            color: root.surface
+                            border.color: root.border
                             border.width: 1
 
                             Image {
@@ -490,8 +914,9 @@ ApplicationWindow {
 
                             Image {
                                 anchors.fill: parent
-                                source: root.hasSong && root.lyrics.track_id === root.song.song_hash
-                                        ? String((root.lyrics.document || {}).cover_url || "") : ""
+                                source: root.hasSong ? (String(root.song.cover_url || "")
+                                        || (!root.lyrics.offline && root.lyrics.track_id === root.song.song_hash
+                                            ? String((root.lyrics.document || {}).cover_url || "") : "")) : ""
                                 fillMode: Image.PreserveAspectCrop
                                 asynchronous: true
                                 visible: status === Image.Ready
@@ -545,7 +970,7 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     Layout.alignment: Qt.AlignHCenter
-                    spacing: 2
+                    spacing: 4
 
                     // Media Control Buttons
                     RowLayout {
@@ -561,7 +986,7 @@ ApplicationWindow {
                             enabled: root.queue.length > 0
                             background: Rectangle {
                                 radius: 18
-                                color: prevBtn.down ? "#2d283c" : prevBtn.hovered ? "#221c2e" : "transparent"
+                                color: prevBtn.down ? root.bgSelected : prevBtn.hovered ? root.bgHover : "transparent"
                             }
                             contentItem: Item {
                                 anchors.centerIn: parent
@@ -593,22 +1018,34 @@ ApplicationWindow {
                             onClicked: ipcClient.previous()
                         }
 
-                        // Main Play/Pause Button (44px, Absolute Precision Centering)
+                        // Main Play/Pause Button (Section 5: 48x48 Circular, Section 3: textOnAccent #21172F)
                         Button {
                             id: mainPlayButton
                             hoverEnabled: true
-                            implicitWidth: 44
-                            implicitHeight: 44
+                            implicitWidth: 48
+                            implicitHeight: 48
                             enabled: root.hasSong || root.queue.length > 0
 
                             background: Rectangle {
-                                radius: 22
-                                color: !mainPlayButton.enabled ? "#383244"
-                                       : mainPlayButton.down ? "#bba4f2"
-                                       : mainPlayButton.hovered ? "#d8c9ff"
+                                id: mainPlayBg
+                                radius: 24
+                                color: !mainPlayButton.enabled ? "#2A2338"
+                                       : mainPlayButton.down ? "#B7A0ED"
+                                       : mainPlayButton.hovered ? "#DBCDFF"
                                        : root.lavender
 
-                                Behavior on color { ColorAnimation { duration: 100 } }
+                                // Focus ring (Section 7.1 & 11)
+                                Rectangle {
+                                    anchors.fill: parent
+                                    anchors.margins: -4
+                                    radius: parent.radius + 4
+                                    color: "transparent"
+                                    border.color: root.lavender
+                                    border.width: 2
+                                    visible: mainPlayButton.activeFocus
+                                }
+
+                                Behavior on color { ColorAnimation { duration: 120 } }
                             }
 
                             contentItem: Item {
@@ -624,13 +1061,13 @@ ApplicationWindow {
                                         width: 3.5
                                         height: 16
                                         radius: 1.75
-                                        color: "#14111c"
+                                        color: "#21172F"
                                     }
                                     Rectangle {
                                         width: 3.5
                                         height: 16
                                         radius: 1.75
-                                        color: "#14111c"
+                                        color: "#21172F"
                                     }
                                 }
 
@@ -643,8 +1080,8 @@ ApplicationWindow {
                                     visible: !root.isPlaying
 
                                     ShapePath {
-                                        fillColor: "#14111c"
-                                        strokeColor: "#14111c"
+                                        fillColor: "#21172F"
+                                        strokeColor: "#21172F"
                                         strokeWidth: 1
                                         joinStyle: ShapePath.RoundJoin
                                         capStyle: ShapePath.RoundCap
@@ -668,7 +1105,7 @@ ApplicationWindow {
                             enabled: root.queue.length > 0 && root.currentIndex < root.queue.length - 1
                             background: Rectangle {
                                 radius: 18
-                                color: nextBtn.down ? "#2d283c" : nextBtn.hovered ? "#221c2e" : "transparent"
+                                color: nextBtn.down ? root.bgSelected : nextBtn.hovered ? root.bgHover : "transparent"
                             }
                             contentItem: Item {
                                 anchors.centerIn: parent
@@ -711,10 +1148,10 @@ ApplicationWindow {
                         Label {
                             text: formatTime(timelineSlider.pressed
                                              ? timelineSlider.valueAt(timelineSlider.position)
-                                             : timelineSlider.value)
+                                             : timelineSlider.value, false)
                             color: root.subtle
                             font.pixelSize: 11
-                            font.family: "Monospace"
+                            font.family: Theme.fontFamilyMonospace
                         }
 
                         SeekSlider {
@@ -723,22 +1160,22 @@ ApplicationWindow {
                             duration: root.duration
                             playbackPosition: root.position
                             activeColor: root.lavender
-                            baseColor: "#272233"
+                            baseColor: root.border
                             onSeekRequested: positionMs => ipcClient.seek(positionMs)
                         }
 
                         Label {
-                            text: formatTime(root.duration)
+                            text: formatTime(root.duration, true)
                             color: root.subtle
                             font.pixelSize: 11
-                            font.family: "Monospace"
+                            font.family: Theme.fontFamilyMonospace
                         }
                     }
                 }
 
-                // Right Section: Volume & Lyrics Switch
+                // Right Section: Volume & Lyrics Switch (160-220px)
                 RowLayout {
-                    Layout.preferredWidth: 260
+                    Layout.preferredWidth: root.width < 1200 ? 180 : 220
                     Layout.fillHeight: true
                     spacing: 12
 
@@ -747,6 +1184,7 @@ ApplicationWindow {
                     IconButton {
                         kind: "volume"
                         glyphColor: root.muted
+                        hoverGlyphColor: root.lavender
                         implicitWidth: 32
                         implicitHeight: 32
                         iconSize: 18
@@ -754,12 +1192,12 @@ ApplicationWindow {
                     }
 
                     PlayerSlider {
-                        Layout.preferredWidth: 88
+                        Layout.preferredWidth: root.width < 1200 ? 72 : 88
                         from: 0
                         to: 1
                         value: root.volume
                         activeColor: root.lavender
-                        baseColor: "#272233"
+                        baseColor: root.border
                         onMoved: ipcClient.setVolume(value)
                     }
 
@@ -767,9 +1205,11 @@ ApplicationWindow {
                     IconButton {
                         kind: "lyrics"
                         glyphColor: root.viewMode === "lyrics" ? root.lavender : root.muted
-                        fillColor: root.viewMode === "lyrics" ? "#221c2e" : "transparent"
-                        implicitWidth: 34
-                        implicitHeight: 34
+                        hoverGlyphColor: root.lavender
+                        fillColor: root.viewMode === "lyrics" ? root.bgSelected : "transparent"
+                        hoverColor: root.bgHover
+                        implicitWidth: 36
+                        implicitHeight: 36
                         iconSize: 18
                         onClicked: root.viewMode = (root.viewMode === "queue" ? "lyrics" : "queue")
                     }
@@ -778,7 +1218,8 @@ ApplicationWindow {
         }
     }
 
-    function formatTime(ms) {
+    function formatTime(ms, isDuration) {
+        if (isDuration && (!ms || Number(ms) <= 0)) return "--:--"
         const seconds = Math.max(0, Math.floor(Number(ms || 0) / 1000))
         return Math.floor(seconds / 60) + ":" + String(seconds % 60).padStart(2, "0")
     }

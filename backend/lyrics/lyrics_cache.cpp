@@ -43,7 +43,8 @@ std::optional<LyricsDocument> LyricsCache::read(const LyricsQuery &query) const
     if (!json.isObject())
         return std::nullopt;
     const auto object = json.object();
-    if (object.value(QStringLiteral("version")).toInt() != 1 ||
+    const int version = object.value(QStringLiteral("version")).toInt();
+    if ((version != 1 && version != 2) ||
         object.value(QStringLiteral("key")).toString() != keyFor(query) ||
         !object.value(QStringLiteral("source")).isString() ||
         !object.value(QStringLiteral("synced_lyrics")).isString() ||
@@ -56,6 +57,7 @@ std::optional<LyricsDocument> LyricsCache::read(const LyricsQuery &query) const
     if (result.source == QStringLiteral("aliyun_asr"))
         return std::nullopt;
     result.syncedLyrics = object.value(QStringLiteral("synced_lyrics")).toString();
+    if (version == 2) result.krcLyrics = object.value(QStringLiteral("krc_lyrics")).toString();
     result.plainLyrics = object.value(QStringLiteral("plain_lyrics")).toString();
     result.instrumental = object.value(QStringLiteral("instrumental")).toBool();
     result.providerId = object.value(QStringLiteral("provider_id")).toInteger();
@@ -77,11 +79,12 @@ bool LyricsCache::write(const LyricsQuery &query, const LyricsDocument &document
     file.setDirectWriteFallback(false);
     if (!file.open(QIODevice::WriteOnly))
         return false;
-    const QJsonObject object{{QStringLiteral("version"), 1},
+    const QJsonObject object{{QStringLiteral("version"), 2},
                              {QStringLiteral("key"), keyFor(query)},
                              {QStringLiteral("source"), document.source},
                              {QStringLiteral("cover_url"), document.coverUrl},
                              {QStringLiteral("synced_lyrics"), document.syncedLyrics},
+                             {QStringLiteral("krc_lyrics"), document.krcLyrics},
                              {QStringLiteral("plain_lyrics"), document.isSynced() ? QString() : document.plainLyrics},
                              {QStringLiteral("instrumental"), document.instrumental},
                              {QStringLiteral("provider_id"), document.providerId},

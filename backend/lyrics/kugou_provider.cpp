@@ -1,5 +1,6 @@
 #include "lyrics/kugou_provider.h"
 #include "lyrics/lrc_parser.h"
+#include "lyrics/krc_parser.h"
 #include "lyrics/network_diagnostics.h"
 
 #include <QJsonArray>
@@ -72,12 +73,14 @@ void KugouProvider::cancel()
 }
 
 void KugouProvider::get(const QString &path, const QUrlQuery &params, quint64 token,
-                        const std::function<void(const QJsonObject &)> &onSuccess)
+                        const std::function<void(const QJsonObject &)> &onSuccess,
+                        const std::function<void(const QString &)> &onFailure)
 {
     cancel();
     QUrl url = m_baseUrl.resolved(QUrl(path));
     url.setQuery(params);
     QNetworkRequest request(url);
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::ManualRedirectPolicy);
     request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("NekoTune/0.1.0 (desktop music player)"));
     request.setRawHeader("Accept", "application/json");
     request.setTransferTimeout(20000);
@@ -93,7 +96,7 @@ void KugouProvider::get(const QString &path, const QUrlQuery &params, quint64 to
             reply->abort();
         }
     });
-    connect(reply, &QNetworkReply::finished, this, [this, reply, deadline, token, path, onSuccess]() {
+    connect(reply, &QNetworkReply::finished, this, [this, reply, deadline, token, path, onSuccess, onFailure]() {
         deadline->stop();
         reply->deleteLater();
         if (m_reply != reply)
@@ -111,13 +114,15 @@ void KugouProvider::get(const QString &path, const QUrlQuery &params, quint64 to
             failure = QStringLiteral("network");
         if (!failure.isEmpty()) {
             qCWarning(kugouLog).noquote() << "Kugou request failed" << path << failure << networkDiagnostics(reply);
-            emit failed(token, failure);
+            if (onFailure) onFailure(failure);
+            else emit failed(token, failure);
             return;
         }
         const auto bytes = reply->readAll();
         const auto json = QJsonDocument::fromJson(bytes);
         if (bytes.size() > 4 * 1024 * 1024 || !json.isObject()) {
-            emit failed(token, QStringLiteral("invalid_response"));
+            if (onFailure) onFailure(QStringLiteral("invalid_response"));
+            else emit failed(token, QStringLiteral("invalid_response"));
             return;
         }
         onSuccess(json.object());
@@ -220,25 +225,37 @@ void KugouProvider::choose(const LyricsCandidate &candidate, quint64 token)
         });
         return;
     }
+    const auto downloadLrc = [this, token, candidate]() {
+        QUrlQuery params;
+        params.addQueryItem(QStringLiteral("id"), QString::number(candidate.document.providerId));
+        params.addQueryItem(QStringLiteral("accesskey"), candidate.accessKey);
+        params.addQueryItem(QStringLiteral("fmt"), QStringLiteral("lrc"));
+        params.addQueryItem(QStringLiteral("decode"), QStringLiteral("1"));
+        get(QStringLiteral("/lyric"), params, token, [this, token, candidate](const QJsonObject &body) {
+            auto document = candidate.document;
+            const auto lyrics = body.value(QStringLiteral("decodeContent")).toString();
+            if (LrcParser::parse(lyrics).isEmpty()) document.plainLyrics = lyrics;
+            else document.syncedLyrics = lyrics;
+            document.validate();
+            if (document.isEmpty()) emit failed(token, QStringLiteral("invalid_response"));
+            else emit resolved(token, document);
+        });
+    };
     QUrlQuery params;
+    params.addQueryItem(QStringLiteral("ver"), QStringLiteral("1"));
+    params.addQueryItem(QStringLiteral("client"), QStringLiteral("pc"));
     params.addQueryItem(QStringLiteral("id"), QString::number(candidate.document.providerId));
     params.addQueryItem(QStringLiteral("accesskey"), candidate.accessKey);
-    params.addQueryItem(QStringLiteral("fmt"), QStringLiteral("lrc"));
-    params.addQueryItem(QStringLiteral("decode"), QStringLiteral("1"));
-    get(QStringLiteral("/lyric"), params, token, [this, token, candidate](const QJsonObject &body) {
-        auto document = candidate.document;
-        const auto lyrics = body.value(QStringLiteral("decodeContent")).toString();
-        if (LrcParser::parse(lyrics).isEmpty())
-            document.plainLyrics = lyrics;
-        else
-            document.syncedLyrics = lyrics;
-        document.validate();
-        if (document.isEmpty()) {
-            emit failed(token, QStringLiteral("invalid_response"));
-            return;
-        }
-        emit resolved(token, document);
-    });
+    params.addQueryItem(QStringLiteral("fmt"), QStringLiteral("krc"));
+    params.addQueryItem(QStringLiteral("charset"), QStringLiteral("utf8"));
+    get(QStringLiteral("https://lyrics.kugou.com/download"), params, token,
+        [this, token, candidate, downloadLrc](const QJsonObject &body) {
+            const auto payload = KrcParser::fromApi(body);
+            if (!payload) { downloadLrc(); return; }
+            auto document = candidate.document;
+            document.krcLyrics = payload->text;
+            emit resolved(token, document);
+        }, [downloadLrc](const QString &) { downloadLrc(); });
 }
 
 } // namespace nekotune

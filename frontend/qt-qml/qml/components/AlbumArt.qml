@@ -7,12 +7,22 @@ Item {
     property bool hasSong: false
     property string coverUrl: ""
     property string playbackState: "stopped"
-    property real maxDimension: 260
-    property color lavenderColor: "#cbb8ff"
-    property color roseColor: "#e8a9c3"
+    property real maxDimension: 280
+    property color lavenderColor: "#CBB8FF"
+    property color roseColor: "#E8A9C3"
 
     readonly property bool isPlaying: playbackState === "playing"
     readonly property real artSize: Math.min(Math.min(parent.width, parent.height), root.maxDimension)
+
+    // Ambient glow behind cover (Section 3.2: 8% moonlight purple)
+    Rectangle {
+        anchors.centerIn: coverCard
+        width: coverCard.width + 20
+        height: coverCard.height + 20
+        radius: coverCard.radius + 6
+        color: root.hasSong ? Qt.rgba(0.796, 0.722, 1.0, 0.08) : "transparent"
+        z: -1
+    }
 
     Rectangle {
         id: coverCard
@@ -20,7 +30,7 @@ Item {
         width: Math.max(140, root.artSize)
         height: width
         radius: 16
-        color: "#1a1724"
+        color: "#17141F"
         clip: true
 
         // Image if has song
@@ -50,7 +60,7 @@ Item {
 
             Rectangle {
                 anchors.fill: parent
-                color: "#16131f"
+                color: "#121019"
             }
 
             Canvas {
@@ -60,7 +70,7 @@ Item {
                 onPaint: {
                     const ctx = getContext("2d")
                     ctx.reset()
-                    ctx.strokeStyle = "#383147"
+                    ctx.strokeStyle = "#332C41"
                     ctx.lineWidth = 2
                     ctx.lineCap = "round"
                     ctx.lineJoin = "round"

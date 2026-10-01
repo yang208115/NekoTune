@@ -6,12 +6,15 @@ set(NEKOTUNE_BACKEND_SOURCES
     lyrics/network_diagnostics.cpp
     storage/song_store.cpp
     storage/playlist_store.cpp
+    storage/tag_store.cpp
     lyrics/lyrics_types.cpp
     lyrics/lrc_parser.cpp
+    lyrics/krc_parser.cpp
     lyrics/lyrics_cache.cpp
     lyrics/lrclib_provider.cpp
     lyrics/kugou_provider.cpp
     lyrics/lyrics_service.cpp
+    kugou/kugou_music_service.cpp
 )
 
 set(NEKOTUNE_BACKEND_HEADERS
@@ -25,11 +28,13 @@ set(NEKOTUNE_BACKEND_HEADERS
     storage/song_store.h
     lyrics/lyrics_types.h
     lyrics/lrc_parser.h
+    lyrics/krc_parser.h
     lyrics/lyrics_cache.h
     lyrics/lyrics_provider.h
     lyrics/lrclib_provider.h
     lyrics/kugou_provider.h
     lyrics/lyrics_service.h
+    kugou/kugou_music_service.h
 )
 
 add_library(nekotune_core STATIC
@@ -45,9 +50,11 @@ target_include_directories(nekotune_core
 target_link_libraries(nekotune_core
     PUBLIC
         Qt6::Core
+        Qt6::Gui
         Qt6::Network
         Qt6::Sql
         Qt6::Multimedia
+        ZLIB::ZLIB
 )
 
 add_executable(nekotune-backend

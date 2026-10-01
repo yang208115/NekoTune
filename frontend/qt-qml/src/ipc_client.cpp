@@ -24,7 +24,10 @@ IpcClient::IpcClient(QObject *parent) : QObject(parent)
     });
     connect(&m_socket, &QLocalSocket::disconnected, this, [this]() {
         m_buffer.clear();
+        for (const auto &method : m_pendingRequests)
+            emit requestFailed(method, QStringLiteral("Backend disconnected"));
         m_pendingRequests.clear();
+        setError(QStringLiteral("Backend disconnected"));
         emit connectedChanged();
         if (!m_reconnectTimer.isActive()) {
             m_reconnectTimer.start();
@@ -119,6 +122,72 @@ void IpcClient::managePlaylist(const QString &action, const QVariantMap &params)
     sendRequest(QStringLiteral("playlist.") + action, values);
 }
 
+void IpcClient::manageTag(const QString &action, const QVariantMap &params)
+{
+    sendRequest(QStringLiteral("tag.") + action, QJsonObject::fromVariantMap(params));
+}
+
+void IpcClient::refreshLibrary()
+{
+    sendRequest(QStringLiteral("library.list"));
+}
+
+void IpcClient::importLibraryPath(const QString &path)
+{
+    sendRequest(QStringLiteral("library.import"), {{QStringLiteral("path"), normalizePath(path)}});
+}
+
+void IpcClient::kugouSendCode(const QString &mobile)
+{
+    sendRequest(QStringLiteral("kugou.send_code"), {{QStringLiteral("mobile"), mobile}});
+}
+
+void IpcClient::kugouSaveKey(const QString &key)
+{
+    sendRequest(QStringLiteral("kugou.save_key"), {{QStringLiteral("key"), key}});
+}
+
+void IpcClient::kugouClearKey()
+{
+    sendRequest(QStringLiteral("kugou.clear_key"));
+}
+
+void IpcClient::kugouLogin(const QString &mobile, const QString &code)
+{
+    sendRequest(QStringLiteral("kugou.login"), {{QStringLiteral("mobile"), mobile},
+                                               {QStringLiteral("code"), code}});
+}
+
+void IpcClient::kugouSearch(const QString &keywords, int page)
+{
+    sendRequest(QStringLiteral("kugou.search"), {{QStringLiteral("keywords"), keywords},
+                                                {QStringLiteral("page"), page}});
+}
+
+void IpcClient::kugouDownload(const QString &hash)
+{
+    sendRequest(QStringLiteral("kugou.download"), {{QStringLiteral("hash"), hash}});
+}
+
+void IpcClient::kugouCancel()
+{
+    sendRequest(QStringLiteral("kugou.cancel"));
+}
+
+void IpcClient::playLibrary(const QVariantList &tagIds, int songId)
+{
+    QJsonArray ids = QJsonArray::fromVariantList(tagIds);
+    QJsonObject params{{QStringLiteral("tag_ids"), ids}};
+    if (songId > 0) params.insert(QStringLiteral("song_id"), songId);
+    sendRequest(QStringLiteral("library.play"), params);
+}
+
+void IpcClient::deleteLibrarySongs(const QVariantList &songIds)
+{
+    sendRequest(QStringLiteral("library.delete"),
+                {{QStringLiteral("song_ids"), QJsonArray::fromVariantList(songIds)}});
+}
+
 void IpcClient::clearQueue()
 {
     sendRequest(QStringLiteral("queue.clear"));
@@ -134,13 +203,15 @@ void IpcClient::setVolume(double volume)
     sendRequest(QStringLiteral("player.set_volume"), {{QStringLiteral("volume"), volume}});
 }
 
-void IpcClient::updateSongMetadata(int songId, const QString &customTitle, const QString &artist, const QString &lyrics)
+void IpcClient::updateSongMetadata(int songId, const QString &customTitle, const QString &artist,
+                                   const QString &lyrics, const QVariantList &tags)
 {
     sendRequest(QStringLiteral("song.update_metadata"), {
                                                             {QStringLiteral("song_id"), songId},
                                                             {QStringLiteral("custom_title"), customTitle},
                                                             {QStringLiteral("artist"), artist},
                                                             {QStringLiteral("lyrics"), lyrics},
+                                                            {QStringLiteral("tags"), QJsonArray::fromVariantList(tags)},
                                                         });
 }
 
@@ -235,7 +306,9 @@ void IpcClient::sendRequest(const QString &method, const QJsonObject &params)
 {
     if (!connected()) {
         connectBackend();
-        setError(QStringLiteral("Backend is not connected"));
+        const auto message = QStringLiteral("Backend is not connected");
+        setError(message);
+        emit requestFailed(method, message);
         return;
     }
 
@@ -256,6 +329,7 @@ void IpcClient::handlePayload(const QJsonObject &payload)
     if (!eventName.isEmpty()) {
         if (eventName == QStringLiteral("server.connected")) {
             mergeStatus(payload.value(QStringLiteral("data")).toObject());
+            refreshLibrary();
         } else if (eventName == QStringLiteral("player.state_changed")) {
             m_status.insert(QStringLiteral("state"), payload.value(QStringLiteral("state")).toString());
             emit statusChanged();
@@ -282,6 +356,13 @@ void IpcClient::handlePayload(const QJsonObject &payload)
         } else if (eventName == QStringLiteral("playlist.changed")) {
             m_status.insert(QStringLiteral("playlists"), payload.value(QStringLiteral("playlists")).toArray().toVariantList());
             emit statusChanged();
+        } else if (eventName == QStringLiteral("library.changed")) {
+            refreshLibrary();
+        } else if (eventName.startsWith(QStringLiteral("kugou."))) {
+            emit kugouEvent(payload.toVariantMap());
+            if (eventName != QStringLiteral("kugou.download_progress")
+                && eventName != QStringLiteral("kugou.download_stage"))
+                sendRequest(QStringLiteral("kugou.status"));
         } else if (eventName == QStringLiteral("player.error")) {
             setError(payload.value(QStringLiteral("message")).toString());
         }
@@ -292,14 +373,23 @@ void IpcClient::handlePayload(const QJsonObject &payload)
     const auto method = id.isDouble() ? m_pendingRequests.take(id.toInt()) : QString();
 
     if (payload.value(QStringLiteral("status")).toString() == QStringLiteral("error")) {
-        setError(payload.value(QStringLiteral("message")).toString());
+        const auto message = payload.value(QStringLiteral("message")).toString();
+        setError(message);
+        emit requestFailed(method, message);
         return;
     }
+
+    setError({});
 
     const auto data = payload.value(QStringLiteral("data")).toObject();
     if (!data.isEmpty()) {
         mergeStatus(data);
     }
+    if (method == QStringLiteral("song.update_metadata"))
+        emit songMetadataSaved(data.value(QStringLiteral("song_id")).toInt());
+    if (method == QStringLiteral("library.play"))
+        emit libraryPlaybackSkipped(data.value(QStringLiteral("skipped_song_ids")).toArray().size());
+    emit requestSucceeded(method);
 }
 
 void IpcClient::mergeStatus(const QJsonObject &data)

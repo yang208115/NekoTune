@@ -7,17 +7,24 @@ Button {
     property string kind: "dot"
     property string tooltipText: ""
     property color fillColor: "transparent"
-    property color hoverColor: "#221e2c"
-    property color pressedColor: "#2d283b"
+    property color hoverColor: "#2A2338"
+    property color pressedColor: "#322743"
     property color borderColor: "transparent"
-    property color glyphColor: "#9f99ab"
-    property color hoverGlyphColor: "#f6f3fa"
+    property color glyphColor: "#AAA0B8"
+    property color hoverGlyphColor: "#F5F1FA"
     property real iconSize: 18
     property real cornerRadius: 8
 
     hoverEnabled: true
-    implicitWidth: 32
-    implicitHeight: 32
+    implicitWidth: 40
+    implicitHeight: 40
+
+    ToolTip.visible: button.hovered && button.tooltipText.length > 0
+    ToolTip.text: button.tooltipText
+    ToolTip.delay: 400
+
+    Accessible.role: Accessible.Button
+    Accessible.name: button.tooltipText
 
     contentItem: Canvas {
         id: iconCanvas
@@ -26,7 +33,7 @@ Button {
         height: button.iconSize
         antialiasing: true
 
-        readonly property color currentStrokeColor: !button.enabled ? "#464152"
+        readonly property color currentStrokeColor: !button.enabled ? "#736A83"
                                                     : button.hovered ? button.hoverGlyphColor
                                                     : button.glyphColor
 
@@ -199,6 +206,7 @@ Button {
     }
 
     background: Rectangle {
+        id: bgRect
         radius: button.cornerRadius
         color: !button.enabled ? "transparent"
                : button.down ? button.pressedColor
@@ -207,8 +215,19 @@ Button {
         border.color: button.enabled ? button.borderColor : "transparent"
         border.width: 1
 
+        // Keyboard focus ring (Section 7.1 & 11)
+        Rectangle {
+            anchors.fill: parent
+            anchors.margins: -4
+            radius: bgRect.radius + 4
+            color: "transparent"
+            border.color: "#CBB8FF"
+            border.width: 2
+            visible: button.activeFocus
+        }
+
         Behavior on color {
-            ColorAnimation { duration: 100 }
+            ColorAnimation { duration: 120 }
         }
     }
 }

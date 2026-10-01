@@ -13,6 +13,7 @@ set(CMAKE_AUTORCC ON)
 
 find_package(Qt6 6.6 REQUIRED COMPONENTS
     Core
+    Gui
     Network
     Sql
     Multimedia
@@ -21,6 +22,7 @@ find_package(Qt6 6.6 REQUIRED COMPONENTS
     QuickControls2
     Test
 )
+find_package(ZLIB REQUIRED)
 
 qt_standard_project_setup(REQUIRES 6.6)
 

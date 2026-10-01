@@ -24,7 +24,8 @@ class KugouProvider final : public LyricsProvider {
 
   private:
     void get(const QString &path, const QUrlQuery &params, quint64 token,
-             const std::function<void(const QJsonObject &)> &onSuccess);
+             const std::function<void(const QJsonObject &)> &onSuccess,
+             const std::function<void(const QString &)> &onFailure = {});
     QNetworkAccessManager *m_manager;
     QPointer<QNetworkReply> m_reply;
     QUrl m_baseUrl;

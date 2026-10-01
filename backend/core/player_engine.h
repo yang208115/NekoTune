@@ -3,6 +3,7 @@
 #include "core/player_queue.h"
 #include "core/player_state.h"
 #include "lyrics/lyrics_service.h"
+#include "kugou/kugou_music_service.h"
 #include "storage/song_store.h"
 
 #include <QAudioOutput>
@@ -36,6 +37,12 @@ public:
     QJsonObject playQueueItem(int queueId);
     QJsonObject removeFromQueue(int queueId);
     QJsonObject managePlaylist(const QString &action, const QJsonObject &params);
+    QJsonObject manageTag(const QString &action, const QJsonObject &params);
+    QJsonObject listLibrary() const;
+    QJsonObject importLibrarySong(const QString &path, const QString &title = {}, const QString &artist = {});
+    QJsonObject kugouAction(const QString &action, const QJsonObject &params);
+    QJsonObject deleteLibrarySongs(const QJsonObject &params);
+    QJsonObject playLibrary(const QJsonObject &params);
     QJsonArray playlists() const;
     QJsonObject clearQueue();
     QJsonObject queueStatus() const;
@@ -62,8 +69,11 @@ private:
     QJsonObject error(const QString &message) const;
     QJsonObject currentSongObject() const;
     QJsonArray queueArray() const;
+    QJsonObject library() const;
+    QString availablePath(int songId) const;
     void broadcastQueueChanged();
     void broadcastPlaylistsChanged();
+    void broadcastLibraryChanged();
     void broadcastTrackChanged();
     void restoreQueueFromStore();
     void persistQueue();
@@ -77,6 +87,7 @@ private:
     PlayerQueue m_queue;
     QThread m_lyricsThread;
     LyricsService *m_lyricsService = nullptr;
+    KugouMusicService *m_kugouService = nullptr;
     QTimer m_metadataTimer;
     QMediaMetaData m_fileMetadata;
     QJsonObject m_lyrics;

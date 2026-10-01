@@ -15,17 +15,19 @@ Item {
     property bool connected: false
     property string errorText: ""
 
-    property color panelColor: "#13111b"
-    property color lineColor: "#211c2b"
-    property color textStrongColor: "#f6f3fa"
-    property color textSoftColor: "#cfc8db"
-    property color textMutedColor: "#847d91"
-    property color lavenderColor: "#cbb8ff"
-    property color roseColor: "#e8a9c3"
+    property color panelColor: "#17141F"
+    property color lineColor: "#332C41"
+    property color textStrongColor: "#F5F1FA"
+    property color textSoftColor: "#D7CFE2"
+    property color textMutedColor: "#AAA0B8"
+    property color lavenderColor: "#CBB8FF"
+    property color roseColor: "#E8A9C3"
 
     readonly property bool hasSong: Boolean(root.song && root.song.song_id)
-    readonly property string coverUrl: !root.lyrics.offline && root.lyrics.track_id === root.song.song_hash
-                                       ? String((root.lyrics.document || {}).cover_url || "") : ""
+    readonly property string coverUrl: String(root.song.cover_url || "")
+        || (!root.lyrics.offline && root.lyrics.track_id === root.song.song_hash
+            ? String((root.lyrics.document || {}).cover_url || "") : "")
+    readonly property real targetArtSize: root.width < 1100 ? 224 : 280
 
     signal addRequested()
     signal togglePlayPauseRequested()
@@ -37,8 +39,8 @@ Item {
 
     RowLayout {
         anchors.fill: parent
-        anchors.margins: 28
-        spacing: 36
+        anchors.margins: 24
+        spacing: 28
 
         // Left Column: Artwork Card & Track Typography (Centered & Fixed Max Width)
         Item {
@@ -48,18 +50,18 @@ Item {
             ColumnLayout {
                 anchors.centerIn: parent
                 width: parent.width
-                spacing: 18
+                spacing: 16
 
-                // Artwork container with fixed max height
+                // Artwork container with adaptive size (224 compact, 280 wide)
                 Item {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 240
+                    Layout.preferredHeight: root.targetArtSize
 
                     AlbumArt {
                         anchors.centerIn: parent
-                        width: 240
-                        height: 240
-                        maxDimension: 240
+                        width: root.targetArtSize
+                        height: root.targetArtSize
+                        maxDimension: root.targetArtSize
                         hasSong: root.hasSong
                         coverUrl: root.coverUrl
                         playbackState: root.playbackState
@@ -79,17 +81,18 @@ Item {
                             Layout.fillWidth: true
                             text: root.hasSong ? (root.song.title || i18n.text("untitled", i18n.language)) : i18n.text("no_track_selected", i18n.language)
                             color: root.textStrongColor
-                            font.pixelSize: 20
-                            font.weight: Font.Bold
+                            font.pixelSize: 22
+                            font.weight: Font.DemiBold
                             elide: Text.ElideRight
                         }
                         IconButton {
                             kind: "edit"
                             tooltipText: i18n.text("edit_info", i18n.language)
                             glyphColor: root.textMutedColor
+                            hoverGlyphColor: root.lavenderColor
                             enabled: root.hasSong
-                            implicitWidth: 28
-                            implicitHeight: 28
+                            implicitWidth: 32
+                            implicitHeight: 32
                             onClicked: root.editMetadataRequested()
                         }
                     }
@@ -98,8 +101,8 @@ Item {
                         Layout.fillWidth: true
                         text: root.hasSong ? (root.song.artist || i18n.text("artist_author", i18n.language)) : i18n.text("choose_audio", i18n.language)
                         color: root.textSoftColor
-                        font.pixelSize: 14
-                        font.weight: Font.Medium
+                        font.pixelSize: 13
+                        font.weight: Font.Normal
                         elide: Text.ElideRight
                     }
 
@@ -136,24 +139,26 @@ Item {
                 song: root.song
                 lyrics: root.lyrics
                 position: root.position
+                playing: root.playbackState === "playing"
                 connected: root.connected
                 onSeekRequested: pos => root.seekRequested(pos)
             }
 
             Rectangle {
                 Layout.fillWidth: true
-                height: root.errorText.length > 0 ? 30 : 0
+                height: root.errorText.length > 0 ? 32 : 0
                 visible: root.errorText.length > 0
-                color: "#2e1a22"
-                radius: 6
-                border.color: "#4e2735"
+                color: "#38202B"
+                radius: 8
+                border.color: "#FF9BAE"
+                border.width: 1
                 Label {
                     anchors.fill: parent
                     anchors.margins: 6
                     text: root.errorText
-                    color: "#f0afbe"
+                    color: "#FF9BAE"
                     elide: Text.ElideRight
-                    font.pixelSize: 11
+                    font.pixelSize: 12
                     verticalAlignment: Text.AlignVCenter
                 }
             }

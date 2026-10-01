@@ -1,4 +1,5 @@
 #include "lyrics/lrc_parser.h"
+#include "lyrics/krc_parser.h"
 #include "lyrics/lrclib_provider.h"
 #include "lyrics/kugou_provider.h"
 #include "lyrics/lyrics_service.h"
@@ -148,7 +149,112 @@ class LyricsTest final : public QObject {
     void providerCancellationAndDestruction();
     void kugouSearchSelectAndCache();
     void kugouGroupCovers();
+    void krcDecodeAndPriority();
+    void kugouKrcSelectionAndCancellation();
 };
+
+static QByteArray sampleKrc()
+{
+    return QByteArray::fromBase64("a3JjMTjb6lmXhn4OfBi4yEQcISJrCUzGbAZERyO2laxA9/4AI+cCEzSSFye2p6u+XX0OCkJTVkFeO6zTtiHUiRajK3JZRphRTodSJ3jhjTng0hPUV+Y=");
+}
+
+void LyricsTest::krcDecodeAndPriority()
+{
+    const auto decoded = KrcParser::decode(sampleKrc());
+    QVERIFY(decoded.has_value());
+    const auto lines = KrcParser::parse(*decoded);
+    QCOMPARE(lines.size(), 2);
+    QCOMPARE(lines.at(0).timestampMs, 1100);
+    QCOMPARE(lines.at(0).words.size(), 2);
+    QCOMPARE(lines.at(0).words.at(0).text, QStringLiteral("Hello "));
+    QCOMPARE(lines.at(0).words.at(1).timestampMs, 1500);
+    QCOMPARE(lines.at(0).words.at(1).durationMs, 300);
+    QCOMPARE(lines.at(0).words.at(1).text, QStringLiteral("<world>"));
+    QVERIFY(!KrcParser::decode(sampleKrc().left(12)));
+    auto damaged = sampleKrc();
+    damaged[4] = char(0);
+    QVERIFY(!KrcParser::decode(damaged));
+
+    QTemporaryDir temp;
+    const auto audio = temp.filePath(QStringLiteral("song.flac"));
+    const auto krc = temp.filePath(QStringLiteral("song.krc"));
+    const auto lrc = temp.filePath(QStringLiteral("song.lrc"));
+    writeFile(krc, sampleKrc());
+    writeFile(lrc, "[00:01]LRC");
+    MockProvider provider;
+    LyricsService service(&provider, temp.filePath(QStringLiteral("cache")));
+    QJsonObject state;
+    connect(&service, &LyricsService::changed, this, [&](const auto &value) { state = value; });
+    service.setOffline(true);
+    service.load(query(), audio, QStringLiteral("Custom"), 1, true);
+    QCOMPARE(state.value(QStringLiteral("document")).toObject().value(QStringLiteral("format")).toString(),
+             QStringLiteral("krc"));
+    QCOMPARE(state.value(QStringLiteral("document")).toObject().value(QStringLiteral("lines")).toArray()
+                 .first().toObject().value(QStringLiteral("words")).toArray().size(), 2);
+    QCOMPARE(provider.requests, 0);
+    QVERIFY(QFile::remove(krc));
+    writeFile(krc, "invalid krc");
+    service.load(query(), audio, QStringLiteral("Custom"), 2, true);
+    QCOMPARE(state.value(QStringLiteral("document")).toObject().value(QStringLiteral("format")).toString(),
+             QStringLiteral("lrc"));
+    QVERIFY(QFile::remove(lrc));
+    QVERIFY(QFile::remove(krc));
+    LyricsDocument cached;
+    cached.source = QStringLiteral("kugou");
+    cached.krcLyrics = *decoded;
+    QVERIFY(LyricsCache(temp.filePath(QStringLiteral("cache"))).write(query(), cached));
+    service.load(query(), audio, QStringLiteral("Custom"), 3, true);
+    QCOMPARE(state.value(QStringLiteral("document")).toObject().value(QStringLiteral("source")).toString(),
+             QStringLiteral("custom"));
+    service.load(query(), audio, {}, 4, true);
+    QCOMPARE(state.value(QStringLiteral("document")).toObject().value(QStringLiteral("format")).toString(),
+             QStringLiteral("krc"));
+    writeFile(krc, decoded->toUtf8());
+    service.load(query(), audio, {}, 5, true);
+    QCOMPARE(state.value(QStringLiteral("document")).toObject().value(QStringLiteral("format")).toString(),
+             QStringLiteral("krc"));
+}
+
+void LyricsTest::kugouKrcSelectionAndCancellation()
+{
+    MockManager manager;
+    manager.bodies.insert(QStringLiteral("/search"), R"({"status":1,"error_code":0,"data":{"lists":[
+        {"SongName":"Song","SingerName":"Artist","FileHash":"0123456789abcdef0123456789abcdef","Duration":180}]}})");
+    manager.bodies.insert(QStringLiteral("/search/lyric"), R"({"status":200,"candidates":[
+        {"id":456,"accesskey":"secretkey","song":"Song","singer":"Artist","duration":180000}]})");
+    manager.bodies.insert(QStringLiteral("/download"), QByteArray(R"({"status":200,"content":")")
+                          + sampleKrc().toBase64() + R"("})");
+    KugouProvider kugou(nullptr, &manager, QUrl(QStringLiteral("https://example.invalid")));
+    MockProvider lrclib;
+    QTemporaryDir temp;
+    LyricsService service(&lrclib, temp.path(), nullptr, &kugou);
+    QJsonObject state;
+    connect(&service, &LyricsService::changed, this, [&](const auto &value) { state = value; });
+    service.search(query(), 1, QStringLiteral("kugou"));
+    QTRY_COMPARE(state.value(QStringLiteral("state")).toString(), QStringLiteral("candidates"));
+    service.select(0, 1);
+    QTRY_COMPARE(state.value(QStringLiteral("search_stage")).toString(), QStringLiteral("lyrics"));
+    QTRY_COMPARE(state.value(QStringLiteral("state")).toString(), QStringLiteral("candidates"));
+    service.select(0, 1);
+    QTRY_COMPARE(state.value(QStringLiteral("state")).toString(), QStringLiteral("ready"));
+    QCOMPARE(state.value(QStringLiteral("document")).toObject().value(QStringLiteral("format")).toString(),
+             QStringLiteral("krc"));
+    QCOMPARE(QUrlQuery(manager.lastRequest.url()).queryItemValue(QStringLiteral("fmt")), QStringLiteral("krc"));
+    QVERIFY(!QJsonDocument(state).toJson().contains("secretkey"));
+    QVERIFY(LyricsCache(temp.path()).read(query())->isSynced());
+
+    service.search(query(), 2, QStringLiteral("kugou"));
+    QTRY_COMPARE(state.value(QStringLiteral("state")).toString(), QStringLiteral("candidates"));
+    service.select(0, 2);
+    QTRY_COMPARE(state.value(QStringLiteral("search_stage")).toString(), QStringLiteral("lyrics"));
+    QTRY_COMPARE(state.value(QStringLiteral("state")).toString(), QStringLiteral("candidates"));
+    manager.hang = true;
+    service.select(0, 2);
+    QCOMPARE(state.value(QStringLiteral("state")).toString(), QStringLiteral("loading"));
+    service.clear(3);
+    QTest::qWait(20);
+    QCOMPARE(state.value(QStringLiteral("state")).toString(), QStringLiteral("idle"));
+}
 
 void LyricsTest::ignoresLegacyAsrLyrics()
 {
@@ -302,6 +408,14 @@ void LyricsTest::cacheRoundTripAndAtomicWrite()
     QVERIFY(cache.write(query(), document));
     QCOMPARE(cache.read(query())->plainLyrics, document.plainLyrics);
     QCOMPARE(QDir(temp.path()).entryList(QDir::Files).size(), 1);
+    const QJsonObject oldCache{{QStringLiteral("version"), 1},
+                               {QStringLiteral("key"), cache.keyFor(query())},
+                               {QStringLiteral("source"), QStringLiteral("lrclib")},
+                               {QStringLiteral("synced_lyrics"), QStringLiteral("[00:01]Legacy")},
+                               {QStringLiteral("plain_lyrics"), QString()},
+                               {QStringLiteral("instrumental"), false}};
+    writeFile(path, QJsonDocument(oldCache).toJson());
+    QCOMPARE(cache.read(query())->syncedLyrics, QStringLiteral("[00:01]Legacy"));
     writeFile(path, "{broken");
     QVERIFY(!cache.read(query()));
     document.instrumental = true;

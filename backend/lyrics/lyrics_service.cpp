@@ -1,6 +1,7 @@
 #include "lyrics/lyrics_service.h"
 #include "lyrics/lrc_parser.h"
 #include "lyrics/kugou_provider.h"
+#include "lyrics/krc_parser.h"
 #include "lyrics/lrclib_provider.h"
 
 #include <QDir>
@@ -56,13 +57,31 @@ void LyricsService::load(const LyricsQuery &query, const QString &path, const QS
     m_snapshot = {};
     publish(QStringLiteral("loading"));
     const QFileInfo audio(path);
+    QString localKrcPath;
     QString localPath = audio.absoluteDir().filePath(audio.completeBaseName() + QStringLiteral(".lrc"));
     const auto sidecars = audio.absoluteDir().entryInfoList(QDir::Files | QDir::NoDotAndDotDot);
     for (const auto &sidecar : sidecars) {
+        if (sidecar.suffix().compare(QStringLiteral("krc"), Qt::CaseInsensitive) == 0
+            && sidecar.completeBaseName().compare(audio.completeBaseName(), Qt::CaseInsensitive) == 0)
+            localKrcPath = sidecar.absoluteFilePath();
         if (sidecar.suffix().compare(QStringLiteral("lrc"), Qt::CaseInsensitive) == 0
             && sidecar.completeBaseName().compare(audio.completeBaseName(), Qt::CaseInsensitive) == 0) {
             localPath = sidecar.absoluteFilePath();
             break;
+        }
+    }
+    if (!localKrcPath.isEmpty()) {
+        QFile krc(localKrcPath);
+        if (krc.open(QIODevice::ReadOnly) && krc.size() <= 4 * 1024 * 1024) {
+            const auto decoded = KrcParser::read(krc.readAll());
+            if (decoded && !KrcParser::parse(*decoded).isEmpty()) {
+                LyricsDocument document;
+                document.source = QStringLiteral("local");
+                document.krcLyrics = *decoded;
+                document.matched = query;
+                apply(document, false);
+                return;
+            }
         }
     }
     QFile local(localPath);
@@ -89,12 +108,6 @@ void LyricsService::load(const LyricsQuery &query, const QString &path, const QS
         return;
     }
     if (!force) {
-        const auto cached = m_cache.read(query);
-        if (cached) {
-            m_snapshot.insert(QStringLiteral("cached"), true);
-            apply(*cached, false);
-            return;
-        }
         if (!customLyrics.trimmed().isEmpty()) {
             LyricsDocument document;
             document.source = QStringLiteral("custom");
@@ -105,6 +118,12 @@ void LyricsService::load(const LyricsQuery &query, const QString &path, const QS
             document.matched = query;
             document.validate();
             apply(document, false);
+            return;
+        }
+        const auto cached = m_cache.read(query);
+        if (cached) {
+            m_snapshot.insert(QStringLiteral("cached"), true);
+            apply(*cached, false);
             return;
         }
     }

@@ -7,6 +7,7 @@ ColumnLayout {
     property var song: ({})
     property var lyrics: ({})
     property real position: 0
+    property bool playing: false
     property bool connected: false
 
     signal seekRequested(real positionMs)
@@ -71,6 +72,7 @@ ColumnLayout {
         lines: root.document.lines || []
         plainText: String(root.document.plain_text || "")
         position: root.position
+        playing: root.playing
         onSeekRequested: pos => root.seekRequested(pos)
     }
 
@@ -88,15 +90,15 @@ ColumnLayout {
         }
         parent: Overlay.overlay
         anchors.centerIn: parent
-        width: Math.min(parent.width - 48, 620)
+        width: Math.min(parent.width - 48, 680)
         height: Math.min(parent.height - 48, 540)
         modal: true
         focus: true
         padding: 22
         background: Rectangle {
-            color: "#181423"
+            color: "#211C2D"
             radius: 16
-            border.color: "#342d45"
+            border.color: "#332C41"
             border.width: 1
         }
 
@@ -109,9 +111,9 @@ ColumnLayout {
                 Label {
                     Layout.fillWidth: true
                     text: i18n.text("lyrics_search", i18n.language)
-                    color: "#f6f3fa"
+                    color: "#F5F1FA"
                     font.pixelSize: 18
-                    font.weight: Font.Bold
+                    font.weight: Font.DemiBold
                 }
                 IconButton {
                     kind: "close"
@@ -123,17 +125,18 @@ ColumnLayout {
             TextField {
                 id: titleField
                 Layout.fillWidth: true
-                Layout.preferredHeight: 38
+                Layout.preferredHeight: 40
                 placeholderText: i18n.text("custom_title", i18n.language)
-                color: "#f6f3fa"
-                placeholderTextColor: "#645e70"
+                color: "#F5F1FA"
+                placeholderTextColor: "#AAA0B8"
                 leftPadding: 12
                 rightPadding: 12
                 maximumLength: 500
                 background: Rectangle {
                     radius: 8
-                    color: "#110e18"
-                    border.color: titleField.activeFocus ? "#cbb8ff" : "#292436"
+                    color: "#17141F"
+                    border.color: titleField.activeFocus ? "#CBB8FF" : "#8D809F"
+                    border.width: 1
                 }
             }
 
@@ -143,33 +146,35 @@ ColumnLayout {
                 TextField {
                     id: artistField
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 38
+                    Layout.preferredHeight: 40
                     placeholderText: i18n.text("artist_author", i18n.language)
-                    color: "#f6f3fa"
-                    placeholderTextColor: "#645e70"
+                    color: "#F5F1FA"
+                    placeholderTextColor: "#AAA0B8"
                     leftPadding: 12
                     rightPadding: 12
                     maximumLength: 500
                     background: Rectangle {
                         radius: 8
-                        color: "#110e18"
-                        border.color: artistField.activeFocus ? "#cbb8ff" : "#292436"
+                        color: "#17141F"
+                        border.color: artistField.activeFocus ? "#CBB8FF" : "#8D809F"
+                        border.width: 1
                     }
                 }
                 TextField {
                     id: albumField
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 38
+                    Layout.preferredHeight: 40
                     placeholderText: i18n.text("album", i18n.language)
-                    color: "#f6f3fa"
-                    placeholderTextColor: "#645e70"
+                    color: "#F5F1FA"
+                    placeholderTextColor: "#AAA0B8"
                     leftPadding: 12
                     rightPadding: 12
                     maximumLength: 500
                     background: Rectangle {
                         radius: 8
-                        color: "#110e18"
-                        border.color: albumField.activeFocus ? "#cbb8ff" : "#292436"
+                        color: "#17141F"
+                        border.color: albumField.activeFocus ? "#CBB8FF" : "#8D809F"
+                        border.width: 1
                     }
                 }
             }

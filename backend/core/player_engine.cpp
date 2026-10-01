@@ -5,6 +5,7 @@
 #include <QFileDevice>
 #include <QFileInfo>
 #include <QDir>
+#include <QSet>
 #include <QUrl>
 
 namespace nekotune {
@@ -47,10 +48,56 @@ QJsonObject metadataToObject(const SongMetadata &metadata)
     };
 }
 
+bool positiveInteger(const QJsonValue &value)
+{
+    return value.isDouble() && value.toInt(-1) > 0 && value.toDouble() == value.toInt(-1);
+}
+
+QJsonArray tagArray(const QVector<SongTag> &tags)
+{
+    QJsonArray result;
+    for (const auto &tag : tags)
+        result.append(QJsonObject{{QStringLiteral("id"), tag.id}, {QStringLiteral("name"), tag.name}});
+    return result;
+}
+
+QString localCoverUrl(const QString &audioPath)
+{
+    const QFileInfo audio(audioPath);
+    const auto base = QDir(audio.absolutePath()).filePath(audio.completeBaseName());
+    for (const auto &suffix : {QStringLiteral(".jpg"), QStringLiteral(".jpeg"),
+                               QStringLiteral(".png"), QStringLiteral(".webp")}) {
+        const QFileInfo image(base + suffix);
+        if (image.isFile()) return QUrl::fromLocalFile(image.absoluteFilePath()).toString();
+    }
+    return {};
+}
+
 } // namespace
 
 PlayerEngine::PlayerEngine(QObject *parent) : QObject(parent)
 {
+    m_kugouService = new KugouMusicService(this);
+    connect(m_kugouService, &KugouMusicService::eventReady, this, &PlayerEngine::eventReady);
+    connect(m_kugouService, &KugouMusicService::audioReady, this,
+            [this](const QString &path, const QString &lyricStatus, const QString &coverStatus,
+                   const QString &title, const QString &artist) {
+        const auto imported = importLibrarySong(path, title, artist);
+        if (imported.value(QStringLiteral("status")).toString() != QStringLiteral("ok")) {
+            emit eventReady({{QStringLiteral("event"), QStringLiteral("kugou.operation_failed")},
+                             {QStringLiteral("message"), QStringLiteral("Audio saved but library import failed")},
+                             {QStringLiteral("path"), path}});
+            return;
+        }
+        emit eventReady({{QStringLiteral("event"), QStringLiteral("kugou.download_finished")},
+                         {QStringLiteral("path"), path},
+                         {QStringLiteral("song_id"), imported.value(QStringLiteral("data")).toObject()
+                                                          .value(QStringLiteral("song_id"))},
+                         {QStringLiteral("lyric_status"), lyricStatus},
+                         {QStringLiteral("cover_status"), coverStatus}});
+        if (m_queue.currentIndex() >= 0 && m_queue.at(m_queue.currentIndex()).path == path)
+            broadcastTrackChanged();
+    });
     m_audioOutput.setVolume(0.8);
     m_player.setAudioOutput(&m_audioOutput);
 
@@ -121,6 +168,7 @@ QJsonObject PlayerEngine::status() const
         {QStringLiteral("playlists"), playlists()},
         {QStringLiteral("database_path"), m_songStore.databasePath()},
         {QStringLiteral("lyrics"), m_lyrics},
+        {QStringLiteral("kugou"), m_kugouService->status()},
     };
 }
 
@@ -250,6 +298,7 @@ QJsonObject PlayerEngine::addToQueue(const QString &path)
     m_queue.add(file.absoluteFilePath(), *metadata);
     persistQueue();
     broadcastQueueChanged();
+    broadcastLibraryChanged();
     return ok(queueStatus());
 }
 
@@ -276,6 +325,7 @@ QJsonObject PlayerEngine::removeFromQueue(int queueId)
 
     m_queue.removeAt(index);
     persistQueue();
+    broadcastLibraryChanged();
 
     if (removingCurrent) {
         m_player.stop();
@@ -341,12 +391,235 @@ void PlayerEngine::broadcastPlaylistsChanged()
                      {QStringLiteral("playlists"), playlists()}});
 }
 
+QString PlayerEngine::availablePath(int songId) const
+{
+    for (const auto &path : m_songStore.pathsForSong(songId)) {
+        if (QFileInfo(path).isFile()) return path;
+    }
+    return {};
+}
+
+QJsonObject PlayerEngine::library() const
+{
+    const auto memberships = m_songStore.songTags();
+    const auto paths = m_songStore.songPaths();
+    QJsonArray songs;
+    for (const auto &song : m_songStore.songs()) {
+        auto item = metadataToObject(song);
+        item.remove(QStringLiteral("lyrics"));
+        QString path;
+        for (const auto &candidate : paths.value(song.id)) {
+            if (QFileInfo(candidate).isFile()) { path = candidate; break; }
+        }
+        item.insert(QStringLiteral("path"), path);
+        item.insert(QStringLiteral("available"), !path.isEmpty());
+        item.insert(QStringLiteral("title"), song.customTitle.trimmed().isEmpty()
+            ? QFileInfo(path.isEmpty() ? song.firstPath : path).completeBaseName()
+            : song.customTitle.trimmed());
+        item.insert(QStringLiteral("tags"), tagArray(memberships.value(song.id)));
+        songs.append(item);
+    }
+    return {{QStringLiteral("songs"), songs}, {QStringLiteral("tags"), tagArray(m_songStore.tags())}};
+}
+
+void PlayerEngine::broadcastLibraryChanged()
+{
+    emit eventReady({{QStringLiteral("event"), QStringLiteral("library.changed")}});
+}
+
+QJsonObject PlayerEngine::listLibrary() const
+{
+    return ok({{QStringLiteral("library"), library()}});
+}
+
+QJsonObject PlayerEngine::importLibrarySong(const QString &path, const QString &title, const QString &artist)
+{
+    const QFileInfo file(path);
+    if (!file.isFile()) return error(QStringLiteral("File does not exist: %1").arg(path));
+    QString hashError;
+    const QString hash = calculateSongHash(file.absoluteFilePath(), &hashError);
+    if (hash.isEmpty()) return error(hashError);
+    const auto metadata = m_songStore.getOrCreateSong(hash, file.absoluteFilePath(), title, artist);
+    if (!metadata)
+        return error(QStringLiteral("Unable to store song metadata: %1").arg(m_songStore.errorString()));
+    broadcastLibraryChanged();
+    return ok({{QStringLiteral("song_id"), metadata->id}, {QStringLiteral("path"), file.absoluteFilePath()}});
+}
+
+QJsonObject PlayerEngine::kugouAction(const QString &action, const QJsonObject &params)
+{
+    if (action == QStringLiteral("status")) return ok({{QStringLiteral("kugou"), m_kugouService->status()}});
+    QString problem;
+    if (action == QStringLiteral("send_code")) {
+        problem = m_kugouService->startCodeRequest(params.value(QStringLiteral("mobile")).toString());
+    } else if (action == QStringLiteral("save_key")) {
+        if (!params.value(QStringLiteral("key")).isString()) return error(QStringLiteral("key must be a string"));
+        problem = m_kugouService->saveAccountKey(params.value(QStringLiteral("key")).toString());
+    } else if (action == QStringLiteral("clear_key")) {
+        problem = m_kugouService->clearAccountKey();
+    } else if (action == QStringLiteral("login")) {
+        problem = m_kugouService->startLogin(params.value(QStringLiteral("mobile")).toString(),
+                                            params.value(QStringLiteral("code")).toString());
+    } else if (action == QStringLiteral("search")) {
+        problem = m_kugouService->startSearch(params.value(QStringLiteral("keywords")).toString(),
+                                              params.value(QStringLiteral("page")).toInt(1));
+    } else if (action == QStringLiteral("download")) {
+        problem = m_kugouService->startDownload(params.value(QStringLiteral("hash")).toString());
+    } else if (action == QStringLiteral("cancel")) {
+        problem = m_kugouService->cancelDownload();
+    } else {
+        return error(QStringLiteral("Unknown Kugou action"));
+    }
+    return problem.isEmpty() ? ok({{QStringLiteral("kugou"), m_kugouService->status()}}) : error(problem);
+}
+
+QJsonObject PlayerEngine::deleteLibrarySongs(const QJsonObject &params)
+{
+    const auto value = params.value(QStringLiteral("song_ids"));
+    if (!value.isArray() || value.toArray().isEmpty())
+        return error(QStringLiteral("song_ids must be a non-empty array"));
+
+    QVector<int> songIds;
+    QSet<int> selected;
+    for (const auto &entry : value.toArray()) {
+        if (!positiveInteger(entry) || selected.contains(entry.toInt()))
+            return error(QStringLiteral("Invalid or duplicate song id"));
+        const int id = entry.toInt();
+        songIds.append(id);
+        selected.insert(id);
+    }
+
+    const int oldCurrentIndex = m_queue.currentIndex();
+    const bool currentDeleted = oldCurrentIndex >= 0
+        && selected.contains(m_queue.at(oldCurrentIndex).metadata.id);
+    const bool resumePlayback = m_state == PlayerState::Playing || m_state == PlayerState::Loading;
+    int nextQueueId = 0;
+    if (currentDeleted) {
+        for (int index = oldCurrentIndex + 1; index < m_queue.size(); ++index) {
+            if (!selected.contains(m_queue.at(index).metadata.id)) {
+                nextQueueId = m_queue.at(index).id;
+                break;
+            }
+        }
+    }
+
+    PlayerQueue remaining = m_queue;
+    for (int index = remaining.size() - 1; index >= 0; --index) {
+        if (selected.contains(remaining.at(index).metadata.id)) remaining.removeAt(index);
+    }
+    if (currentDeleted) remaining.setCurrentIndex(nextQueueId ? remaining.indexById(nextQueueId) : -1);
+    remaining.markCurrent();
+    if (!m_songStore.deleteSongs(songIds, {remaining.records(), remaining.currentIndex()}))
+        return error(m_songStore.errorString());
+
+    if (currentDeleted) {
+        m_player.stop();
+        m_player.setSource(QUrl());
+    }
+    m_queue = remaining;
+    if (currentDeleted) {
+        if (m_queue.currentIndex() >= 0) {
+            loadCurrent();
+            if (resumePlayback) m_player.play();
+        } else {
+            setState(PlayerState::Stopped);
+            broadcastTrackChanged();
+        }
+    }
+    broadcastQueueChanged();
+    broadcastPlaylistsChanged();
+    broadcastLibraryChanged();
+    return ok({{QStringLiteral("deleted_count"), songIds.size()}});
+}
+
+QJsonObject PlayerEngine::manageTag(const QString &action, const QJsonObject &params)
+{
+    if (action == QStringLiteral("create")) {
+        if (!params.value(QStringLiteral("name")).isString()) return error(QStringLiteral("Tag name is required"));
+        const int id = m_songStore.createTag(params.value(QStringLiteral("name")).toString());
+        if (!id) return error(m_songStore.errorString());
+        broadcastLibraryChanged();
+        return ok({{QStringLiteral("tag_id"), id}});
+    }
+    if (!positiveInteger(params.value(QStringLiteral("id")))) return error(QStringLiteral("Invalid tag id"));
+    const int id = params.value(QStringLiteral("id")).toInt();
+    bool saved = false;
+    if (action == QStringLiteral("rename")) {
+        if (!params.value(QStringLiteral("name")).isString()) return error(QStringLiteral("Tag name is required"));
+        saved = m_songStore.renameTag(id, params.value(QStringLiteral("name")).toString());
+    } else if (action == QStringLiteral("delete")) {
+        saved = m_songStore.deleteTag(id);
+    } else {
+        return error(QStringLiteral("Unknown tag action"));
+    }
+    if (!saved) return error(m_songStore.errorString());
+    broadcastLibraryChanged();
+    return ok();
+}
+
+QJsonObject PlayerEngine::playLibrary(const QJsonObject &params)
+{
+    const auto tagValue = params.value(QStringLiteral("tag_ids"));
+    if (!tagValue.isUndefined() && !tagValue.isArray()) return error(QStringLiteral("tag_ids must be an array"));
+    QSet<int> selectedTags;
+    for (const auto &value : tagValue.toArray()) {
+        if (!positiveInteger(value)) return error(QStringLiteral("Invalid tag id"));
+        selectedTags.insert(value.toInt());
+    }
+    QSet<int> existingTags;
+    for (const auto &tag : m_songStore.tags()) existingTags.insert(tag.id);
+    for (int id : selectedTags) {
+        if (!existingTags.contains(id)) return error(QStringLiteral("Tag does not exist"));
+    }
+    const auto startValue = params.value(QStringLiteral("song_id"));
+    if (!startValue.isUndefined() && !positiveInteger(startValue)) return error(QStringLiteral("Invalid song id"));
+    const int requestedSong = startValue.isUndefined() ? 0 : startValue.toInt();
+
+    PlayerQueue queue = m_queue;
+    queue.clear();
+    QHash<int, SongMetadata> metadataById;
+    for (const auto &song : m_songStore.songs()) metadataById.insert(song.id, song);
+    QJsonArray skipped;
+    int startIndex = requestedSong == 0 ? 0 : -1;
+    for (const auto &value : library().value(QStringLiteral("songs")).toArray()) {
+        const auto song = value.toObject();
+        QSet<int> songTagIds;
+        for (const auto &tagValue : song.value(QStringLiteral("tags")).toArray())
+            songTagIds.insert(tagValue.toObject().value(QStringLiteral("id")).toInt());
+        bool matches = true;
+        for (int id : selectedTags) {
+            if (!songTagIds.contains(id)) { matches = false; break; }
+        }
+        if (!matches) continue;
+        const int songId = song.value(QStringLiteral("song_id")).toInt();
+        const auto path = song.value(QStringLiteral("path")).toString();
+        if (path.isEmpty()) {
+            skipped.append(songId);
+            continue;
+        }
+        if (!metadataById.contains(songId)) return error(QStringLiteral("Song metadata not found"));
+        if (requestedSong == songId) startIndex = queue.size();
+        queue.add(path, metadataById.value(songId));
+    }
+    if (queue.isEmpty()) return error(QStringLiteral("No playable songs match the selected tags"));
+    if (startIndex < 0) return error(QStringLiteral("Selected song is unavailable or does not match the tags"));
+    queue.setCurrentIndex(startIndex);
+    queue.markCurrent();
+    if (!m_songStore.saveQueue({queue.records(), startIndex})) return error(m_songStore.errorString());
+    m_player.stop();
+    m_player.setSource(QUrl());
+    m_queue = queue;
+    loadCurrent();
+    m_player.play();
+    broadcastLibraryChanged();
+    auto result = status();
+    result.insert(QStringLiteral("skipped_song_ids"), skipped);
+    return ok(result);
+}
+
 QJsonObject PlayerEngine::managePlaylist(const QString &action, const QJsonObject &params)
 {
-    auto validId = [&](const QString &key) {
-        const auto value = params.value(key);
-        return value.isDouble() && value.toInt(-1) > 0 && value.toDouble() == value.toInt(-1);
-    };
+    auto validId = [&](const QString &key) { return positiveInteger(params.value(key)); };
     if (action == QStringLiteral("list"))
         return ok({{QStringLiteral("playlists"), playlists()}});
     if (action == QStringLiteral("create")) {
@@ -367,7 +640,14 @@ QJsonObject PlayerEngine::managePlaylist(const QString &action, const QJsonObjec
         saved = m_songStore.deletePlaylist(id);
     } else if (action == QStringLiteral("add")) {
         QueueRecord record;
-        if (params.contains(QStringLiteral("queue_id"))) {
+        if (params.contains(QStringLiteral("song_id"))) {
+            if (!validId(QStringLiteral("song_id"))) return error(QStringLiteral("Invalid song id"));
+            const int songId = params.value(QStringLiteral("song_id")).toInt();
+            if (!m_songStore.songById(songId)) return error(QStringLiteral("Song does not exist"));
+            const auto path = availablePath(songId);
+            if (path.isEmpty()) return error(QStringLiteral("Song file is unavailable"));
+            record = {path, songId};
+        } else if (params.contains(QStringLiteral("queue_id"))) {
             if (!validId(QStringLiteral("queue_id"))) return error(QStringLiteral("Invalid queue item id"));
             const int index = m_queue.indexById(params.value(QStringLiteral("queue_id")).toInt());
             if (index < 0) return error(QStringLiteral("Queue item does not exist"));
@@ -413,12 +693,14 @@ QJsonObject PlayerEngine::managePlaylist(const QString &action, const QJsonObjec
         m_queue = queue;
         loadCurrent();
         m_player.play();
+        broadcastLibraryChanged();
         return ok(status());
     } else {
         return error(QStringLiteral("Unknown playlist action"));
     }
     if (!saved) return error(m_songStore.errorString());
     broadcastPlaylistsChanged();
+    broadcastLibraryChanged();
     return ok({{QStringLiteral("playlists"), playlists()}});
 }
 
@@ -431,6 +713,7 @@ QJsonObject PlayerEngine::clearQueue()
     setState(PlayerState::Stopped);
     broadcastTrackChanged();
     broadcastQueueChanged();
+    broadcastLibraryChanged();
     return ok(queueStatus());
 }
 
@@ -451,7 +734,9 @@ QJsonObject PlayerEngine::songMetadata(const QJsonObject &params) const
         return error(QStringLiteral("Song metadata not found"));
     }
 
-    return ok(metadataToObject(*metadata));
+    auto result = metadataToObject(*metadata);
+    result.insert(QStringLiteral("tags"), tagArray(m_songStore.songTags().value(metadata->id)));
+    return ok(result);
 }
 
 QJsonObject PlayerEngine::updateSongMetadata(const QJsonObject &params)
@@ -482,17 +767,31 @@ QJsonObject PlayerEngine::updateSongMetadata(const QJsonObject &params)
         lyrics = params.value(QStringLiteral("lyrics")).toString();
     }
 
-    const auto updated = m_songStore.updateMetadata(current->id, customTitle, artist, lyrics);
+    std::optional<QStringList> tags;
+    if (params.contains(QStringLiteral("tags"))) {
+        const auto value = params.value(QStringLiteral("tags"));
+        if (!value.isArray()) return error(QStringLiteral("tags must be an array"));
+        QStringList names;
+        for (const auto &tag : value.toArray()) {
+            if (!tag.isString()) return error(QStringLiteral("Each tag must be a string"));
+            names.append(tag.toString());
+        }
+        tags = names;
+    }
+    const auto updated = m_songStore.updateMetadata(current->id, customTitle, artist, lyrics, tags);
     if (!updated) {
         return error(QStringLiteral("Unable to update song metadata: %1").arg(m_songStore.errorString()));
     }
 
     m_queue.updateSongMetadata(*updated);
     broadcastPlaylistsChanged();
+    broadcastLibraryChanged();
     loadLyrics(m_metadataReady);
     broadcastTrackChanged();
     broadcastQueueChanged();
-    return ok(metadataToObject(*updated));
+    auto result = metadataToObject(*updated);
+    result.insert(QStringLiteral("tags"), tagArray(m_songStore.songTags().value(updated->id)));
+    return ok(result);
 }
 
 void PlayerEngine::handlePlaybackStateChanged(QMediaPlayer::PlaybackState state)
@@ -540,6 +839,7 @@ void PlayerEngine::handleErrorChanged()
         m_queue.removeAt(failedIndex);
         m_player.setSource(QUrl());
         persistQueue();
+        broadcastLibraryChanged();
         broadcastTrackChanged();
         broadcastQueueChanged();
     }
@@ -622,6 +922,7 @@ QJsonObject PlayerEngine::currentSongObject() const
     song.insert(QStringLiteral("title"), query.title);
     song.insert(QStringLiteral("artist"), query.artist);
     song.insert(QStringLiteral("album"), query.album);
+    song.insert(QStringLiteral("cover_url"), localCoverUrl(song.value(QStringLiteral("path")).toString()));
     return song;
 }
 

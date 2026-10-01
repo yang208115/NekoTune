@@ -8,17 +8,20 @@ Item {
     property var queue: []
     property var playlists: []
     property var currentSong: ({})
+    property real duration: 0
+    property var lyrics: ({})
     property int currentPlaylist: 0
     property int editingPlaylist: 0
     property var addingSong: ({})
-
-    property color panelColor: "#13111b"
-    property color lineColor: "#211c2b"
-    property color textStrongColor: "#f6f3fa"
-    property color textSoftColor: "#cfc8db"
-    property color textMutedColor: "#847d91"
-    property color lavenderColor: "#cbb8ff"
-    property color roseColor: "#e8a9c3"
+    property color panelColor: "#17141F"
+    property color lineColor: "#332C41"
+    property color textStrongColor: "#F5F1FA"
+    property color textSoftColor: "#D7CFE2"
+    property color textMutedColor: "#AAA0B8"
+    property color lavenderColor: "#CBB8FF"
+    property color roseColor: "#E8A9C3"
+    property color bgHoverColor: "#2A2338"
+    property color bgSelectedColor: "#322743"
     property string playbackState: "stopped"
 
     signal addRequested(int playlistId)
@@ -30,6 +33,21 @@ Item {
     signal playlistRequested(string action, var params)
 
     readonly property bool isPlaying: playbackState === "playing"
+
+    function formatDuration(itemDuration, isCurrent) {
+        var ms = 0
+        if (itemDuration !== undefined && itemDuration !== null && !isNaN(itemDuration) && Number(itemDuration) > 0) {
+            ms = Number(itemDuration)
+        } else if (isCurrent && root.duration > 0) {
+            ms = root.duration
+        } else {
+            return "--:--"
+        }
+        var totalSec = Math.floor(ms / 1000)
+        var m = Math.floor(totalSec / 60)
+        var s = totalSec % 60
+        return (m < 10 ? "0" + m : String(m)) + ":" + (s < 10 ? "0" + s : String(s))
+    }
 
     function playlistById(id) {
         for (var index = 0; index < playlists.length; ++index)
@@ -125,8 +143,8 @@ Item {
                     Layout.preferredWidth: 74
                     Layout.preferredHeight: 74
                     radius: 12
-                    color: "#201c2b"
-                    border.color: "#342d44"
+                    color: "#17141F"
+                    border.color: root.lineColor
                     border.width: 1
 
                     Canvas {
@@ -232,21 +250,21 @@ Item {
                         delegate: Button {
                             required property var modelData
                             required property int index
-                            implicitHeight: 26
-                            leftPadding: 8
-                            rightPadding: 8
+                            implicitHeight: 32
+                            leftPadding: 12
+                            rightPadding: 12
                             hoverEnabled: true
                             text: modelData.label
                             contentItem: Label {
                                 text: parent.text
                                 color: Number(modelData.id) === root.currentPlaylist ? root.lavenderColor : root.textMutedColor
-                                font.pixelSize: 12
-                                font.weight: Font.Medium
+                                font.pixelSize: 13
+                                font.weight: Number(modelData.id) === root.currentPlaylist ? Font.DemiBold : Font.Normal
                                 verticalAlignment: Text.AlignVCenter
                             }
                             background: Rectangle {
-                                radius: 6
-                                color: Number(modelData.id) === root.currentPlaylist ? "#201c2c" : "transparent"
+                                radius: 8
+                                color: Number(modelData.id) === root.currentPlaylist ? root.bgSelectedColor : parent.hovered ? root.bgHoverColor : "transparent"
                             }
                             onClicked: root.currentPlaylist = Number(modelData.id)
                         }
@@ -268,11 +286,16 @@ Item {
                 spacing: 12
 
                 Label {
-                    Layout.preferredWidth: 32
+                    Layout.preferredWidth: 36
                     text: "#"
                     color: root.textMutedColor
                     font.pixelSize: 11
                     font.weight: Font.Medium
+                    horizontalAlignment: Text.AlignHCenter
+                }
+                Item {
+                    Layout.preferredWidth: 40
+                    Layout.preferredHeight: 1
                 }
                 Label {
                     Layout.fillWidth: true
@@ -285,13 +308,22 @@ Item {
                 Label {
                     Layout.fillWidth: true
                     Layout.preferredWidth: 2
+                    visible: root.width >= 600
                     text: i18n.text("artist_author", i18n.language)
                     color: root.textMutedColor
                     font.pixelSize: 11
                     font.weight: Font.Medium
                 }
                 Label {
-                    Layout.preferredWidth: 104
+                    Layout.preferredWidth: 54
+                    text: i18n.text("duration", i18n.language)
+                    color: root.textMutedColor
+                    font.pixelSize: 11
+                    font.weight: Font.Medium
+                    horizontalAlignment: Text.AlignRight
+                }
+                Label {
+                    Layout.preferredWidth: 128
                     text: i18n.text("actions", i18n.language)
                     color: root.textMutedColor
                     font.pixelSize: 11
@@ -331,10 +363,12 @@ Item {
                 property bool currentTrack: root.currentPlaylist ? Number(modelData.song_id) === Number(root.currentSong.song_id || 0) : modelData.state === "current"
 
                 width: queueList.width
-                height: 44
-                radius: 8
+                height: 60
+                radius: 12
 
-                color: currentTrack ? "#201c2c" : hovered ? "#181522" : "transparent"
+                color: currentTrack ? root.bgSelectedColor : hovered ? root.bgHoverColor : "transparent"
+                border.color: currentTrack ? root.lineColor : "transparent"
+                border.width: 1
 
                 HoverHandler {
                     id: rowHover
@@ -352,34 +386,34 @@ Item {
 
                     // Column 1: Index / Playing Icon
                     Item {
-                        Layout.preferredWidth: 32
-                        Layout.preferredHeight: 20
+                        Layout.preferredWidth: 36
+                        Layout.preferredHeight: 36
 
                         Label {
-                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.centerIn: parent
                             visible: !row.currentTrack
                             text: String(index + 1)
                             color: root.textMutedColor
-                            font.pixelSize: 12
+                            font.pixelSize: 13
                         }
 
                         Canvas {
-                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.centerIn: parent
                             visible: row.currentTrack
-                            width: 14
-                            height: 14
+                            width: 16
+                            height: 16
                             onPaint: {
                                 const ctx = getContext("2d")
                                 ctx.reset()
                                 ctx.fillStyle = root.lavenderColor
                                 if (root.isPlaying) {
-                                    ctx.fillRect(2, 2, 3, 10)
-                                    ctx.fillRect(8, 2, 3, 10)
+                                    ctx.fillRect(2, 2, 4, 12)
+                                    ctx.fillRect(9, 2, 4, 12)
                                 } else {
                                     ctx.beginPath()
                                     ctx.moveTo(3, 2)
-                                    ctx.lineTo(12, 7)
-                                    ctx.lineTo(3, 12)
+                                    ctx.lineTo(13, 8)
+                                    ctx.lineTo(3, 14)
                                     ctx.closePath()
                                     ctx.fill()
                                 }
@@ -387,44 +421,83 @@ Item {
                         }
                     }
 
-                    // Column 2: Title
+                    // Column 2: 40x40 Thumbnail Cover (Section 5.1 & 5)
+                    Rectangle {
+                        Layout.preferredWidth: 40
+                        Layout.preferredHeight: 40
+                        radius: 8
+                        clip: true
+                        color: "#17141F"
+                        border.color: row.currentTrack ? root.lavenderColor : root.lineColor
+                        border.width: 1
+
+                        Image {
+                            anchors.fill: parent
+                            source: "qrc:/artwork/default-cover.png"
+                            fillMode: Image.PreserveAspectCrop
+                            opacity: 0.85
+                        }
+
+                        Image {
+                            anchors.fill: parent
+                            source: row.currentTrack ? (String(root.currentSong.cover_url || "")
+                                    || (root.lyrics && !root.lyrics.offline && root.lyrics.track_id === modelData.song_hash
+                                        ? String((root.lyrics.document || {}).cover_url || "") : "")) : ""
+                            fillMode: Image.PreserveAspectCrop
+                            asynchronous: true
+                            visible: status === Image.Ready
+                        }
+                    }
+
+                    // Column 3: Title
                     Label {
                         Layout.fillWidth: true
                         Layout.preferredWidth: 3
                         text: modelData.title || i18n.text("untitled", i18n.language)
                         color: row.currentTrack ? root.lavenderColor : root.textStrongColor
-                        font.pixelSize: 13
+                        font.pixelSize: 14
                         font.weight: row.currentTrack ? Font.DemiBold : Font.Normal
                         elide: Text.ElideRight
                     }
 
-                    // Column 3: Artist / Details
+                    // Column 4: Artist / Details (Responsive: hidden on narrow window < 600)
                     Label {
                         Layout.fillWidth: true
                         Layout.preferredWidth: 2
+                        visible: root.width >= 600
                         text: modelData.artist ? String(modelData.artist) : root.fileName(modelData.path)
-                        color: root.textMutedColor
-                        font.pixelSize: 12
+                        color: root.textSoftColor
+                        font.pixelSize: 13
                         elide: Text.ElideRight
                     }
 
-                    // Column 4: Hover Actions (Play, Edit, Move/More, Remove)
+                    // Column 5: Track Duration (Section 5.1: "--:--" if unknown, monospace)
+                    Label {
+                        Layout.preferredWidth: 54
+                        text: root.formatDuration(modelData.duration, row.currentTrack)
+                        color: root.textMutedColor
+                        font.pixelSize: 12
+                        font.family: "Monospace"
+                        horizontalAlignment: Text.AlignRight
+                    }
+
+                    // Column 6: Hover Actions (Play, Edit, Move/More, Remove)
                     Item {
-                        Layout.preferredWidth: 104
-                        Layout.preferredHeight: 32
+                        Layout.preferredWidth: 128
+                        Layout.preferredHeight: 36
 
                         RowLayout {
                             anchors.right: parent.right
                             anchors.verticalCenter: parent.verticalCenter
-                            spacing: 2
+                            spacing: 4
                             visible: row.hovered || row.currentTrack
 
                             IconButton {
                                 kind: row.currentTrack && root.isPlaying ? "pause" : "play"
                                 glyphColor: root.lavenderColor
-                                implicitWidth: 26
-                                implicitHeight: 26
-                                iconSize: 14
+                                implicitWidth: 30
+                                implicitHeight: 30
+                                iconSize: 15
                                 onClicked: row.currentTrack ? root.togglePlayPauseRequested() : root.playSong(modelData)
                             }
                             IconButton {
@@ -432,9 +505,9 @@ Item {
                                 tooltipText: i18n.text("edit_track_info", i18n.language)
                                 glyphColor: root.textMutedColor
                                 hoverGlyphColor: root.lavenderColor
-                                implicitWidth: 26
-                                implicitHeight: 26
-                                iconSize: 14
+                                implicitWidth: 30
+                                implicitHeight: 30
+                                iconSize: 15
                                 onClicked: root.editRequested(modelData)
                             }
                             IconButton {
@@ -442,9 +515,9 @@ Item {
                                 kind: "plus"
                                 tooltipText: i18n.text("add_to_playlist", i18n.language)
                                 glyphColor: root.textMutedColor
-                                implicitWidth: 26
-                                implicitHeight: 26
-                                iconSize: 14
+                                implicitWidth: 30
+                                implicitHeight: 30
+                                iconSize: 15
                                 onClicked: root.addToPlaylist(modelData)
                             }
                             IconButton {
@@ -452,9 +525,9 @@ Item {
                                 tooltipText: i18n.text("remove", i18n.language)
                                 glyphColor: root.textMutedColor
                                 hoverGlyphColor: root.roseColor
-                                implicitWidth: 26
-                                implicitHeight: 26
-                                iconSize: 14
+                                implicitWidth: 30
+                                implicitHeight: 30
+                                iconSize: 15
                                 onClicked: root.removeSong(modelData)
                             }
                         }
@@ -462,17 +535,59 @@ Item {
                 }
             }
 
-            // Empty state
+            // Empty state (Section 9)
             Column {
                 anchors.centerIn: parent
-                spacing: 10
+                spacing: 14
                 visible: root.visibleItems.length === 0
 
+                Rectangle {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: 64
+                    height: 64
+                    radius: 32
+                    color: root.bgHoverColor
+
+                    Canvas {
+                        anchors.centerIn: parent
+                        width: 32
+                        height: 32
+                        onPaint: {
+                            const ctx = getContext("2d")
+                            ctx.reset()
+                            ctx.strokeStyle = root.lavenderColor
+                            ctx.fillStyle = root.lavenderColor
+                            ctx.lineWidth = 2
+                            ctx.lineCap = "round"
+                            ctx.lineJoin = "round"
+                            const w = width, h = height
+                            ctx.beginPath()
+                            ctx.moveTo(w * 0.35, h * 0.72)
+                            ctx.lineTo(w * 0.35, h * 0.25)
+                            ctx.lineTo(w * 0.75, h * 0.16)
+                            ctx.lineTo(w * 0.75, h * 0.62)
+                            ctx.stroke()
+                            ctx.beginPath()
+                            ctx.arc(w * 0.25, h * 0.72, w * 0.12, 0, Math.PI * 2)
+                            ctx.arc(w * 0.65, h * 0.62, w * 0.12, 0, Math.PI * 2)
+                            ctx.fill()
+                        }
+                    }
+                }
+
                 Label {
+                    anchors.horizontalCenter: parent.horizontalCenter
                     text: i18n.text(root.currentPlaylist ? "empty_playlist" : "empty_queue", i18n.language)
-                    color: root.textMutedColor
-                    font.pixelSize: 13
+                    color: root.textStrongColor
+                    font.pixelSize: 14
+                    font.weight: Font.Medium
                     horizontalAlignment: Text.AlignHCenter
+                }
+
+                TextButton {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    text: i18n.text("add_music", i18n.language)
+                    onClicked: root.addRequested(root.currentPlaylist)
                 }
             }
         }
@@ -491,9 +606,9 @@ Item {
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         onOpened: { root.placePopup(namePopup); playlistName.forceActiveFocus() }
         background: Rectangle {
-            radius: 14
-            color: "#181422"
-            border.color: "#342d44"
+            radius: 16
+            color: "#211C2D"
+            border.color: root.lineColor
             border.width: 1
         }
         ColumnLayout {
@@ -509,17 +624,18 @@ Item {
                 id: playlistName
                 objectName: "playlistNameInput"
                 Layout.fillWidth: true
-                Layout.preferredHeight: 36
+                Layout.preferredHeight: 40
                 maximumLength: 128
                 placeholderText: i18n.text("playlist_name", i18n.language)
                 color: root.textStrongColor
                 placeholderTextColor: root.textMutedColor
-                leftPadding: 10
-                rightPadding: 10
+                leftPadding: 12
+                rightPadding: 12
                 background: Rectangle {
                     radius: 8
-                    color: "#110e18"
-                    border.color: playlistName.activeFocus ? root.lavenderColor : "#272235"
+                    color: "#17141F"
+                    border.color: playlistName.activeFocus ? root.lavenderColor : "#8D809F"
+                    border.width: 1
                 }
                 onAccepted: if (text.trim().length > 0) saveButton.clicked()
             }
@@ -560,9 +676,9 @@ Item {
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         onOpened: root.placePopup(addPopup)
         background: Rectangle {
-            radius: 14
-            color: "#181422"
-            border.color: "#342d44"
+            radius: 16
+            color: "#211C2D"
+            border.color: root.lineColor
             border.width: 1
         }
         ColumnLayout {
@@ -652,9 +768,9 @@ Item {
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         onOpened: root.placePopup(playlistActions, playlistActionsButton)
         background: Rectangle {
-            radius: 10
-            color: "#1b1726"
-            border.color: "#352e46"
+            radius: 12
+            color: "#211C2D"
+            border.color: root.lineColor
             border.width: 1
         }
         ColumnLayout {
@@ -688,9 +804,9 @@ Item {
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         onOpened: root.placePopup(deletePopup)
         background: Rectangle {
-            radius: 14
-            color: "#181422"
-            border.color: "#462b35"
+            radius: 16
+            color: "#211C2D"
+            border.color: "#FF9BAE"
             border.width: 1
         }
         ColumnLayout {

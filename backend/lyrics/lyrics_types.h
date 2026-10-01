@@ -23,6 +23,7 @@ struct LyricsDocument {
     QString source;
     QString coverUrl;
     QString syncedLyrics;
+    QString krcLyrics;
     QString plainLyrics;
     LyricsQuery matched;
     qint64 providerId = 0;
@@ -30,7 +31,7 @@ struct LyricsDocument {
 
     bool isSynced() const
     {
-        return !syncedLyrics.isEmpty();
+        return !krcLyrics.isEmpty() || !syncedLyrics.isEmpty();
     }
     bool isEmpty() const
     {

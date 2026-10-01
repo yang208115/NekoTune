@@ -4,39 +4,38 @@ import QtQuick.Controls
 Slider {
     id: slider
 
-    property color activeColor: "#cbb8ff"
-    property color baseColor: "#2b253a"
+    property color activeColor: "#CBB8FF"
+    property color baseColor: "#332C41"
 
     implicitHeight: 32
     hoverEnabled: true
 
-    // Large hit area background
+    // Large hit area background (hit area >= 24px, visual track = 4px)
     background: Item {
         x: slider.leftPadding
         y: slider.topPadding + slider.availableHeight / 2 - height / 2
         width: slider.availableWidth
-        height: slider.hovered || slider.pressed ? 7 : 5
+        height: 24
 
-        Behavior on height {
-            NumberAnimation { duration: 100; easing.type: Easing.OutQuad }
-        }
-
+        // Visual track: 4px fixed height
         Rectangle {
-            anchors.fill: parent
-            radius: height / 2
+            anchors.centerIn: parent
+            width: parent.width
+            height: 4
+            radius: 2
             color: slider.baseColor
 
             // Active track
             Rectangle {
                 width: Math.max(0, slider.visualPosition * parent.width)
                 height: parent.height
-                radius: height / 2
+                radius: 2
                 color: slider.activeColor
             }
         }
     }
 
-    // Always visible, beautifully tactile handle
+    // Always visible, beautifully tactile handle: fixed 16px geometry, 10px / 14px dot
     handle: Item {
         x: slider.leftPadding + slider.visualPosition * (slider.availableWidth - width)
         y: slider.topPadding + slider.availableHeight / 2 - height / 2
@@ -46,12 +45,23 @@ Slider {
 
         Rectangle {
             anchors.centerIn: parent
-            width: slider.pressed ? 16 : slider.hovered ? 15 : 13
+            width: slider.pressed || slider.hovered ? 14 : 10
             height: width
             radius: width / 2
-            color: "#ffffff"
-            border.color: "#181424"
+            color: "#F5F1FA"
+            border.color: "#21172F"
             border.width: 2
+
+            // Focus ring (Section 7.1 & 11)
+            Rectangle {
+                anchors.fill: parent
+                anchors.margins: -4
+                radius: parent.radius + 4
+                color: "transparent"
+                border.color: "#CBB8FF"
+                border.width: 2
+                visible: slider.activeFocus
+            }
 
             Behavior on width {
                 NumberAnimation { duration: 100 }

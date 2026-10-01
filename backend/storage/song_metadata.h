@@ -30,4 +30,9 @@ struct Playlist {
     QVector<QueueRecord> items;
 };
 
+struct SongTag {
+    int id = 0;
+    QString name;
+};
+
 } // namespace nekotune

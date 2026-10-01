@@ -3,6 +3,8 @@
 #include "storage/song_metadata.h"
 
 #include <QSqlDatabase>
+#include <QHash>
+#include <QStringList>
 #include <QVector>
 #include <QString>
 
@@ -24,13 +26,24 @@ public:
     QString databasePath() const;
 
     std::optional<SongMetadata> getOrCreateSong(const QString &hash,
-                                                const QString &path);
+                                                const QString &path,
+                                                const QString &customTitle = {},
+                                                const QString &artist = {});
     QVector<SongMetadata> songs() const;
     std::optional<SongMetadata> songById(int songId) const;
+    bool deleteSongs(const QVector<int> &songIds, const QueueSnapshot &remainingQueue);
     std::optional<SongMetadata> updateMetadata(int songId,
                                                const QString &customTitle,
                                                const QString &artist,
-                                               const QString &lyrics);
+                                               const QString &lyrics,
+                                               const std::optional<QStringList> &tags = std::nullopt);
+    QVector<SongTag> tags() const;
+    QHash<int, QVector<SongTag>> songTags() const;
+    int createTag(const QString &name);
+    bool renameTag(int id, const QString &name);
+    bool deleteTag(int id);
+    QVector<QString> pathsForSong(int songId) const;
+    QHash<int, QVector<QString>> songPaths() const;
     bool saveQueue(const QueueSnapshot &snapshot);
     QueueSnapshot loadQueue() const;
     QVector<Playlist> playlists() const;
@@ -48,7 +61,9 @@ private:
     bool migrate();
     bool migrateFolders();
     std::optional<SongMetadata> songByHash(const QString &hash) const;
+    bool rememberSongPath(int songId, const QString &path);
     std::optional<SongMetadata> readSongFromQuery(QSqlQuery &query) const;
+    bool replaceSongTags(int songId, const QStringList &names);
     void setError(const QString &message);
 
     QSqlDatabase m_db;

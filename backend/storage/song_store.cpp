@@ -48,29 +48,59 @@ QString SongStore::databasePath() const
     return m_databasePath;
 }
 
-std::optional<SongMetadata> SongStore::getOrCreateSong(const QString &hash, const QString &path)
+std::optional<SongMetadata> SongStore::getOrCreateSong(const QString &hash, const QString &path,
+                                                      const QString &customTitle, const QString &artist)
 {
     if (!m_ready) {
         return std::nullopt;
     }
 
     if (auto existing = songByHash(hash)) {
-        return existing;
+        return rememberSongPath(existing->id, path) ? existing : std::nullopt;
+    }
+
+    if (!m_db.transaction()) {
+        setError(m_db.lastError().text());
+        return std::nullopt;
     }
 
     QSqlQuery query(m_db);
     query.prepare(QStringLiteral(
-        "INSERT INTO songs (hash, first_path) "
-        "VALUES (:hash, :first_path)"));
+        "INSERT INTO songs (hash, first_path, custom_title, artist) "
+        "VALUES (:hash, :first_path, :custom_title, :artist)"));
     query.bindValue(QStringLiteral(":hash"), hash);
     query.bindValue(QStringLiteral(":first_path"), path);
+    query.bindValue(QStringLiteral(":custom_title"), customTitle.isNull() ? QStringLiteral("") : customTitle.trimmed());
+    query.bindValue(QStringLiteral(":artist"), artist.isNull() ? QStringLiteral("") : artist.trimmed());
 
     if (!query.exec()) {
         setError(query.lastError().text());
+        m_db.rollback();
         return std::nullopt;
     }
+    const int songId = query.lastInsertId().toInt();
+    if (!rememberSongPath(songId, path)) {
+        m_db.rollback();
+        return std::nullopt;
+    }
+    if (!m_db.commit()) {
+        setError(m_db.lastError().text());
+        m_db.rollback();
+        return std::nullopt;
+    }
+    return songById(songId);
+}
 
-    return songById(query.lastInsertId().toInt());
+bool SongStore::rememberSongPath(int songId, const QString &path)
+{
+    if (!m_ready || songId <= 0 || path.isEmpty()) return false;
+    QSqlQuery query(m_db);
+    query.prepare(QStringLiteral("INSERT OR IGNORE INTO song_paths (song_id, path) VALUES (:id, :path)"));
+    query.bindValue(QStringLiteral(":id"), songId);
+    query.bindValue(QStringLiteral(":path"), path);
+    if (query.exec()) return true;
+    setError(query.lastError().text());
+    return false;
 }
 
 QVector<SongMetadata> SongStore::songs() const
@@ -120,12 +150,90 @@ std::optional<SongMetadata> SongStore::songById(int songId) const
     return readSongFromQuery(query);
 }
 
+bool SongStore::deleteSongs(const QVector<int> &songIds, const QueueSnapshot &remainingQueue)
+{
+    QSet<int> ids;
+    for (int id : songIds) {
+        if (id <= 0 || ids.contains(id) || !songById(id)) {
+            setError(QStringLiteral("Invalid or missing song id"));
+            return false;
+        }
+        ids.insert(id);
+    }
+    if (!m_ready || ids.isEmpty()) {
+        setError(QStringLiteral("No songs selected"));
+        return false;
+    }
+    if (remainingQueue.currentIndex < -1 || remainingQueue.currentIndex >= remainingQueue.items.size()) {
+        setError(QStringLiteral("Invalid remaining queue index"));
+        return false;
+    }
+    for (const auto &record : remainingQueue.items) {
+        if (ids.contains(record.songId)) {
+            setError(QStringLiteral("Remaining queue contains a deleted song"));
+            return false;
+        }
+    }
+    if (!m_db.transaction()) {
+        setError(m_db.lastError().text());
+        return false;
+    }
+
+    QSqlQuery query(m_db);
+    auto execute = [&](const QString &sql) {
+        if (query.exec(sql)) return true;
+        setError(query.lastError().text());
+        m_db.rollback();
+        return false;
+    };
+    if (!execute(QStringLiteral("DELETE FROM queue_items"))) return false;
+    query.prepare(QStringLiteral(
+        "INSERT INTO queue_items (position, path, song_id, current_index) "
+        "VALUES (:position, :path, :song_id, :current_index)"));
+    for (int index = 0; index < remainingQueue.items.size(); ++index) {
+        const auto &record = remainingQueue.items.at(index);
+        query.bindValue(QStringLiteral(":position"), index);
+        query.bindValue(QStringLiteral(":path"), record.path);
+        query.bindValue(QStringLiteral(":song_id"), record.songId);
+        query.bindValue(QStringLiteral(":current_index"), remainingQueue.currentIndex);
+        if (!query.exec()) {
+            setError(query.lastError().text());
+            m_db.rollback();
+            return false;
+        }
+    }
+    for (const auto &table : {QStringLiteral("playlist_items"), QStringLiteral("song_tags"), QStringLiteral("songs")}) {
+        query.prepare(QStringLiteral("DELETE FROM %1 WHERE %2 = :song_id")
+                          .arg(table, table == QStringLiteral("songs") ? QStringLiteral("id") : QStringLiteral("song_id")));
+        for (int id : songIds) {
+            query.bindValue(QStringLiteral(":song_id"), id);
+            if (!query.exec()) {
+                setError(query.lastError().text());
+                m_db.rollback();
+                return false;
+            }
+        }
+    }
+    if (!m_db.commit()) {
+        setError(m_db.lastError().text());
+        m_db.rollback();
+        return false;
+    }
+    return true;
+}
+
 std::optional<SongMetadata> SongStore::updateMetadata(int songId,
                                                       const QString &customTitle,
                                                       const QString &artist,
-                                                      const QString &lyrics)
+                                                      const QString &lyrics,
+                                                      const std::optional<QStringList> &tags)
 {
-    if (!m_ready || songId <= 0) {
+    if (!m_ready || songId <= 0 || !songById(songId)) {
+        return std::nullopt;
+    }
+
+    if (tags && !m_db.transaction()) {
+        setError(m_db.lastError().text());
         return std::nullopt;
     }
 
@@ -135,14 +243,27 @@ std::optional<SongMetadata> SongStore::updateMetadata(int songId,
         "SET custom_title = :custom_title, artist = :artist, lyrics = :lyrics, "
         "updated_at = CURRENT_TIMESTAMP "
         "WHERE id = :id"));
-    query.bindValue(QStringLiteral(":custom_title"), customTitle);
-    query.bindValue(QStringLiteral(":artist"), artist);
-    query.bindValue(QStringLiteral(":lyrics"), lyrics);
+    query.bindValue(QStringLiteral(":custom_title"), customTitle.isNull() ? QStringLiteral("") : customTitle);
+    query.bindValue(QStringLiteral(":artist"), artist.isNull() ? QStringLiteral("") : artist);
+    query.bindValue(QStringLiteral(":lyrics"), lyrics.isNull() ? QStringLiteral("") : lyrics);
     query.bindValue(QStringLiteral(":id"), songId);
 
     if (!query.exec()) {
         setError(query.lastError().text());
+        if (tags) m_db.rollback();
         return std::nullopt;
+    }
+
+    if (tags) {
+        if (!replaceSongTags(songId, *tags)) {
+            m_db.rollback();
+            return std::nullopt;
+        }
+        if (!m_db.commit()) {
+            setError(m_db.lastError().text());
+            m_db.rollback();
+            return std::nullopt;
+        }
     }
 
     return songById(songId);
@@ -238,6 +359,11 @@ bool SongStore::migrate()
     const QStringList statements {
         QStringLiteral("CREATE TABLE IF NOT EXISTS playlists (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL)"),
         QStringLiteral("CREATE TABLE IF NOT EXISTS playlist_items (playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE, song_id INTEGER NOT NULL REFERENCES songs(id), path TEXT NOT NULL, position INTEGER NOT NULL, PRIMARY KEY (playlist_id, song_id))"),
+        QStringLiteral("CREATE TABLE IF NOT EXISTS tags (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, normalized_name TEXT NOT NULL UNIQUE)"),
+        QStringLiteral("CREATE TABLE IF NOT EXISTS song_tags (song_id INTEGER NOT NULL REFERENCES songs(id) ON DELETE CASCADE, tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE, PRIMARY KEY (song_id, tag_id))"),
+        QStringLiteral("CREATE TABLE IF NOT EXISTS song_paths (song_id INTEGER NOT NULL REFERENCES songs(id) ON DELETE CASCADE, path TEXT NOT NULL, PRIMARY KEY (song_id, path))"),
+        QStringLiteral("INSERT OR IGNORE INTO song_paths (song_id, path) SELECT id, first_path FROM songs"),
+        QStringLiteral("CREATE INDEX IF NOT EXISTS song_tags_by_tag ON song_tags(tag_id, song_id)"),
     };
     for (const auto &statement : statements) {
         if (!query.exec(statement)) {
