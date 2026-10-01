@@ -16,7 +16,7 @@ Item {
     property int total: 0
     property string message: ""
     property string pendingImportPath: ""
-    readonly property var account: client.status.kugou || ({})
+    readonly property var account: client.account || ({})
     readonly property bool activeDownload: downloading || Boolean(account.download_active)
 
     function t(key) { return translator.text(key, translator.language) }

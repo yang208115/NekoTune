@@ -2,22 +2,29 @@
 
 #include <QJsonDocument>
 #include <QJsonParseError>
+#include <QPointer>
 #include <QProcessEnvironment>
 
 namespace nekotune {
 
-IpcServer::IpcServer(PlayerEngine &player, QObject *parent)
-    : QObject(parent)
-    , m_player(player)
-    , m_router(player)
-    , m_serverName(defaultServerName())
-{
+IpcServer::IpcServer(IpcRouter &router, std::function<QJsonObject()> snapshot, QObject *parent)
+    : QObject(parent), m_router(router), m_snapshot(std::move(snapshot)), m_serverName(defaultServerName()) {
     connect(&m_server, &QLocalServer::newConnection, this, &IpcServer::acceptConnection);
-    connect(&m_player, &PlayerEngine::eventReady, this, &IpcServer::broadcastEvent);
+}
+IpcServer::~IpcServer() { shutdown(); }
+void IpcServer::stopAccepting() { m_server.close(); }
+void IpcServer::shutdown() {
+    stopAccepting();
+    const auto clients = m_buffers.keys();
+    m_buffers.clear();
+    for (auto *client : clients) {
+        disconnect(client, nullptr, this, nullptr);
+        client->abort();
+        delete client;
+    }
 }
 
-bool IpcServer::listen()
-{
+bool IpcServer::listen() {
     m_server.setSocketOptions(QLocalServer::UserAccessOption);
     if (m_server.listen(m_serverName)) {
         return true;
@@ -37,41 +44,30 @@ bool IpcServer::listen()
     return false;
 }
 
-QString IpcServer::serverName() const
-{
-    return m_serverName;
-}
+QString IpcServer::serverName() const { return m_serverName; }
 
-QString IpcServer::errorString() const
-{
-    return m_error.isEmpty() ? m_server.errorString() : m_error;
-}
+QString IpcServer::errorString() const { return m_error.isEmpty() ? m_server.errorString() : m_error; }
 
-void IpcServer::acceptConnection()
-{
+void IpcServer::acceptConnection() {
     while (auto *client = m_server.nextPendingConnection()) {
         m_buffers.insert(client, {});
-        connect(client, &QLocalSocket::readyRead, this, &IpcServer::readClient);
-        connect(client, &QLocalSocket::disconnected, this, [this, client]() {
-            removeClient(client);
-        });
+        connect(client, &QLocalSocket::readyRead, this, [this, client] { readClient(client); });
+        connect(client, &QLocalSocket::disconnected, this, [this, client]() { removeClient(client); });
 
         send(client, {
-            {QStringLiteral("event"), QStringLiteral("server.connected")},
-            {QStringLiteral("data"), m_player.status()},
-        });
+                         {QStringLiteral("event"), QStringLiteral("server.connected")},
+                         {QStringLiteral("data"), m_snapshot()},
+                     });
     }
 }
 
-void IpcServer::readClient()
-{
-    auto *client = qobject_cast<QLocalSocket *>(sender());
-    if (!client) {
-        return;
-    }
-
+void IpcServer::readClient(QLocalSocket *client) {
     auto &buffer = m_buffers[client];
     buffer.append(client->readAll());
+    if (buffer.size() > 32 * 1024 * 1024) {
+        client->disconnectFromServer();
+        return;
+    }
 
     qsizetype newline = -1;
     while ((newline = buffer.indexOf('\n')) >= 0) {
@@ -85,19 +81,22 @@ void IpcServer::readClient()
         const auto document = QJsonDocument::fromJson(line, &parseError);
         if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
             send(client, {
-                {QStringLiteral("status"), QStringLiteral("error")},
-                {QStringLiteral("message"), QStringLiteral("Invalid JSON request")},
-            });
+                             {QStringLiteral("status"), QStringLiteral("error")},
+                             {QStringLiteral("message"), QStringLiteral("Invalid JSON request")},
+                         });
             continue;
         }
 
-        send(client, m_router.dispatch(document.object()));
+        QPointer<QLocalSocket> guard(client);
+        m_router.dispatch(document.object(), [this, guard](QJsonObject response) {
+            if (guard)
+                send(guard, response);
+        });
     }
 }
 
-void IpcServer::removeClient(QObject *client)
-{
-    auto *socket = qobject_cast<QLocalSocket *>(client);
+void IpcServer::removeClient(QLocalSocket *client) {
+    auto *socket = client;
     if (!socket) {
         return;
     }
@@ -106,15 +105,13 @@ void IpcServer::removeClient(QObject *client)
     socket->deleteLater();
 }
 
-void IpcServer::broadcastEvent(const QJsonObject &event)
-{
+void IpcServer::broadcastEvent(const QJsonObject &event) {
     for (auto *client : m_buffers.keys()) {
         send(client, event);
     }
 }
 
-QString IpcServer::defaultServerName()
-{
+QString IpcServer::defaultServerName() {
     const auto env = QProcessEnvironment::systemEnvironment();
     const auto explicitSocket = env.value(QStringLiteral("NEKOTUNE_SOCKET"));
     if (!explicitSocket.isEmpty()) {
@@ -124,8 +121,7 @@ QString IpcServer::defaultServerName()
     return QStringLiteral("nekotune");
 }
 
-void IpcServer::send(QLocalSocket *client, const QJsonObject &payload)
-{
+void IpcServer::send(QLocalSocket *client, const QJsonObject &payload) {
     if (!client || client->state() != QLocalSocket::ConnectedState) {
         return;
     }

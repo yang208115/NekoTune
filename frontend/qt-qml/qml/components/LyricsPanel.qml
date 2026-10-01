@@ -4,6 +4,7 @@ import QtQuick.Layouts
 
 ColumnLayout {
     id: root
+    property var controller: null
     property var song: ({})
     property var lyrics: ({})
     property real position: 0
@@ -49,7 +50,7 @@ ColumnLayout {
             implicitWidth: 64
             subtle: true
             enabled: root.connected && !root.busy && !root.current.offline
-            onClicked: ipcClient.refreshLyrics(String(root.song.song_hash || ""))
+            onClicked: root.controller.refreshLyrics(String(root.song.song_hash || ""))
         }
     }
 
@@ -184,7 +185,9 @@ ColumnLayout {
                 ComboBox {
                     id: sourceBox
                     objectName: "lyricsSearchSource"
-                    model: ["LRCLIB", i18n.text("lyrics_kugou", i18n.language)]
+                    model: root.controller ? root.controller.sources : []
+                    textRole: "name"
+                    valueRole: "id"
                     Layout.preferredWidth: 120
                     palette.button: "#241e31"
                     palette.buttonText: "#f6f3fa"
@@ -196,7 +199,7 @@ ColumnLayout {
                     text: i18n.text("lyrics_offline_mode", i18n.language)
                     checked: Boolean(root.current.offline)
                     enabled: root.connected
-                    onClicked: ipcClient.setLyricsOffline(checked)
+                    onClicked: root.controller.setLyricsOffline(checked)
                     contentItem: Text {
                         text: parent.text
                         font.pixelSize: 12
@@ -210,8 +213,8 @@ ColumnLayout {
                     text: i18n.text("lyrics_search", i18n.language)
                     implicitWidth: 90
                     enabled: root.connected && titleField.text.trim().length > 0 && !root.current.offline
-                    onClicked: ipcClient.searchLyrics(searchPopup.trackId, titleField.text, artistField.text,
-                                                      albumField.text, sourceBox.currentIndex === 1 ? "kugou" : "lrclib")
+                    onClicked: root.controller.searchLyrics(searchPopup.trackId, titleField.text, artistField.text,
+                                                      albumField.text, String(sourceBox.currentValue || "lrclib"))
                 }
             }
 
@@ -261,7 +264,7 @@ ColumnLayout {
                     HoverHandler { id: candHover; cursorShape: Qt.PointingHandCursor }
                     TapHandler {
                         onTapped: {
-                            ipcClient.selectLyrics(searchPopup.trackId, String(root.current.revision), index)
+                            root.controller.selectLyrics(searchPopup.trackId, String(root.current.revision), index)
                             if (!candDelegate.modelData.song_result) searchPopup.close()
                         }
                     }

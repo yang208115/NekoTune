@@ -1,413 +1,118 @@
 #include "ipc_client.h"
-
-#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonParseError>
-#include <QProcessEnvironment>
 #include <QUrl>
-
-IpcClient::IpcClient(QObject *parent) : QObject(parent)
-{
-    m_status.insert(QStringLiteral("state"), QStringLiteral("stopped"));
-    m_status.insert(QStringLiteral("position"), 0);
-    m_status.insert(QStringLiteral("duration"), 0);
-    m_status.insert(QStringLiteral("volume"), 0.8);
-    m_status.insert(QStringLiteral("queue"), QVariantList{});
-
+IpcClient::IpcClient(QObject *parent) : QObject(parent) {
     m_reconnectTimer.setInterval(1000);
     connect(&m_reconnectTimer, &QTimer::timeout, this, &IpcClient::connectBackend);
-    connect(&m_socket, &QLocalSocket::connected, this, [this]() {
+    connect(&m_socket, &QLocalSocket::connected, this, [this] {
         m_reconnectTimer.stop();
         setError({});
         emit connectedChanged();
-        refreshStatus();
     });
-    connect(&m_socket, &QLocalSocket::disconnected, this, [this]() {
+    connect(&m_socket, &QLocalSocket::disconnected, this, [this] {
         m_buffer.clear();
-        for (const auto &method : m_pendingRequests)
-            emit requestFailed(method, QStringLiteral("Backend disconnected"));
-        m_pendingRequests.clear();
-        setError(QStringLiteral("Backend disconnected"));
+        failPending();
+        setError("Backend disconnected");
         emit connectedChanged();
-        if (!m_reconnectTimer.isActive()) {
+        m_reconnectTimer.start();
+    });
+    connect(&m_socket, &QLocalSocket::readyRead, this, &IpcClient::readMessages);
+    connect(&m_socket, &QLocalSocket::errorOccurred, this, [this] {
+        if (!connected()) {
+            setError("Waiting for NekoTune backend");
             m_reconnectTimer.start();
         }
     });
-    connect(&m_socket, &QLocalSocket::readyRead, this, &IpcClient::readMessages);
-    connect(&m_socket, &QLocalSocket::errorOccurred, this, &IpcClient::handleSocketError);
-
-    connectBackend();
+    QTimer::singleShot(0, this, &IpcClient::connectBackend);
 }
-
-bool IpcClient::connected() const
-{
-    return m_socket.state() == QLocalSocket::ConnectedState;
-}
-
-QVariantMap IpcClient::status() const
-{
-    return m_status;
-}
-
-QString IpcClient::error() const
-{
-    return m_error;
-}
-
-void IpcClient::connectBackend()
-{
-    if (connected() || m_socket.state() == QLocalSocket::ConnectingState) {
-        return;
-    }
-
+IpcClient::~IpcClient() {
+    m_reconnectTimer.stop();
+    disconnect(&m_socket, nullptr, this, nullptr);
     m_socket.abort();
-    m_socket.connectToServer(defaultServerName());
+    m_pending.clear();
 }
-
-void IpcClient::playPath(const QString &path)
-{
-    sendRequest(QStringLiteral("player.play"), {{QStringLiteral("path"), normalizePath(path)}});
-}
-
-void IpcClient::addPath(const QString &path)
-{
-    sendRequest(QStringLiteral("queue.add"), {{QStringLiteral("path"), normalizePath(path)}});
-}
-
-void IpcClient::playQueueItem(int queueId)
-{
-    sendRequest(QStringLiteral("queue.play"), {{QStringLiteral("id"), queueId}});
-}
-
-void IpcClient::removeQueueItem(int queueId)
-{
-    sendRequest(QStringLiteral("queue.remove"), {{QStringLiteral("id"), queueId}});
-}
-
-void IpcClient::play()
-{
-    sendRequest(QStringLiteral("player.play"));
-}
-
-void IpcClient::togglePlayPause()
-{
-    sendRequest(QStringLiteral("player.toggle_play_pause"));
-}
-
-void IpcClient::pause()
-{
-    sendRequest(QStringLiteral("player.pause"));
-}
-
-void IpcClient::stop()
-{
-    sendRequest(QStringLiteral("player.stop"));
-}
-
-void IpcClient::next()
-{
-    sendRequest(QStringLiteral("player.next"));
-}
-
-void IpcClient::previous()
-{
-    sendRequest(QStringLiteral("player.previous"));
-}
-
-void IpcClient::managePlaylist(const QString &action, const QVariantMap &params)
-{
-    auto values = QJsonObject::fromVariantMap(params);
-    if (values.contains(QStringLiteral("path")))
-        values.insert(QStringLiteral("path"), normalizePath(values.value(QStringLiteral("path")).toString()));
-    sendRequest(QStringLiteral("playlist.") + action, values);
-}
-
-void IpcClient::manageTag(const QString &action, const QVariantMap &params)
-{
-    sendRequest(QStringLiteral("tag.") + action, QJsonObject::fromVariantMap(params));
-}
-
-void IpcClient::refreshLibrary()
-{
-    sendRequest(QStringLiteral("library.list"));
-}
-
-void IpcClient::importLibraryPath(const QString &path)
-{
-    sendRequest(QStringLiteral("library.import"), {{QStringLiteral("path"), normalizePath(path)}});
-}
-
-void IpcClient::kugouSendCode(const QString &mobile)
-{
-    sendRequest(QStringLiteral("kugou.send_code"), {{QStringLiteral("mobile"), mobile}});
-}
-
-void IpcClient::kugouSaveKey(const QString &key)
-{
-    sendRequest(QStringLiteral("kugou.save_key"), {{QStringLiteral("key"), key}});
-}
-
-void IpcClient::kugouClearKey()
-{
-    sendRequest(QStringLiteral("kugou.clear_key"));
-}
-
-void IpcClient::kugouLogin(const QString &mobile, const QString &code)
-{
-    sendRequest(QStringLiteral("kugou.login"), {{QStringLiteral("mobile"), mobile},
-                                               {QStringLiteral("code"), code}});
-}
-
-void IpcClient::kugouSearch(const QString &keywords, int page)
-{
-    sendRequest(QStringLiteral("kugou.search"), {{QStringLiteral("keywords"), keywords},
-                                                {QStringLiteral("page"), page}});
-}
-
-void IpcClient::kugouDownload(const QString &hash)
-{
-    sendRequest(QStringLiteral("kugou.download"), {{QStringLiteral("hash"), hash}});
-}
-
-void IpcClient::kugouCancel()
-{
-    sendRequest(QStringLiteral("kugou.cancel"));
-}
-
-void IpcClient::playLibrary(const QVariantList &tagIds, int songId)
-{
-    QJsonArray ids = QJsonArray::fromVariantList(tagIds);
-    QJsonObject params{{QStringLiteral("tag_ids"), ids}};
-    if (songId > 0) params.insert(QStringLiteral("song_id"), songId);
-    sendRequest(QStringLiteral("library.play"), params);
-}
-
-void IpcClient::deleteLibrarySongs(const QVariantList &songIds)
-{
-    sendRequest(QStringLiteral("library.delete"),
-                {{QStringLiteral("song_ids"), QJsonArray::fromVariantList(songIds)}});
-}
-
-void IpcClient::clearQueue()
-{
-    sendRequest(QStringLiteral("queue.clear"));
-}
-
-void IpcClient::seek(double positionMs)
-{
-    sendRequest(QStringLiteral("player.seek"), {{QStringLiteral("position"), positionMs}});
-}
-
-void IpcClient::setVolume(double volume)
-{
-    sendRequest(QStringLiteral("player.set_volume"), {{QStringLiteral("volume"), volume}});
-}
-
-void IpcClient::updateSongMetadata(int songId, const QString &customTitle, const QString &artist,
-                                   const QString &lyrics, const QVariantList &tags)
-{
-    sendRequest(QStringLiteral("song.update_metadata"), {
-                                                            {QStringLiteral("song_id"), songId},
-                                                            {QStringLiteral("custom_title"), customTitle},
-                                                            {QStringLiteral("artist"), artist},
-                                                            {QStringLiteral("lyrics"), lyrics},
-                                                            {QStringLiteral("tags"), QJsonArray::fromVariantList(tags)},
-                                                        });
-}
-
-void IpcClient::refreshLyrics(const QString &trackId)
-{
-    sendRequest(QStringLiteral("lyrics.refresh"), {{QStringLiteral("track_id"), trackId}});
-}
-
-void IpcClient::searchLyrics(const QString &trackId, const QString &title, const QString &artist, const QString &album,
-                             const QString &source)
-{
-    sendRequest(QStringLiteral("lyrics.search"), {{QStringLiteral("track_id"), trackId},
-                                                  {QStringLiteral("title"), title},
-                                                  {QStringLiteral("artist"), artist},
-                                                  {QStringLiteral("album"), album},
-                                                  {QStringLiteral("source"), source}});
-}
-
-void IpcClient::selectLyrics(const QString &trackId, const QString &revision, int index)
-{
-    sendRequest(QStringLiteral("lyrics.select"), {{QStringLiteral("track_id"), trackId},
-                                                  {QStringLiteral("revision"), revision},
-                                                  {QStringLiteral("index"), index}});
-}
-
-void IpcClient::setLyricsOffline(bool offline)
-{
-    sendRequest(QStringLiteral("lyrics.set_offline"), {{QStringLiteral("offline"), offline}});
-}
-
-void IpcClient::refreshStatus()
-{
-    sendRequest(QStringLiteral("player.status"));
-}
-
-void IpcClient::readMessages()
-{
-    m_buffer.append(m_socket.readAll());
-
-    qsizetype newline = -1;
-    while ((newline = m_buffer.indexOf('\n')) >= 0) {
-        const auto line = m_buffer.left(newline).trimmed();
-        m_buffer.remove(0, newline + 1);
-        if (line.isEmpty()) {
-            continue;
-        }
-
-        QJsonParseError error;
-        const auto document = QJsonDocument::fromJson(line, &error);
-        if (error.error != QJsonParseError::NoError || !document.isObject()) {
-            setError(QStringLiteral("Backend returned invalid JSON"));
-            continue;
-        }
-        handlePayload(document.object());
-    }
-}
-
-void IpcClient::handleSocketError()
-{
-    if (connected()) {
+void IpcClient::connectBackend() {
+    if (connected() || m_socket.state() == QLocalSocket::ConnectingState)
         return;
-    }
-
-    setError(QStringLiteral("Waiting for NekoTune backend"));
-    if (!m_reconnectTimer.isActive()) {
-        m_reconnectTimer.start();
-    }
+    m_socket.abort();
+    m_socket.connectToServer(qEnvironmentVariable("NEKOTUNE_SOCKET", QStringLiteral("nekotune")));
 }
-
-QString IpcClient::defaultServerName()
-{
-    const auto env = QProcessEnvironment::systemEnvironment();
-    const auto explicitSocket = env.value(QStringLiteral("NEKOTUNE_SOCKET"));
-    if (!explicitSocket.isEmpty()) {
-        return explicitSocket;
-    }
-
-    return QStringLiteral("nekotune");
+QString IpcClient::normalizePath(const QString &path) {
+    QUrl url(path);
+    return url.isLocalFile() ? url.toLocalFile() : path;
 }
-
-QString IpcClient::normalizePath(const QString &path)
-{
-    const QUrl url(path);
-    if (url.isLocalFile()) {
-        return url.toLocalFile();
-    }
-
-    return path;
-}
-
-void IpcClient::sendRequest(const QString &method, const QJsonObject &params)
-{
+void IpcClient::request(const QString &method, const QJsonObject &params, Completion completion) {
     if (!connected()) {
         connectBackend();
-        const auto message = QStringLiteral("Backend is not connected");
+        const QString message = "Backend is not connected";
         setError(message);
+        if (completion)
+            completion({}, message);
         emit requestFailed(method, message);
         return;
     }
-
-    const QJsonObject payload{
-        {QStringLiteral("id"), m_nextId++},
-        {QStringLiteral("method"), method},
-        {QStringLiteral("params"), params},
-    };
-    m_pendingRequests.insert(m_nextId - 1, method);
-    m_socket.write(QJsonDocument(payload).toJson(QJsonDocument::Compact));
-    m_socket.write("\n");
-    m_socket.flush();
+    auto id = m_nextId++;
+    m_pending.insert(id, {method, std::move(completion)});
+    m_socket.write(QJsonDocument(QJsonObject{{"id", id}, {"method", method}, {"params", params}})
+                       .toJson(QJsonDocument::Compact) +
+                   "\n");
 }
-
-void IpcClient::handlePayload(const QJsonObject &payload)
-{
-    const auto eventName = payload.value(QStringLiteral("event")).toString();
-    if (!eventName.isEmpty()) {
-        if (eventName == QStringLiteral("server.connected")) {
-            mergeStatus(payload.value(QStringLiteral("data")).toObject());
-            refreshLibrary();
-        } else if (eventName == QStringLiteral("player.state_changed")) {
-            m_status.insert(QStringLiteral("state"), payload.value(QStringLiteral("state")).toString());
-            emit statusChanged();
-        } else if (eventName == QStringLiteral("player.position_changed")) {
-            m_status.insert(QStringLiteral("position"), payload.value(QStringLiteral("position")).toDouble());
-            m_status.insert(QStringLiteral("duration"), payload.value(QStringLiteral("duration")).toDouble());
-            emit statusChanged();
-        } else if (eventName == QStringLiteral("player.duration_changed")) {
-            m_status.insert(QStringLiteral("duration"), payload.value(QStringLiteral("duration")).toDouble());
-            emit statusChanged();
-        } else if (eventName == QStringLiteral("player.volume_changed")) {
-            m_status.insert(QStringLiteral("volume"), payload.value(QStringLiteral("volume")).toDouble());
-            emit statusChanged();
-        } else if (eventName == QStringLiteral("player.track_changed")) {
-            m_status.insert(QStringLiteral("song"), payload.value(QStringLiteral("song")).toObject().toVariantMap());
-            emit statusChanged();
-        } else if (eventName == QStringLiteral("lyrics.changed")) {
-            m_status.insert(QStringLiteral("lyrics"),
-                            payload.value(QStringLiteral("lyrics")).toObject().toVariantMap());
-            emit statusChanged();
-        } else if (eventName == QStringLiteral("queue.changed")) {
-            m_status.insert(QStringLiteral("queue"), payload.value(QStringLiteral("queue")).toArray().toVariantList());
-            emit statusChanged();
-        } else if (eventName == QStringLiteral("playlist.changed")) {
-            m_status.insert(QStringLiteral("playlists"), payload.value(QStringLiteral("playlists")).toArray().toVariantList());
-            emit statusChanged();
-        } else if (eventName == QStringLiteral("library.changed")) {
-            refreshLibrary();
-        } else if (eventName.startsWith(QStringLiteral("kugou."))) {
-            emit kugouEvent(payload.toVariantMap());
-            if (eventName != QStringLiteral("kugou.download_progress")
-                && eventName != QStringLiteral("kugou.download_stage"))
-                sendRequest(QStringLiteral("kugou.status"));
-        } else if (eventName == QStringLiteral("player.error")) {
-            setError(payload.value(QStringLiteral("message")).toString());
+void IpcClient::failPending() {
+    auto pending = std::move(m_pending);
+    m_pending.clear();
+    for (const auto &request : pending) {
+        if (request.completion)
+            request.completion({}, "Backend disconnected");
+        emit requestFailed(request.method, "Backend disconnected");
+    }
+}
+void IpcClient::readMessages() {
+    m_buffer.append(m_socket.readAll());
+    if (m_buffer.size() > 64 * 1024 * 1024) {
+        setError("Backend response too large");
+        m_socket.abort();
+        return;
+    }
+    while (m_buffer.contains('\n')) {
+        auto end = m_buffer.indexOf('\n');
+        auto line = m_buffer.left(end);
+        m_buffer.remove(0, end + 1);
+        QJsonParseError parse;
+        auto json = QJsonDocument::fromJson(line, &parse);
+        if (parse.error != QJsonParseError::NoError || !json.isObject()) {
+            setError("Backend returned invalid JSON");
+            continue;
         }
-        return;
+        auto payload = json.object();
+        if (payload.contains("event")) {
+            if (payload.value("event") == "player.error")
+                setError(payload.value("message").toString());
+            emit eventReceived(payload);
+            continue;
+        }
+        auto id = payload.value("id").toInteger(-1);
+        if (!m_pending.contains(id))
+            continue;
+        auto pending = m_pending.take(id);
+        auto message = payload.value("status") == "error" ? payload.value("message").toString() : QString();
+        auto data = payload.value("data").toObject();
+        if (!message.isEmpty()) {
+            setError(message);
+            if (pending.completion)
+                pending.completion({}, message);
+            emit requestFailed(pending.method, message);
+            continue;
+        }
+        if (pending.completion)
+            pending.completion(data, {});
+        emit responseReceived(pending.method, data);
+        emit requestSucceeded(pending.method);
     }
-
-    const auto id = payload.value(QStringLiteral("id"));
-    const auto method = id.isDouble() ? m_pendingRequests.take(id.toInt()) : QString();
-
-    if (payload.value(QStringLiteral("status")).toString() == QStringLiteral("error")) {
-        const auto message = payload.value(QStringLiteral("message")).toString();
-        setError(message);
-        emit requestFailed(method, message);
-        return;
-    }
-
-    setError({});
-
-    const auto data = payload.value(QStringLiteral("data")).toObject();
-    if (!data.isEmpty()) {
-        mergeStatus(data);
-    }
-    if (method == QStringLiteral("song.update_metadata"))
-        emit songMetadataSaved(data.value(QStringLiteral("song_id")).toInt());
-    if (method == QStringLiteral("library.play"))
-        emit libraryPlaybackSkipped(data.value(QStringLiteral("skipped_song_ids")).toArray().size());
-    emit requestSucceeded(method);
 }
-
-void IpcClient::mergeStatus(const QJsonObject &data)
-{
-    const auto map = data.toVariantMap();
-    for (auto it = map.cbegin(); it != map.cend(); ++it) {
-        m_status.insert(it.key(), it.value());
-    }
-
-    emit statusChanged();
-}
-
-void IpcClient::setError(const QString &message)
-{
-    if (m_error == message) {
+void IpcClient::setError(const QString &value) {
+    if (m_error == value)
         return;
-    }
-
-    m_error = message;
+    m_error = value;
     emit errorChanged();
 }

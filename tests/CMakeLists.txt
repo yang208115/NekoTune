@@ -32,8 +32,8 @@ add_test(NAME nekotune_kugou_music_test COMMAND nekotune_kugou_music_test)
 
 find_package(Qt6 6.6 REQUIRED COMPONENTS QuickTest)
 
-add_executable(nekotune_slider_quick_test slider_quick_test.cpp)
-target_link_libraries(nekotune_slider_quick_test PRIVATE Qt6::QuickTest Qt6::QuickControls2)
+add_executable(nekotune_slider_quick_test slider_quick_test.cpp ../frontend/qt-qml/resources.qrc)
+target_link_libraries(nekotune_slider_quick_test PRIVATE nekotune_frontend Qt6::QuickTest Qt6::QuickControls2)
 target_compile_definitions(nekotune_slider_quick_test PRIVATE
     QUICK_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/qml"
 )
@@ -41,3 +41,11 @@ add_test(NAME nekotune_slider_quick_test COMMAND nekotune_slider_quick_test)
 set_tests_properties(nekotune_slider_quick_test PROPERTIES
     ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Fusion"
 )
+
+add_executable(nekotune_refactor_test refactor_test.cpp ../frontend/qt-qml/resources.qrc)
+target_link_libraries(nekotune_refactor_test PRIVATE nekotune_core nekotune_frontend Qt6::Test Qt6::Quick Qt6::QuickControls2)
+add_test(NAME nekotune_refactor_test COMMAND nekotune_refactor_test)
+set_tests_properties(nekotune_refactor_test PROPERTIES
+ ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Fusion")
+add_test(NAME nekotune_dependency_boundaries
+ COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/dependency_boundaries.cmake)

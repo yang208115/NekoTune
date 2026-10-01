@@ -29,15 +29,16 @@ Item {
         SignalSpy { id: deleteSpy; target: tests.panel; signalName: "deleteRequested" }
 
         function init() {
-            panel = createTemporaryObject(panelComponent, scene, {
-                library: {
+            testFixtures.seedLibrary({
                     tags: [{id: 1, name: "Rock"}, {id: 2, name: "Live"}],
                     songs: [
                         {song_id: 1, title: "Both", available: true, tags: [{id: 1, name: "Rock"}, {id: 2, name: "Live"}]},
                         {song_id: 2, title: "Rock only", available: true, tags: [{id: 1, name: "Rock"}]},
                         {song_id: 3, title: "Missing", available: false, tags: [{id: 1, name: "Rock"}, {id: 2, name: "Live"}]}
                     ]
-                },
+            })
+            panel = createTemporaryObject(panelComponent, scene, {
+                controller: testLibrary,
                 playlists: [{id: 8, name: "Favorites", items: []}]
             })
             verify(panel !== null)
@@ -50,7 +51,7 @@ Item {
 
         function test_intersectionAndPlaybackIdentity() {
             compare(panel.filteredSongs.length, 3)
-            panel.selectedTagIds = [1, 2]
+            testLibrary.selectedTagIds = [1, 2]
             compare(panel.filteredSongs.length, 2)
             compare(panel.filteredSongs[0].song_id, 1)
             compare(panel.playableCount, 1)
@@ -65,7 +66,7 @@ Item {
         }
 
         function test_selectFilteredAndDeleteConfirmation() {
-            panel.selectedTagIds = [1, 2]
+            testLibrary.selectedTagIds = [1, 2]
             compare(panel.filteredSongs.length, 2)
             waitForRendering(panel)
             mouseClick(findChild(panel, "librarySelectAllButton"))

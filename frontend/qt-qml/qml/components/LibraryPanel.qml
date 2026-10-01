@@ -4,11 +4,11 @@ import QtQuick.Layouts
 
 Item {
     id: root
-    property var library: ({songs: [], tags: []})
-    property var selectedTagIds: []
+    required property var controller
+    readonly property var selectedTagIds: controller.selectedTagIds
     property var playlists: []
     property var addingSong: ({})
-    property var selectedSongIds: []
+    readonly property var selectedSongIds: controller.selectedSongIds
     property var deletingSongIds: []
     property bool deletePending: false
     property string deleteError: ""
@@ -20,34 +20,17 @@ Item {
     signal playlistRequested(string action, var params)
     signal deleteRequested(var songIds)
 
-    readonly property var filteredSongs: {
-        const songs = root.library.songs || []
-        return songs.filter(song => {
-            const assigned = (song.tags || []).map(tag => Number(tag.id))
-            return root.selectedTagIds.every(id => assigned.indexOf(Number(id)) !== -1)
-        })
-    }
+    readonly property var filteredSongs: controller.filteredSongs.items
     readonly property int playableCount: filteredSongs.filter(song => Boolean(song.available)).length
     readonly property bool allFilteredSelected: filteredSongs.length > 0
         && filteredSongs.every(song => selectedSongIds.indexOf(Number(song.song_id)) !== -1)
 
-    onSelectedTagIdsChanged: selectedSongIds = []
-    onLibraryChanged: {
-        const validIds = (library.songs || []).map(song => Number(song.song_id))
-        selectedSongIds = selectedSongIds.filter(id => validIds.indexOf(id) !== -1)
-    }
-
     function toggleSelection(songId) {
-        const id = Number(songId)
-        const next = selectedSongIds.slice()
-        const index = next.indexOf(id)
-        if (index < 0) next.push(id)
-        else next.splice(index, 1)
-        selectedSongIds = next
+        controller.toggleSelection(songId)
     }
 
     function toggleSelectAll() {
-        selectedSongIds = allFilteredSelected ? [] : filteredSongs.map(song => Number(song.song_id))
+        controller.toggleSelectAll()
     }
 
     function confirmDelete() {
@@ -60,7 +43,7 @@ Item {
 
     function deleteSucceeded() {
         deletePending = false
-        selectedSongIds = []
+        controller.clearSelection()
         deletingSongIds = []
         deletePopup.close()
     }
@@ -143,7 +126,7 @@ Item {
                 text: root.selectedTagIds.length === 0
                     ? i18n.text("all_songs", i18n.language)
                     : i18n.text("selected_tags", i18n.language) + ": "
-                        + (root.library.tags || []).filter(tag => root.selectedTagIds.indexOf(Number(tag.id)) !== -1)
+                        + root.controller.tags.items.filter(tag => root.selectedTagIds.indexOf(Number(tag.id)) !== -1)
                             .map(tag => tag.name).join(" + ")
                 color: "#D7CFE2"
                 font.pixelSize: 13
@@ -171,7 +154,7 @@ Item {
             Layout.fillHeight: true
             clip: true
             spacing: 4
-            model: root.filteredSongs
+            model: root.controller.filteredSongs
             ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
             delegate: Rectangle {

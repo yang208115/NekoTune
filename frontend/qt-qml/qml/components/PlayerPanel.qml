@@ -5,6 +5,7 @@ import QtQuick.Layouts
 Item {
     id: root
 
+    property var lyricsController: null
     property var song: ({})
     property var lyrics: ({})
     property var queue: []
@@ -134,6 +135,7 @@ Item {
             spacing: 8
 
             LyricsPanel {
+                controller: root.lyricsController
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 song: root.song

@@ -11,7 +11,8 @@ Item {
     property bool saving: false
     property string message: ""
     property bool failed: false
-    readonly property var account: client.status.kugou || ({})
+    property var account: ({})
+    property bool connected: true
 
     function t(key) { return translator.text(key, translator.language) }
 
@@ -94,7 +95,7 @@ Item {
                         echoMode: TextInput.Password
                         inputMethodHints: Qt.ImhSensitiveData | Qt.ImhNoPredictiveText
                         maximumLength: 4096
-                        enabled: root.client.connected && !root.saving && !root.account.busy
+                        enabled: root.connected && !root.saving && !root.account.busy
                         onAccepted: saveButton.clicked()
                     }
 
@@ -102,7 +103,7 @@ Item {
                         id: saveButton
                         objectName: "kugouSaveKeyButton"
                         text: root.t("kugou_key_save")
-                        enabled: keyField.text.trim().length > 0 && root.client.connected
+                        enabled: keyField.text.trim().length > 0 && root.connected
                                  && !root.saving && !root.account.busy
                         onClicked: {
                             const key = keyField.text.trim()
@@ -118,7 +119,7 @@ Item {
                     objectName: "kugouClearKeyButton"
                     visible: Boolean(root.account.key_saved)
                     text: root.t("kugou_key_clear")
-                    enabled: root.client.connected && !root.saving && !root.account.busy
+                    enabled: root.connected && !root.saving && !root.account.busy
                     onClicked: {
                         keyField.text = ""
                         root.saving = true

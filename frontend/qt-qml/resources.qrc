@@ -19,5 +19,16 @@
         <file>qml/components/SettingsPanel.qml</file>
         <file>qml/components/TextButton.qml</file>
         <file>qml/components/Theme.qml</file>
+        <file>qml/pages/KugouPage.qml</file>
+        <file>qml/pages/LibraryPage.qml</file>
+        <file>qml/pages/LyricsDebugPage.qml</file>
+        <file>qml/pages/LyricsPage.qml</file>
+        <file>qml/pages/QueuePage.qml</file>
+        <file>qml/pages/SettingsPage.qml</file>
+        <file>qml/shell/BottomPlayer.qml</file>
+        <file>qml/shell/PageRegistry.js</file>
+        <file>qml/shell/Sidebar.qml</file>
+        <file>qml/dialogs/MetadataEditor.qml</file>
+        <file>qml/dialogs/TagEditor.qml</file>
     </qresource>
 </RCC>

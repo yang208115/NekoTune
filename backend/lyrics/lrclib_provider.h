@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lyrics/lyrics_provider.h"
+#include "domain/lyrics_provider.h"
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QPointer>

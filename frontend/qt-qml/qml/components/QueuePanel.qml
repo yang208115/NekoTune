@@ -6,6 +6,7 @@ Item {
     id: root
 
     property var queue: []
+    property var queueModel: null
     property var playlists: []
     property var currentSong: ({})
     property real duration: 0
@@ -346,7 +347,7 @@ Item {
             Layout.fillHeight: true
             clip: true
             spacing: 2
-            model: root.visibleItems
+            model: !root.currentPlaylist && root.queueModel ? root.queueModel : root.visibleItems
             boundsBehavior: Flickable.StopAtBounds
 
             ScrollBar.vertical: ScrollBar {

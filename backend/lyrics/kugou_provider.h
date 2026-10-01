@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lyrics/lyrics_provider.h"
+#include "domain/lyrics_provider.h"
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QPointer>
@@ -12,15 +12,16 @@ namespace nekotune {
 class KugouProvider final : public LyricsProvider {
     Q_OBJECT
   public:
-    explicit KugouProvider(QObject *parent = nullptr, QNetworkAccessManager *manager = nullptr,
-                           const QUrl &baseUrl = QUrl(QStringLiteral("https://kugou-lyrics-api.lyuy.workers.dev")));
+    explicit KugouProvider(
+        QObject *parent = nullptr, QNetworkAccessManager *manager = nullptr,
+        const QUrl &baseUrl = QUrl(QStringLiteral("https://kugou-lyrics-api.lyuy.workers.dev")));
     ~KugouProvider() override;
     void request(const LyricsQuery &query, quint64 token, bool search) override;
-    void choose(const LyricsCandidate &candidate, quint64 token);
+    void choose(const LyricsCandidate &candidate, quint64 token) override;
+    LyricsSource descriptor() const override {
+        return {QStringLiteral("kugou"), QStringLiteral("酷狗音乐"), true, true};
+    }
     void cancel() override;
-
-  signals:
-    void resolved(quint64 token, const LyricsDocument &document);
 
   private:
     void get(const QString &path, const QUrlQuery &params, quint64 token,
@@ -29,6 +30,13 @@ class KugouProvider final : public LyricsProvider {
     QNetworkAccessManager *m_manager;
     QPointer<QNetworkReply> m_reply;
     QUrl m_baseUrl;
+    struct Resolution {
+        QString hash;
+        QString accessKey;
+        qint64 audioId = 0;
+    };
+    QHash<QString, Resolution> m_resolutions;
+    quint64 m_handle = 0;
 };
 
 } // namespace nekotune

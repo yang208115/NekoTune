@@ -1,24 +1,16 @@
-#include "core/player_engine.h"
-#include "ipc/ipc_server.h"
-
+#include "runtime/backend_runtime.h"
 #include <QCoreApplication>
 #include <QDebug>
-
-int main(int argc, char *argv[])
-{
+int main(int argc, char *argv[]) {
     QCoreApplication app(argc, argv);
-    QCoreApplication::setApplicationName(QStringLiteral("NekoTune Backend"));
-    QCoreApplication::setOrganizationName(QStringLiteral("NekoTune"));
-
-    nekotune::PlayerEngine player;
-    nekotune::IpcServer server(player);
-
-    if (!server.listen()) {
-        qCritical() << "Failed to listen on" << server.serverName()
-                    << server.errorString();
+    app.setApplicationName(QStringLiteral("NekoTune Backend"));
+    app.setOrganizationName(QStringLiteral("NekoTune"));
+    nekotune::BackendRuntime runtime;
+    if (!runtime.start()) {
+        qCritical() << runtime.errorString();
         return 1;
     }
-
-    qInfo() << "NekoTune backend listening on" << server.serverName();
+    QObject::connect(&app, &QCoreApplication::aboutToQuit, &runtime, &nekotune::BackendRuntime::stop);
+    qInfo() << "NekoTune backend listening on" << runtime.serverName();
     return app.exec();
 }

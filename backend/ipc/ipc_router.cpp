@@ -1,102 +1,60 @@
 #include "ipc/ipc_router.h"
-
+#include "ipc/serialization.h"
+#include <QPointer>
+#include <QTimer>
+#include <memory>
 namespace nekotune {
-
-IpcRouter::IpcRouter(PlayerEngine &player) : m_player(player) {}
-
-QJsonObject IpcRouter::dispatch(const QJsonObject &request) const
-{
-    const auto id = request.value(QStringLiteral("id"));
-    const auto method = request.value(QStringLiteral("method")).toString();
-    auto error = [&](const QString &message) {
-        QJsonObject result{{QStringLiteral("status"), QStringLiteral("error")}, {QStringLiteral("message"), message}};
-        if (!id.isUndefined()) {
-            result.insert(QStringLiteral("id"), id);
-        }
-        return result;
-    };
-
-    if (method.isEmpty()) {
-        return error(QStringLiteral("Request method is required"));
-    }
-
-    const auto params = request.value(QStringLiteral("params")).toObject();
-    QJsonObject result;
-    if (method == QStringLiteral("player.play")) {
-        result = m_player.play(params);
-    } else if (method == QStringLiteral("player.toggle_play_pause")) {
-        result = m_player.togglePlayPause();
-    } else if (method == QStringLiteral("player.pause")) {
-        result = m_player.pause();
-    } else if (method == QStringLiteral("player.stop")) {
-        result = m_player.stop();
-    } else if (method == QStringLiteral("player.next")) {
-        result = m_player.next();
-    } else if (method == QStringLiteral("player.previous")) {
-        result = m_player.previous();
-    } else if (method == QStringLiteral("player.seek")) {
-        if (!params.value(QStringLiteral("position")).isDouble())
-            return error(QStringLiteral("position must be a number"));
-        result = m_player.seek(static_cast<qint64>(params.value(QStringLiteral("position")).toDouble()));
-    } else if (method == QStringLiteral("player.set_volume")) {
-        if (!params.value(QStringLiteral("volume")).isDouble())
-            return error(QStringLiteral("volume must be a number"));
-        result = m_player.setVolume(params.value(QStringLiteral("volume")).toDouble());
-    } else if (method == QStringLiteral("player.status")) {
-        result = {{QStringLiteral("status"), QStringLiteral("ok")}, {QStringLiteral("data"), m_player.status()}};
-    } else if (method == QStringLiteral("queue.add")) {
-        const auto path = params.value(QStringLiteral("path"));
-        if (!path.isString() || path.toString().isEmpty())
-            return error(QStringLiteral("path is required"));
-        result = m_player.addToQueue(path.toString());
-    } else if (method == QStringLiteral("queue.play") || method == QStringLiteral("queue.remove")) {
-        const auto queueId = params.value(QStringLiteral("id"));
-        if (!queueId.isDouble())
-            return error(QStringLiteral("id must be a number"));
-        result = method == QStringLiteral("queue.play") ? m_player.playQueueItem(queueId.toInt())
-                                                        : m_player.removeFromQueue(queueId.toInt());
-    } else if (method.startsWith(QStringLiteral("playlist."))) {
-        result = m_player.managePlaylist(method.mid(9), params);
-    } else if (method == QStringLiteral("library.list")) {
-        result = m_player.listLibrary();
-    } else if (method == QStringLiteral("library.import")) {
-        const auto path = params.value(QStringLiteral("path"));
-        if (!path.isString() || path.toString().isEmpty()) return error(QStringLiteral("path is required"));
-        result = m_player.importLibrarySong(path.toString());
-    } else if (method.startsWith(QStringLiteral("kugou."))) {
-        result = m_player.kugouAction(method.mid(6), params);
-    } else if (method == QStringLiteral("library.delete")) {
-        result = m_player.deleteLibrarySongs(params);
-    } else if (method == QStringLiteral("library.play")) {
-        result = m_player.playLibrary(params);
-    } else if (method.startsWith(QStringLiteral("tag."))) {
-        result = m_player.manageTag(method.mid(4), params);
-    } else if (method == QStringLiteral("queue.clear")) {
-        result = m_player.clearQueue();
-    } else if (method == QStringLiteral("queue.status")) {
-        result = {{QStringLiteral("status"), QStringLiteral("ok")}, {QStringLiteral("data"), m_player.queueStatus()}};
-    } else if (method == QStringLiteral("song.metadata")) {
-        result = m_player.songMetadata(params);
-    } else if (method == QStringLiteral("song.update_metadata")) {
-        result = m_player.updateSongMetadata(params);
-    } else if (method == QStringLiteral("lyrics.set_offline")) {
-        if (!params.value(QStringLiteral("offline")).isBool())
-            return error(QStringLiteral("offline must be a boolean"));
-        result = m_player.setLyricsOffline(params.value(QStringLiteral("offline")).toBool());
-    } else if (method == QStringLiteral("lyrics.refresh")) {
-        result = m_player.refreshLyrics(params);
-    } else if (method == QStringLiteral("lyrics.search")) {
-        result = m_player.searchLyrics(params);
-    } else if (method == QStringLiteral("lyrics.select")) {
-        result = m_player.selectLyrics(params);
-    } else {
-        return error(QStringLiteral("Unknown method: %1").arg(method));
-    }
-
-    if (!id.isUndefined()) {
-        result.insert(QStringLiteral("id"), id);
-    }
-    return result;
+bool IpcRouter::registerMethod(const QString &method, Handler handler, bool serialized) {
+    if (method.isEmpty() || m_routes.contains(method))
+        return false;
+    m_routes.insert(method, {std::move(handler), serialized});
+    return true;
 }
-
+void IpcRouter::dispatch(const QJsonObject &request, Completion completion) {
+    auto id = request.value("id");
+    auto once = std::make_shared<bool>(false);
+    auto done = [completion = std::move(completion), id, once](QJsonObject result) {
+        if (*once)
+            return;
+        *once = true;
+        if (!id.isUndefined())
+            result.insert("id", id);
+        completion(result);
+    };
+    const auto method = request.value("method").toString();
+    if (m_stopping) {
+        done(error(failure(QStringLiteral("Backend is shutting down"), ErrorCode::Cancelled)));
+        return;
+    }
+    if (method.isEmpty()) {
+        done(error(failure(QStringLiteral("Request method is required"))));
+        return;
+    }
+    if (!m_routes.contains(method)) {
+        done(error(failure(QStringLiteral("Unknown method: %1").arg(method))));
+        return;
+    }
+    const auto params = request.value("params");
+    if (!params.isUndefined() && !params.isObject()) {
+        done(error(failure(QStringLiteral("params must be an object"))));
+        return;
+    }
+    auto route = m_routes.value(method);
+    if (!route.serialized) {
+        route.handler(params.toObject(), done);
+        return;
+    }
+    m_commands.submit(
+        [route, params = params.toObject(), done](CommandScheduler::Done next) {
+            route.handler(params, [done, next](QJsonObject result) {
+                done(result);
+                next();
+            });
+        },
+        [done] { done(error(failure(QStringLiteral("Backend is shutting down"), ErrorCode::Cancelled))); });
+}
+void IpcRouter::shutdown() {
+    m_stopping = true;
+    m_commands.shutdown();
+}
 } // namespace nekotune

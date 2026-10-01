@@ -31,6 +31,8 @@ Item {
             width: scene.width
             height: scene.height
             client: fakeClient
+            account: fakeClient.status.kugou
+            connected: fakeClient.connected
             translator: fakeTranslator
         }
     }

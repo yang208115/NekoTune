@@ -84,7 +84,7 @@ Item {
         anchors.bottomMargin: 20
         clip: true
         spacing: 16
-        cacheBuffer: height
+        cacheBuffer: Math.max(0, height)
         visible: root.lines && root.lines.length > 0
         model: root.lines
         currentIndex: -1

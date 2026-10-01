@@ -4,9 +4,9 @@ NekoTune 是一款本地优先的 Linux 音乐播放器，采用前后端解耦�
 
 ## 当前状态
 
-当前仓库已经包含第一版可运行骨架：
+当前仓库已包含以下功能与运行方式：
 
-- `nekotune`：统一桌面程序，在同一个进程内启动后端、IPC 服务和 Qt6/QML 前端
+- `nekotune`：统一桌面程序，在同一个进程内运行 Qt6/QML 前端，并在专用线程启动后端与 IPC 服务
 - `nekotune-backend`：可选的独立 C++20 后端进程，提供基于 Unix domain socket 的 JSON-RPC API
 - `nekotune-qt-qml`：可选的独立 Qt6/QML 桌面前端，只通过后端 API 交互
 - 通过 Qt Multimedia 支持基础本地文件播放
@@ -18,12 +18,15 @@ NekoTune 是一款本地优先的 Linux 音乐播放器，采用前后端解耦�
 - 播放时由后端按同目录 `.krc`、`.lrc`、自定义歌词、歌词缓存、LRCLIB 顺序加载，支持 KRC 词组高亮、手动候选选择和离线缓存
 - 手动搜索歌词可选 LRCLIB 或酷狗音乐；酷狗依次选择歌曲版本和歌词，优先下载并缓存 KRC，失败时回退 LRC
 
+文件检查与 SHA-256 计算由导入线程执行，歌词处理保留独立线程。曲库、队列、歌单、标签和播放状态由独立服务与前端控制器管理。
+
 后端 API 边界会保持稳定，方便后续接入 Qt/QML、Web、GTK、终端或移动端客户端。
 
 ## 文档
 
 - [产品需求](docs/PRD.md)
 - [API 文档](docs/API.md)
+- [架构与扩展开发](docs/architecture.md)
 - [UI 设计规范：深色二次元风格](docs/ui-design-guidelines.md)
 
 ## 构建
@@ -41,7 +44,7 @@ cmake --build build
 ./build/nekotune
 ```
 
-它会在同一个进程内创建播放器和 IPC 服务，再加载 QML 界面，因此不需要手动分别启动前端和后端。排查歌词时间轴时，可以直接传入诊断参数：
+它会在同一个进程的专用后端线程创建播放器和 IPC 服务，再在 GUI 线程加载 QML 界面，因此不需要手动分别启动前端和后端。排查歌词时间轴时，可以直接传入诊断参数：
 
 ```bash
 ./build/nekotune --lyrics-debug
