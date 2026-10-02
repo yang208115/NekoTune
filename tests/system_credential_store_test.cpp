@@ -1,7 +1,7 @@
 #ifdef NEKOTUNE_LEGACY_SECRET_SERVICE
 #include <libsecret/secret.h>
 #endif
-#include "infrastructure/credential_store.h"
+#include "infrastructure/credentials/credential_store.h"
 #include <QCryptographicHash>
 #include <QFileInfo>
 #include <QTemporaryDir>

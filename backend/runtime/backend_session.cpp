@@ -1,8 +1,8 @@
 #include "runtime/backend_session.h"
 #include "app_paths.h"
-#include "infrastructure/lyrics_storage.h"
-#include "lyrics/kugou_provider.h"
-#include "lyrics/lrclib_provider.h"
+#include "infrastructure/lyrics/lyrics_storage.h"
+#include "infrastructure/lyrics/kugou_provider.h"
+#include "infrastructure/lyrics/lrclib_provider.h"
 namespace nekotune {
 namespace {
 LyricsService *createLyrics() {
@@ -19,13 +19,17 @@ BackendSession::BackendSession()
     : m_music(m_database), m_songs(m_database), m_queueRepository(m_database),
       m_playlistRepository(m_database), m_tagRepository(m_database),
       m_library(m_songs, m_tagRepository, m_database), m_playlists(m_playlistRepository),
-      m_tags(m_tagRepository), m_queue(m_queueRepository, m_songs, m_database), m_player(m_audio, m_queue),
+      m_tags(m_tagRepository), m_queue(m_queueRepository, m_songs, m_database),
+      m_player(m_audio, m_queue, std::make_unique<ShuffleBagStrategy>(),
+               playbackModeFromString(AppPaths::setting("playback_mode").toString())
+                   .value_or(PlaybackMode::Sequential),
+               [](PlaybackMode mode) { return AppPaths::saveSetting("playback_mode", toString(mode)); }),
       m_lyrics(m_player, createLyrics()), m_covers(std::make_unique<LyricsStorage>()),
       m_kugouBackend(
           nullptr, nullptr, {}, {}, {}, {},
           [this](const QString &hash, const QString &title) { return m_music.reserveDownload(hash, title); }),
       m_collections(m_songs, m_queueRepository, m_playlistRepository, m_database, m_library, m_queue,
-                    m_player),
+                    m_player, &m_music),
       m_api{m_player,      m_queue,  m_library, m_playlists, m_tags,
             m_collections, m_lyrics, m_imports, m_kugou,     m_database.databasePath(),
             m_covers},
@@ -80,6 +84,10 @@ BackendSession::BackendSession()
     });
     connect(&m_player, &PlayerEngine::durationChanged, this, [this](qint64 duration) {
         m_server.broadcastEvent({{"event", "player.duration_changed"}, {"duration", duration}});
+    });
+    connect(&m_player, &PlayerEngine::playbackModeChanged, this, [this](PlaybackMode mode) {
+        m_server.broadcastEvent({{"event", "player.playback_mode_changed"},
+                                 {"playback_mode", toString(mode)}});
     });
     connect(&m_player, &PlayerEngine::volumeChanged, this, [this](double volume) {
         m_server.broadcastEvent({{"event", "player.volume_changed"}, {"volume", volume}});

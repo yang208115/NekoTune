@@ -1,8 +1,8 @@
 #pragma once
 #include "application/command_scheduler.h"
-#include "application/library_service.h"
-#include "infrastructure/import_executor.h"
-#include "infrastructure/music_directory.h"
+#include "application/library/library_service.h"
+#include "infrastructure/library/import_executor.h"
+#include "infrastructure/library/music_directory.h"
 #include <QObject>
 #include <QSet>
 

@@ -1,5 +1,5 @@
 #pragma once
-#include "application/library_service.h"
+#include "application/library/library_service.h"
 #include "application/transaction.h"
 #include "storage/database_session.h"
 #include "storage/playlist_repository.h"

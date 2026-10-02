@@ -1,6 +1,7 @@
 #pragma once
 #include <QObject>
 #include <QString>
+#include <QUrl>
 #include <QVector>
 
 namespace nekotune {
@@ -19,6 +20,7 @@ struct KugouSearchItem {
     QString artist;
     QString album;
     qint64 durationMs = 0;
+    QUrl coverUrl;
 };
 
 enum class KugouEventType {

@@ -11,14 +11,26 @@ Popup {
     focus: true
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
     function openAt(anchor, px, py) {
-        const point = anchor.mapToItem(parent, px === undefined ? 0 : px,
+        menuContent.forceLayout()
+        const atPointer = px !== undefined || py !== undefined
+        const gap = atPointer ? 0 : 6
+        const point = anchor.mapToItem(parent, px === undefined ? anchor.width : px,
                                        py === undefined ? anchor.height : py)
-        x = Math.max(8, Math.min(point.x, parent.width - width - 8))
-        y = Math.max(8, Math.min(point.y, parent.height - implicitHeight - 8))
+        const top = atPointer ? point.y : anchor.mapToItem(parent, 0, 0).y
+        const menuHeight = implicitHeight
+        let targetX = atPointer ? point.x : point.x - width
+        let targetY = point.y + gap
+        if (atPointer && targetX + width > parent.width - 8)
+            targetX = point.x - width
+        if (targetY + menuHeight > parent.height - 8)
+            targetY = top - gap - menuHeight
+        x = Math.max(8, Math.min(targetX, parent.width - width - 8))
+        y = Math.max(8, Math.min(targetY, parent.height - menuHeight - 8))
         open()
     }
     background: Rectangle { objectName: "shortcutBlocker"; color: "#211C2D"; radius: 12; border.color: "#332C41" }
     contentItem: Column {
+        id: menuContent
         spacing: 2
         Repeater {
             model: menu.actions

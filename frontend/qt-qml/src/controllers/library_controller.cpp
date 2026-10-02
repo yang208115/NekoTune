@@ -17,10 +17,14 @@ void LibraryController::refreshLibrary() {
         return;
     }
     m_loading = true;
+    emit loadStateChanged();
     send("library.list", {}, [this](const QJsonObject &data, const QString &error) {
         m_loading = false;
-        if (error.isEmpty())
+        if (error.isEmpty()) {
             apply(data.value("library").toObject());
+            m_loaded = true;
+        }
+        emit loadStateChanged();
         if (m_reload) {
             m_reload = false;
             refreshLibrary();
@@ -179,11 +183,26 @@ void LibraryController::playLibrary(const QVariantList &tagIds, int songId) {
             emit libraryPlaybackSkipped(data.value("skipped_song_ids").toArray().size());
     });
 }
-void LibraryController::deleteLibrarySongs(const QVariantList &ids) {
-    send("library.delete", {{"song_ids", QJsonArray::fromVariantList(ids)}},
-         [this](const auto &, const QString &error) {
-             if (error.isEmpty())
+void LibraryController::playSongs(const QVariantList &songIds, int startSongId) {
+    // Home owns its playback order; never inherit the library page's filters.
+    QJsonObject params{{"tag_ids", QJsonArray{}}, {"song_ids", QJsonArray::fromVariantList(songIds)}};
+    if (startSongId > 0)
+        params.insert("song_id", startSongId);
+    send("library.play", params, [this](const QJsonObject &data, const QString &error) {
+        if (error.isEmpty())
+            emit libraryPlaybackSkipped(data.value("skipped_song_ids").toArray().size());
+    });
+}
+void LibraryController::deleteLibrarySongs(const QVariantList &ids, bool cleanFiles) {
+    send("library.delete", {{"song_ids", QJsonArray::fromVariantList(ids)}, {"clean_files", cleanFiles}},
+         [this](const QJsonObject &data, const QString &error) {
+             if (error.isEmpty()) {
                  clearSelection();
+                 QStringList cleanupErrors;
+                 for (const auto &value : data.value("cleanup_errors").toArray())
+                     cleanupErrors.append(value.toString());
+                 emit libraryDeletionFinished(cleanupErrors);
+             }
          });
 }
 void LibraryController::loadMetadata(int id) {

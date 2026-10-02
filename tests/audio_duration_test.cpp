@@ -1,6 +1,6 @@
-#include "application/queue_service.h"
-#include "infrastructure/audio_duration.h"
-#include "ipc/serialization.h"
+#include "application/playback/queue_service.h"
+#include "infrastructure/library/audio_duration.h"
+#include "ipc/serialization/serialization.h"
 #include "runtime/library_scanner.h"
 #include "support/store_fixture.h"
 #include <QCryptographicHash>

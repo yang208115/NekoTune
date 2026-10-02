@@ -98,13 +98,15 @@ Item {
                         }
                     }
 
-                    Label {
+                    ArtistNames {
+                        objectName: "playerArtists"
                         Layout.fillWidth: true
-                        text: root.hasSong ? (root.song.artist || i18n.text("artist_author", i18n.language)) : i18n.text("choose_audio", i18n.language)
+                        Layout.minimumWidth: 0
+                        artist: root.hasSong ? String(root.song.artist || "") : ""
+                        fallbackText: i18n.text(root.hasSong ? "artist_author" : "choose_audio", i18n.language)
                         color: root.textSoftColor
                         font.pixelSize: 13
                         font.weight: Font.Normal
-                        elide: Text.ElideRight
                     }
 
                     Label {

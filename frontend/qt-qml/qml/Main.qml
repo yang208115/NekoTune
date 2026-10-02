@@ -20,7 +20,7 @@ ApplicationWindow {
     property var transport: ipcClient
     property var translator: i18n
     property bool debugEnabled: Boolean(lyricsDebugEnabled)
-    property string viewMode: "library"
+    property string viewMode: "home"
     property bool nowPlayingOpen: false
     property bool queueOpen: false
     property int currentPlaylist: 0
@@ -216,6 +216,8 @@ ApplicationWindow {
                     compact: true
                     connected: root.transport.connected
                     queueController: root.app.queue
+                    playbackController: root.app.playback
+                    playbackMode: root.app.playback.playbackMode
                     playlistController: root.app.playlists
                     queue: root.queue
                     queueModel: root.app.queue.model

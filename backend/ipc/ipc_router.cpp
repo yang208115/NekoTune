@@ -1,5 +1,5 @@
 #include "ipc/ipc_router.h"
-#include "ipc/serialization.h"
+#include "ipc/serialization/serialization.h"
 #include <QPointer>
 #include <QTimer>
 #include <memory>

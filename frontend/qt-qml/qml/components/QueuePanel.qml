@@ -9,6 +9,8 @@ Item {
     property var playlists: []
     property var playlistController: null
     property var queueController: null
+    property var playbackController: null
+    property string playbackMode: "sequential"
     property var currentSong: ({})
     property real duration: 0
     property var lyrics: ({})
@@ -52,10 +54,6 @@ Item {
         else removeRequested(Number(song.queue_id || song.id))
     }
     function playAll() { playlistRequested("play", {id: currentPlaylist, song_ids: visibleItems.map(item => Number(item.song_id))}) }
-    function locateCurrent() {
-        const index = visibleItems.findIndex(song => song.state === "current")
-        if (index >= 0) songList.positionViewAtIndex(index, ListView.Center)
-    }
     function requestSucceeded(method) {
         if (method !== pendingMethod) return
         pendingMethod = ""
@@ -92,6 +90,11 @@ Item {
     onSearchTextChanged: selectedId = 0
     onPlaylistsChanged: if (currentPlaylist && !playlists.some(list => Number(list.id) === currentPlaylist)) currentPlaylist = 0
     Connections { target: root.playlistController; function onRequestSucceeded(method) { root.requestSucceeded(method) } function onRequestFailed(method, message) { root.requestFailed(method, message) } }
+    Connections {
+        target: root.playbackController
+        function onRequestSucceeded(method) { if (method === "player.set_playback_mode") root.operationError = "" }
+        function onRequestFailed(method, message) { if (method === "player.set_playback_mode") root.operationError = message }
+    }
     Connections { target: root.queueController; function onRequestSucceeded(method) { root.requestSucceeded(method) } function onRequestFailed(method, message) { root.requestFailed(method, message) } }
 
     ColumnLayout {
@@ -108,8 +111,18 @@ Item {
             }
             TextButton { visible: Boolean(root.currentPlaylist); text: i18n.text("play_all", i18n.language); enabled: root.visibleItems.length > 0 && root.connected; onClicked: root.playAll() }
             TextButton { visible: !root.compact; text: i18n.text("import_music", i18n.language); subtle: true; enabled: root.connected; onClicked: root.addRequested(root.currentPlaylist) }
+            TextButton {
+                objectName: "clearQueueButton"
+                visible: !root.currentPlaylist
+                text: i18n.text("clear_queue", i18n.language)
+                subtle: true
+                subtleText: "#FF9BAE"
+                enabled: root.sourceItems.length > 0 && root.connected && !confirmation.busy
+                onClicked: confirmation.open()
+            }
             IconButton {
                 id: collectionMore
+                visible: Boolean(root.currentPlaylist)
                 kind: "more"
                 tooltipText: i18n.text("playlist_actions", i18n.language)
                 onClicked: collectionMenu.openAt(collectionMore)
@@ -119,7 +132,13 @@ Item {
         RowLayout {
             Layout.fillWidth: true
             InputField { id: search; objectName: "collectionSearchField"; Layout.fillWidth: true; placeholderText: i18n.text("local_search_hint", i18n.language); text: root.searchText; onTextEdited: root.searchText = text; Accessible.name: placeholderText }
-            IconButton { visible: !root.currentPlaylist; kind: "locate"; tooltipText: i18n.text("locate_current", i18n.language); enabled: root.queue.some(song => song.state === "current"); onClicked: { root.searchText = ""; root.locateCurrent() } }
+            PlaybackModeButton {
+                visible: !root.currentPlaylist
+                translator: i18n
+                playbackMode: root.playbackMode
+                enabled: root.connected
+                onModeRequested: mode => { if (root.playbackController) root.playbackController.setPlaybackMode(mode) }
+            }
         }
         Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: "#332C41" }
         ListView {
@@ -157,16 +176,12 @@ Item {
     }
     ActionMenu {
         id: collectionMenu
-        actions: root.currentPlaylist ? [
+        actions: [
             {key: "rename", label: i18n.text("rename_playlist", i18n.language), enabled: root.connected},
             {key: "delete", label: i18n.text("delete_playlist", i18n.language), destructive: true, enabled: root.connected}
-        ] : [
-            {key: "add", label: i18n.text("add_music", i18n.language), enabled: root.connected},
-            {key: "clear", label: i18n.text("clear_queue", i18n.language), destructive: true, enabled: root.sourceItems.length > 0 && root.connected}
         ]
         onChosen: action => {
             if (action === "rename") root.renamePlaylist()
-            else if (action === "add") root.addRequested(0)
             else confirmation.open()
         }
     }

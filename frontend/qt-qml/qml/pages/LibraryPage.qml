@@ -30,7 +30,7 @@ Item {
         onPlayRequested: (tags, song) => page.controllers.library.playLibrary(tags, song)
         onEditRequested: song => page.editRequested(song)
         onPlaylistRequested: (action, params) => page.controllers.playlists.managePlaylist(action, params)
-        onDeleteRequested: ids => page.controllers.library.deleteLibrarySongs(ids)
+        onDeleteRequested: (ids, cleanFiles) => page.controllers.library.deleteLibrarySongs(ids, cleanFiles)
         Connections {
             target: page.controllers.playlists
             function onRequestSucceeded(method) { if (method === "playlist.add") panel.playlistSucceeded() }
@@ -39,7 +39,7 @@ Item {
         Connections {
             target: page.controllers.library
             function onLibraryPlaybackSkipped(count) { panel.skippedCount = count }
-            function onRequestSucceeded(method) { if (method === "library.delete") panel.deleteSucceeded() }
+            function onLibraryDeletionFinished(errors) { panel.deleteSucceeded(errors) }
             function onRequestFailed(method, message) { if (method === "library.delete") panel.deleteFailed(message) }
         }
     }

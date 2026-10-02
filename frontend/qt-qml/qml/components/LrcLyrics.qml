@@ -169,7 +169,15 @@ Item {
                 id: wordFlow
                 objectName: "krcLine" + lineDelegate.index
                 visible: lineDelegate.hasKrc
-                width: Math.max(1, Math.min(parent.width - 32, lineMeasure.width + 8))
+                // Whole-line metrics can omit trailing spaces and differ from separately shaped words.
+                readonly property real unwrappedWidth: {
+                    let total = 0
+                    for (const child of children) {
+                        if (child !== wordRepeater) total += child.width
+                    }
+                    return total
+                }
+                width: Math.max(1, Math.min(parent.width - 32, Math.ceil(unwrappedWidth)))
                 height: childrenRect.height
                 x: (parent.width - width) / 2
                 y: (parent.height - height) / 2
@@ -178,14 +186,8 @@ Item {
 
                 Behavior on opacity { NumberAnimation { duration: root.reducedMotion ? 0 : 320 } }
 
-                TextMetrics {
-                    id: lineMeasure
-                    text: lineDelegate.modelData.text || ""
-                    font.pixelSize: root.width < 500 ? 20 : 24
-                    font.weight: Font.DemiBold
-                }
-
                 Repeater {
+                    id: wordRepeater
                     model: lineDelegate.words
                     delegate: Item {
                         id: wordItem

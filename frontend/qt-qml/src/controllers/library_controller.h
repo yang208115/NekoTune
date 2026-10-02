@@ -11,6 +11,8 @@ class LibraryController final : public FeatureController {
     Q_PROPERTY(QString searchText READ searchText WRITE setSearchText NOTIFY filterChanged)
     Q_PROPERTY(QVariantMap editing READ editing NOTIFY editingChanged)
     Q_PROPERTY(bool metadataReady READ metadataReady NOTIFY editingChanged)
+    Q_PROPERTY(bool loading READ loading NOTIFY loadStateChanged)
+    Q_PROPERTY(bool loaded READ loaded NOTIFY loadStateChanged)
   public:
     explicit LibraryController(IpcClient &client);
     RecordModel *songs() { return &m_songs; }
@@ -22,6 +24,8 @@ class LibraryController final : public FeatureController {
     void setSearchText(const QString &text);
     QVariantMap editing() const { return m_editing; }
     bool metadataReady() const { return m_metadataReady; }
+    bool loading() const { return m_loading; }
+    bool loaded() const { return m_loaded; }
     void setSelectedTagIds(const QVariantList &ids);
     Q_INVOKABLE void toggleTag(int id);
     Q_INVOKABLE void toggleSelection(int id);
@@ -33,7 +37,8 @@ class LibraryController final : public FeatureController {
         send("library.import", {{"path", IpcClient::normalizePath(path)}});
     }
     Q_INVOKABLE void playLibrary(const QVariantList &tagIds, int songId = 0);
-    Q_INVOKABLE void deleteLibrarySongs(const QVariantList &ids);
+    Q_INVOKABLE void playSongs(const QVariantList &songIds, int startSongId = 0);
+    Q_INVOKABLE void deleteLibrarySongs(const QVariantList &ids, bool cleanFiles = false);
     Q_INVOKABLE void loadMetadata(int id);
     Q_INVOKABLE void saveMetadata(const QVariantMap &patch);
   signals:
@@ -42,6 +47,8 @@ class LibraryController final : public FeatureController {
     void editingChanged();
     void songMetadataSaved(int id);
     void libraryPlaybackSkipped(int count);
+    void libraryDeletionFinished(const QStringList &cleanupErrors);
+    void loadStateChanged();
 
   private:
     void apply(const QJsonObject &data);
@@ -54,5 +61,5 @@ class LibraryController final : public FeatureController {
     bool m_metadataReady = false;
     int m_editingId = 0;
     quint64 m_generation = 0;
-    bool m_loading = false, m_reload = false;
+    bool m_loading = false, m_loaded = false, m_reload = false;
 };

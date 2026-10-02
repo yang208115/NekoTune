@@ -38,6 +38,7 @@ Button {
                                                     : button.glyphColor
 
         onCurrentStrokeColorChanged: requestPaint()
+        Connections { target: button; function onKindChanged() { iconCanvas.requestPaint() } }
 
         onPaint: {
             const ctx = getContext("2d")
@@ -97,6 +98,30 @@ Button {
                 ctx.beginPath()
                 ctx.moveTo(w * .65, h * .2); ctx.lineTo(w * .35, h * .5); ctx.lineTo(w * .65, h * .8)
                 ctx.stroke()
+            } else if (k === "sequential") {
+                for (let i = 0; i < 3; ++i) {
+                    const y = h * (.25 + i * .25)
+                    ctx.beginPath(); ctx.moveTo(w * .15, y); ctx.lineTo(w * .6, y); ctx.stroke()
+                }
+                ctx.beginPath(); ctx.moveTo(w * .78, h * .2); ctx.lineTo(w * .78, h * .8)
+                ctx.moveTo(w * .65, h * .65); ctx.lineTo(w * .78, h * .8); ctx.lineTo(w * .91, h * .65); ctx.stroke()
+            } else if (k === "repeat_one" || k === "repeat_all") {
+                ctx.beginPath(); ctx.moveTo(w * .2, h * .55); ctx.lineTo(w * .2, h * .3)
+                ctx.lineTo(w * .8, h * .3); ctx.moveTo(w * .65, h * .15)
+                ctx.lineTo(w * .8, h * .3); ctx.lineTo(w * .65, h * .45)
+                ctx.moveTo(w * .8, h * .45); ctx.lineTo(w * .8, h * .7); ctx.lineTo(w * .2, h * .7)
+                ctx.moveTo(w * .35, h * .55); ctx.lineTo(w * .2, h * .7); ctx.lineTo(w * .35, h * .85); ctx.stroke()
+                if (k === "repeat_one") {
+                    ctx.font = "bold " + Math.round(h * .38) + "px sans-serif"
+                    ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("1", w * .5, h * .51)
+                }
+            } else if (k === "shuffle") {
+                ctx.beginPath(); ctx.moveTo(w * .12, h * .25); ctx.lineTo(w * .32, h * .25)
+                ctx.lineTo(w * .68, h * .75); ctx.lineTo(w * .88, h * .75)
+                ctx.moveTo(w * .12, h * .75); ctx.lineTo(w * .32, h * .75)
+                ctx.lineTo(w * .68, h * .25); ctx.lineTo(w * .88, h * .25)
+                ctx.moveTo(w * .75, h * .12); ctx.lineTo(w * .88, h * .25); ctx.lineTo(w * .75, h * .38)
+                ctx.moveTo(w * .75, h * .62); ctx.lineTo(w * .88, h * .75); ctx.lineTo(w * .75, h * .88); ctx.stroke()
             } else if (k === "locate") {
                 ctx.beginPath(); ctx.arc(w * .5, h * .5, w * .25, 0, Math.PI * 2)
                 ctx.moveTo(w * .5, h * .1); ctx.lineTo(w * .5, h * .35)

@@ -13,6 +13,10 @@ PlaybackController::PlaybackController(IpcClient &client) : FeatureController(cl
     });
 }
 void PlaybackController::apply(const QJsonObject &data) {
+    if (data.contains("playback_mode") && m_playbackMode != data.value("playback_mode").toString()) {
+        m_playbackMode = data.value("playback_mode").toString();
+        emit playbackModeChanged();
+    }
     if (data.contains("state") && m_state != data.value("state").toString()) {
         m_state = data.value("state").toString();
         emit stateChanged();

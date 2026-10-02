@@ -1,11 +1,11 @@
-#include "application/lyrics_service.h"
+#include "application/lyrics/lyrics_service.h"
 #include "controllers/app_controllers.h"
-#include "core/player_engine.h"
+#include "application/playback/player_engine.h"
 #include "i18n.h"
-#include "infrastructure/import_executor.h"
-#include "infrastructure/lyrics_storage.h"
+#include "infrastructure/library/import_executor.h"
+#include "infrastructure/lyrics/lyrics_storage.h"
 #include "ipc/ipc_router.h"
-#include "ipc/serialization.h"
+#include "ipc/serialization/serialization.h"
 #include "runtime/backend_runtime.h"
 #include "support/store_fixture.h"
 #include "app_paths.h"
@@ -535,9 +535,168 @@ class RefactorTest final : public QObject {
         QCOMPARE(status.value("song").toObject().value("cover_url").toString(), document.coverUrl);
         runtime.stop();
     }
+    void homePlaybackIgnoresLibraryFilters() {
+        BackendRuntime runtime;
+        QVERIFY(runtime.start());
+        RpcPeer peer;
+        QVERIFY(peer.connect(m_socket));
+        peer.call("lyrics.set_offline", {{"offline", true}});
+        QVariantList ids;
+        QStringList paths;
+        for (int index = 0; index < 3; ++index) {
+            const auto path = m_directory.filePath(QString("home-%1.wav").arg(index));
+            writeAudio(path, char(70 + index));
+            const auto result = peer.call("library.import", {{"path", path}});
+            QCOMPARE(result.value("status").toString(), QString("ok"));
+            ids.prepend(result.value("data").toObject().value("song_id").toInt());
+            paths.append(path);
+        }
+        const auto tagId = peer.call("tag.create", {{"name", "Home playback filter"}})
+                               .value("data").toObject().value("tag_id").toInt();
+        QVERIFY(tagId > 0);
+        IpcClient client;
+        AppControllers controllers(client);
+        auto *library = controllers.library;
+        QSignalSpy loads(library, &LibraryController::loadStateChanged);
+        QSignalSpy failures(library, &LibraryController::requestFailed);
+        QSignalSpy skipped(library, &LibraryController::libraryPlaybackSkipped);
+        QVERIFY(!library->loaded());
+        QTRY_VERIFY(client.connected());
+        QTRY_VERIFY(library->loaded());
+        QTRY_VERIFY(!library->loading());
+        QVERIFY(loads.count() >= 2);
+        library->setSearchText("No matching song for this filter");
+        library->setSelectedTagIds({tagId});
+        QCOMPARE(library->filteredSongs()->count(), 0);
+        library->playSongs(ids, ids.first().toInt());
+        QTRY_COMPARE(skipped.count(), 1);
+        QTRY_COMPARE(controllers.queue->model()->count(), 3);
+        auto queueIds = [&] {
+            QVariantList result;
+            for (const auto &item : controllers.queue->model()->items())
+                result.append(item.toMap().value("song_id").toInt());
+            return result;
+        };
+        QCOMPARE(queueIds(), ids);
+        QCOMPARE(library->searchText(), QString("No matching song for this filter"));
+        QCOMPARE(library->selectedTagIds(), QVariantList{tagId});
+        const auto previousSong = controllers.playback->song().value("song_id");
+        library->playSongs({}, 0);
+        QTRY_COMPARE(failures.count(), 1);
+        QCOMPARE(queueIds(), ids);
+        QCOMPARE(controllers.playback->song().value("song_id"), previousSong);
+        library->playSongs({999999}, 0);
+        QTRY_COMPARE(failures.count(), 2);
+        QCOMPARE(queueIds(), ids);
+        QVERIFY(QFile::remove(paths[1]));
+        library->playSongs(ids, ids.first().toInt());
+        QTRY_COMPARE(skipped.count(), 2);
+        QCOMPARE(skipped.last().first().toInt(), 1);
+        QTRY_COMPARE(controllers.queue->model()->count(), 2);
+        QCOMPARE(queueIds(), (QVariantList{ids[0], ids[2]}));
+        const auto count = library->songs()->count();
+        runtime.stop();
+        QTRY_VERIFY(!client.connected());
+        library->refreshLibrary();
+        QVERIFY(!library->loading());
+        QVERIFY(library->loaded());
+        QCOMPARE(library->songs()->count(), count);
+        QVERIFY(runtime.start());
+        QTRY_VERIFY(client.connected());
+        QTRY_VERIFY(!library->loading());
+        QVERIFY(library->loaded());
+        runtime.stop();
+    }
+    void playbackModePageAndDrawer() {
+        BackendRuntime runtime;
+        QVERIFY(runtime.start());
+        RpcPeer peer;
+        QVERIFY(peer.connect(m_socket));
+        QCOMPARE(peer.call("lyrics.set_offline", {{"offline", true}}).value("status").toString(), QString("ok"));
+        QCOMPARE(peer.call("queue.clear").value("status").toString(), QString("ok"));
+        QCOMPARE(peer.call("queue.add", {{"path", m_audio}}).value("status").toString(), QString("ok"));
+        IpcClient client;
+        AppControllers controllers(client);
+        I18n translator;
+        QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("ipcClient", &client);
+        engine.rootContext()->setContextProperty("controllers", &controllers);
+        engine.rootContext()->setContextProperty("i18n", &translator);
+        engine.rootContext()->setContextProperty("lyricsDebugEnabled", false);
+        engine.load(QUrl("qrc:/qml/Main.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
+        QVERIFY(window);
+        QTRY_VERIFY(client.connected());
+        window->setProperty("viewMode", "queue");
+        window->setProperty("currentPlaylist", 0);
+        QVariant queuePageValue;
+        QVERIFY(QMetaObject::invokeMethod(window, "pageItem", Q_RETURN_ARG(QVariant, queuePageValue),
+                                          Q_ARG(QVariant, QVariant("queue"))));
+        auto *queuePage = queuePageValue.value<QObject *>();
+        QVERIFY(queuePage);
+        auto *panel = queuePage->findChild<QQuickItem *>("queuePanel");
+        auto *drawer = window->findChild<QQuickItem *>("queueDrawerPanel");
+        QVERIFY(panel && drawer);
+        auto *pageButton = panel->findChild<QQuickItem *>("playbackModeButton");
+        auto *drawerButton = drawer->findChild<QQuickItem *>("playbackModeButton");
+        QVERIFY(pageButton && drawerButton);
+        const auto screenshotDirectory = qEnvironmentVariable("NEKOTUNE_PLAYBACK_SCREENSHOT_DIR");
+        for (const QString language : {"zh", "en"}) {
+            translator.setLanguage(language);
+            window->setWidth(language == "zh" ? 1360 : 1000);
+            for (const QString mode : {"sequential", "repeat_one", "shuffle", "repeat_all"}) {
+                QCOMPARE(peer.call("player.set_playback_mode", {{"mode", mode}}).value("status").toString(), QString("ok"));
+                QTRY_COMPARE(pageButton->property("kind").toString(), mode);
+                QTRY_COMPARE(drawerButton->property("kind").toString(), mode);
+                for (bool compact : {false, true}) {
+                    window->setProperty("queueOpen", compact);
+                    auto *button = compact ? drawerButton : pageButton;
+                    QTest::qWait(50);
+                    const QPoint point = button->mapToScene(QPointF(button->width() / 2, button->height() / 2)).toPoint();
+                    QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, point);
+                    auto *menu = button->findChild<QObject *>("playbackModeMenu");
+                    QVERIFY(menu);
+                    QTRY_VERIFY(menu->property("opened").toBool());
+                    auto *content = menu->property("contentItem").value<QQuickItem *>();
+                    QVERIFY(content);
+                    auto *choice = visualItem(content, "playbackMode_" + mode);
+                    QVERIFY(choice);
+                    QVERIFY(choice->property("selected").toBool());
+                    QVERIFY(menu->property("x").toDouble() >= 8);
+                    QVERIFY(menu->property("y").toDouble() >= 8);
+                    if (!screenshotDirectory.isEmpty()) {
+                        QTest::qWait(150);
+                        const auto path = screenshotDirectory + "/playback-" + language + "-" + mode +
+                                          (compact ? "-drawer.png" : "-page.png");
+                        QVERIFY(window->grabWindow().save(path));
+                    }
+                    QVERIFY(QMetaObject::invokeMethod(menu, "close"));
+                    QTRY_VERIFY(!menu->property("visible").toBool());
+                }
+            }
+        }
+        // Exercise a menu selection through the actual IPC/controller binding.
+        window->setProperty("queueOpen", true);
+        QTest::qWait(50);
+        QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
+                         drawerButton->mapToScene(QPointF(drawerButton->width() / 2, drawerButton->height() / 2)).toPoint());
+        auto *menu = drawerButton->findChild<QObject *>("playbackModeMenu");
+        QTRY_VERIFY(menu->property("opened").toBool());
+        auto *choice = visualItem(menu->property("contentItem").value<QQuickItem *>(), "playbackMode_shuffle");
+        QVERIFY(choice);
+        QTest::qWait(50);
+        QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
+                         choice->mapToScene(QPointF(choice->width() / 2, choice->height() / 2)).toPoint());
+        QTRY_COMPARE(controllers.playback->playbackMode(), QString("shuffle"));
+        QCOMPARE(peer.call("player.status").value("data").toObject().value("playback_mode").toString(), QString("shuffle"));
+        runtime.stop();
+    }
     void realQmlMetadataSelectionAndMute() {
         QImage coverImage(40, 40, QImage::Format_RGB32);
         coverImage.fill(QColor("#E8A9C3"));
+        if (!qEnvironmentVariable("NEKOTUNE_HOME_SCREENSHOT").isEmpty())
+            QVERIFY(coverImage.load(":/artwork/default-cover.png"));
         const auto coverPath = m_directory.filePath("test.png");
         QVERIFY(coverImage.save(coverPath));
         BackendRuntime runtime;
@@ -562,8 +721,17 @@ class RefactorTest final : public QObject {
         auto *root = engine.rootObjects().first();
         QTRY_VERIFY(client.connected());
         QTRY_VERIFY(controllers.library->songs()->count() > 0);
-        QCOMPARE(root->property("viewMode").toString(), QString("library"));
+        QCOMPARE(root->property("viewMode").toString(), QString("home"));
         QVERIFY(root->property("nowPlayingOpen").toBool() == false);
+        auto *window = qobject_cast<QQuickWindow *>(root);
+        QVERIFY(window);
+        QVERIFY(visualItem(window->contentItem(), "nav_home"));
+        QVariant homeValue;
+        QVERIFY(QMetaObject::invokeMethod(root, "pageItem", Q_RETURN_ARG(QVariant, homeValue),
+                                          Q_ARG(QVariant, QVariant("home"))));
+        auto *home = homeValue.value<QObject *>();
+        QVERIFY(home);
+        root->setProperty("viewMode", "library");
 
         controllers.library->toggleSelection(songId);
         QCOMPARE(controllers.library->selectedSongIds().size(), 1);
@@ -588,6 +756,27 @@ class RefactorTest final : public QObject {
             QVERIFY(coverWindow->grabWindow().save(coverScreenshot));
         }
         QCOMPARE(controllers.library->selectedSongIds().size(), 1);
+        root->setProperty("viewMode", "home");
+        root->setProperty("width", 1000);
+        root->setProperty("height", 640);
+        QTest::qWait(50);
+        home->setProperty("contentY", 40);
+        QVERIFY(QMetaObject::invokeMethod(root, "openNowPlaying"));
+        QVERIFY(root->property("nowPlayingOpen").toBool());
+        QTest::keyClick(coverWindow, Qt::Key_Escape);
+        QTRY_VERIFY(!root->property("nowPlayingOpen").toBool());
+        QCOMPARE(root->property("viewMode").toString(), QString("home"));
+        QCOMPARE(home->property("contentY").toInt(), 40);
+        QVERIFY(QMetaObject::invokeMethod(home, "newPlaylist"));
+        QTRY_VERIFY(root->property("popupActive").toBool());
+        QVariant queuePageValue;
+        QVERIFY(QMetaObject::invokeMethod(root, "queuePage", Q_RETURN_ARG(QVariant, queuePageValue)));
+        auto *newPlaylistPopup = queuePageValue.value<QObject *>()->findChild<QObject *>("playlistNamePopup");
+        QVERIFY(newPlaylistPopup);
+        QVERIFY(QMetaObject::invokeMethod(newPlaylistPopup, "close"));
+        QTRY_VERIFY(!root->property("popupActive").toBool());
+        root->setProperty("width", 1360);
+        root->setProperty("height", 860);
         controllers.playback->setVolume(0);
         QTRY_COMPARE(controllers.playback->volume(), 0.0);
         QCOMPARE(root->property("volume").toDouble(), 0.0);
@@ -647,7 +836,7 @@ class RefactorTest final : public QObject {
         QTest::mouseClick(uiWindow, Qt::LeftButton, Qt::NoModifier, point);
         QCOMPARE(selectionBehindDrawer.count(), 0);
         root->setProperty("queueOpen", false);
-        for (const QString page : {"queue", "library", "lyrics", "kugou", "settings", "lyrics_debug"}) {
+        for (const QString page : {"home", "queue", "library", "lyrics", "kugou", "settings", "lyrics_debug"}) {
             root->setProperty("viewMode", page);
             QTest::qWait(30);
             QVariant status;
@@ -688,8 +877,14 @@ class RefactorTest final : public QObject {
         controllers.library->toggleTag(tag);
         QTRY_COMPARE(controllers.library->filteredSongs()->count(), 1);
         controllers.library->setSelectedTagIds({});
-        const auto screenshot = qEnvironmentVariable("NEKOTUNE_TEST_SCREENSHOT");
+        const auto homeScreenshot = qEnvironmentVariable("NEKOTUNE_HOME_SCREENSHOT");
+        const auto screenshot = homeScreenshot.isEmpty() ? qEnvironmentVariable("NEKOTUNE_TEST_SCREENSHOT") : homeScreenshot;
         if (!screenshot.isEmpty()) {
+            // The registry extension test recreated the page loaders above.
+            QVERIFY(QMetaObject::invokeMethod(root, "pageItem", Q_RETURN_ARG(QVariant, homeValue),
+                                              Q_ARG(QVariant, QVariant("home"))));
+            home = homeValue.value<QObject *>();
+            QVERIFY(home);
             auto *window = qobject_cast<QQuickWindow *>(root);
             QVERIFY(window);
             const auto playlistId = peer.call("playlist.create", {{"name", "夜色收藏 · Night collection"}})
@@ -730,6 +925,14 @@ class RefactorTest final : public QObject {
             peer.call("playlist.play", {{"id", playlistId}});
             QTRY_VERIFY(controllers.playlists->model()->count() >= 2);
             QTRY_VERIFY(controllers.library->songs()->count() >= titles.size());
+            if (!homeScreenshot.isEmpty()) {
+                for (const QString name : {"月光下的归途 · Midnight walk", "安静的午后与很长很长的歌单名字"}) {
+                    const auto id = peer.call("playlist.create", {{"name", name}})
+                                        .value("data").toObject().value("playlist_id").toInt();
+                    peer.call("playlist.add", {{"id", id}, {"song_id", songId}});
+                }
+                QTRY_COMPARE(controllers.playlists->model()->count(), 4);
+            }
             QTest::qWait(200);
             auto loadedPage = [root](const QString &id) {
                 QVariant item;
@@ -750,10 +953,17 @@ class RefactorTest final : public QObject {
             online->setProperty("results", results);
             for (const QString language : {"zh", "en"}) {
                 translator.setLanguage(language);
+                if (!homeScreenshot.isEmpty() && language == "en") {
+                    const auto currentId = controllers.playback->song().value("song_id").toInt();
+                    const auto title = "A quiet evening beneath the moon, with a very long song title that should stay readable";
+                    peer.call("song.update_metadata", {{"song_id", currentId}, {"title", title}});
+                    QTRY_COMPARE(controllers.playback->song().value("title").toString(), QString(title));
+                }
                 for (int width : {1000, 1360}) {
                     root->setProperty("width", width);
                     root->setProperty("height", width == 1000 ? 640 : 860);
                     auto capture = [&](const QString &state) {
+                        QTest::mouseMove(window, QPoint(4, 4));
                         QTest::qWait(250);
                         const auto path =
                             screenshot + "-" + language + "-" + QString::number(width) + "-" + state + ".png";
@@ -761,8 +971,19 @@ class RefactorTest final : public QObject {
                     };
                     root->setProperty("currentPlaylist", playlistId);
                     root->setProperty("nowPlayingOpen", false);
+                    if (!homeScreenshot.isEmpty()) {
+                        root->setProperty("debugEnabled", false);
+                        root->setProperty("viewMode", "home");
+                        home->setProperty("contentY", 0);
+                        capture("home");
+                        if (width == 1000) {
+                            home->setProperty("contentY", 320);
+                            capture("home-scrolled");
+                        }
+                        continue;
+                    }
                     for (const QString page :
-                         {"library", "queue", "lyrics", "settings", "kugou", "lyrics_debug"}) {
+                         {"home", "library", "queue", "lyrics", "settings", "kugou", "lyrics_debug"}) {
                         root->setProperty("debugEnabled", page == "lyrics_debug");
                         root->setProperty("viewMode", page);
                         capture(page);
@@ -810,9 +1031,10 @@ class RefactorTest final : public QObject {
             translator.setLanguage("zh");
             root->setProperty("width", 1360);
             root->setProperty("height", 860);
-            root->setProperty("viewMode", "library");
+            root->setProperty("viewMode", homeScreenshot.isEmpty() ? "library" : "home");
+            home->setProperty("contentY", 0);
             QTest::qWait(100);
-            QVERIFY(window->grabWindow().save(screenshot));
+            QVERIFY(window->grabWindow().save(homeScreenshot.isEmpty() ? screenshot : screenshot + ".png"));
         }
         runtime.stop();
         QTRY_VERIFY(!client.connected());

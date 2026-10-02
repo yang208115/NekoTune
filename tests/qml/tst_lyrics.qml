@@ -97,6 +97,56 @@ Item {
             compare(findChild(lyrics, "lyricText1").textFormat, Text.PlainText)
         }
 
+        function test_krcShortLineStaysTogether_data() {
+            return [
+                {tag: "Japanese20px", width: 460, parts: ["正", "直", "に", "言", "っ", "ち", "ゃ", "え", "ば　"]},
+                {tag: "Japanese24px", width: 600, parts: ["正", "直", "に", "言", "っ", "ち", "ゃ", "え", "ば　"]},
+                {tag: "LatinKerning", width: 460, parts: ["A", "V", "A", "T", "A", "R   "]},
+                {tag: "MixedWords", width: 600, parts: ["Hello ", "世", "界　"]}
+            ]
+        }
+
+        function test_krcShortLineStaysTogether(data) {
+            lyrics.width = data.width
+            lyrics.lines = [{time_ms: 1000, text: data.parts.join(""), words: data.parts.map(
+                (text, index) => ({text: text, time_ms: 1000 + index * 100, duration_ms: 100}))}]
+            wait(50)
+            const flow = findChild(lyrics, "krcLine0")
+            verify(flow !== null)
+            let totalWidth = 0
+            for (let index = 0; index < data.parts.length; index += 1) {
+                const word = findChild(lyrics, "krcWord0_" + index)
+                verify(word !== null)
+                compare(word.y, 0)
+                totalWidth += word.width
+            }
+            verify(flow.width >= totalWidth)
+            verify(Math.abs(flow.x - (lyrics.width - flow.width) / 2) < 0.1)
+            compare(findChild(lyrics, "krcBaseText0_" + (data.parts.length - 1)).text,
+                    data.parts[data.parts.length - 1])
+        }
+
+        function test_krcLineWrapsAndReflowsOnResize() {
+            const parts = ["正", "直", "に", "言", "っ", "ち", "ゃ", "え", "ば　"]
+            lyrics.lines = [{time_ms: 1000, text: parts.join(""), words: parts.map(
+                (text, index) => ({text: text, time_ms: 1000 + index * 100, duration_ms: 100}))}]
+            lyrics.width = 150
+            wait(50)
+            verify(findChild(lyrics, "krcWord0_8").y > 0)
+            compare(findChild(lyrics, "krcLine0").width, lyrics.width - 32)
+            lyrics.width = 600
+            tryCompare(findChild(lyrics, "krcWord0_8"), "y", 0)
+            lyrics.width = 460
+            tryCompare(findChild(lyrics, "krcWord0_8"), "y", 0)
+            lyrics.lines = [{time_ms: 1000, text: "短句", words: [
+                {text: "短", time_ms: 1000, duration_ms: 100},
+                {text: "句", time_ms: 1100, duration_ms: 100}
+            ]}]
+            wait(50)
+            compare(findChild(lyrics, "krcWord0_1").y, 0)
+            verify(findChild(lyrics, "krcLine0").width < 100)
+        }
+
         function test_krcProgressFollowsPlaybackAndSeek() {
             lyrics.lines = [{time_ms: 1000, duration_ms: 1000, text: "Hello", words: [
                 {text: "Hello", time_ms: 1000, duration_ms: 1000}

@@ -116,14 +116,17 @@ Rectangle {
                 font.weight: row.current ? Font.DemiBold : Font.Normal
                 elide: Text.ElideRight
             }
-            Label {
+            ArtistNames {
+                objectName: "trackArtists"
                 Layout.fillWidth: true
-                text: row.available ? String(row.song.artist || String(row.song.path || "").split("/").pop() || "")
-                                    : i18n.text("file_unavailable", i18n.language)
-                textFormat: Text.PlainText
+                Layout.minimumWidth: 0
+                summarizeOverflow: row.compact
+                remainingTextTemplate: i18n.text("additional_artists", i18n.language)
+                artist: row.available ? String(row.song.artist || "") : ""
+                fallbackText: row.available ? String(row.song.path || "").split("/").pop()
+                                            : i18n.text("file_unavailable", i18n.language)
                 color: row.available ? "#AAA0B8" : "#E8C58A"
                 font.pixelSize: 12
-                elide: Text.ElideRight
             }
         }
         Label {

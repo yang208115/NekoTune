@@ -1,5 +1,6 @@
 .pragma library
 var pages = [
+    {id: "home", title: "home", source: "pages/HomePage.qml", group: "primary"},
     {id: "library", title: "local_music", source: "pages/LibraryPage.qml", group: "primary"},
     {id: "kugou", title: "kugou_music", source: "pages/KugouPage.qml", group: "primary"},
     {id: "queue", title: "playlists", source: "pages/QueuePage.qml", group: "collection"},

@@ -9,13 +9,16 @@
         <file>qml/components/InputField.qml</file>
         <file>qml/components/ActionMenu.qml</file>
         <file>qml/components/TrackRow.qml</file>
+        <file>qml/components/ArtistNames.qml</file>
         <file>qml/components/ConfirmationDialog.qml</file>
         <file>qml/components/IconButton.qml</file>
+        <file>qml/components/PlaybackModeButton.qml</file>
         <file>qml/components/LrcLyrics.qml</file>
         <file>qml/components/LyricsDebugPanel.qml</file>
         <file>qml/components/LyricsPanel.qml</file>
         <file>qml/components/LibraryPanel.qml</file>
         <file>qml/components/KugouPanel.qml</file>
+        <file>qml/components/KugouResultRow.qml</file>
         <file>qml/components/PlayerPanel.qml</file>
         <file>qml/components/PlayerSlider.qml</file>
         <file>qml/components/SeekSlider.qml</file>
@@ -25,6 +28,7 @@
         <file>qml/components/TextButton.qml</file>
         <file>qml/components/Theme.qml</file>
         <file>qml/pages/KugouPage.qml</file>
+        <file>qml/pages/HomePage.qml</file>
         <file>qml/pages/LibraryPage.qml</file>
         <file>qml/pages/LyricsDebugPage.qml</file>
         <file>qml/pages/LyricsPage.qml</file>

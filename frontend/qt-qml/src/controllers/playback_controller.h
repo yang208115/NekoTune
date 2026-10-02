@@ -2,6 +2,7 @@
 #include "controllers/feature_controller.h"
 class PlaybackController final : public FeatureController {
     Q_OBJECT
+    Q_PROPERTY(QString playbackMode READ playbackMode NOTIFY playbackModeChanged)
     Q_PROPERTY(QString state READ state NOTIFY stateChanged)
     Q_PROPERTY(double position READ position NOTIFY positionChanged)
     Q_PROPERTY(double duration READ duration NOTIFY durationChanged)
@@ -9,12 +10,14 @@ class PlaybackController final : public FeatureController {
     Q_PROPERTY(QVariantMap song READ song NOTIFY songChanged)
   public:
     explicit PlaybackController(IpcClient &client);
+    QString playbackMode() const { return m_playbackMode; }
     QString state() const { return m_state; }
     double position() const { return m_position; }
     double duration() const { return m_duration; }
     double volume() const { return m_volume; }
     QVariantMap song() const { return m_song; }
     void apply(const QJsonObject &data);
+    Q_INVOKABLE void setPlaybackMode(const QString &mode) { send("player.set_playback_mode", {{"mode", mode}}); }
     Q_INVOKABLE void playPath(const QString &path) {
         send("player.play", {{"path", IpcClient::normalizePath(path)}});
     }
@@ -28,6 +31,7 @@ class PlaybackController final : public FeatureController {
     Q_INVOKABLE void setVolume(double value) { send("player.set_volume", {{"volume", value}}); }
     Q_INVOKABLE void toggleMute() { setVolume(m_volume > 0 ? 0 : (m_lastVolume > 0 ? m_lastVolume : .8)); }
   signals:
+    void playbackModeChanged();
     void stateChanged();
     void positionChanged();
     void durationChanged();
@@ -35,6 +39,7 @@ class PlaybackController final : public FeatureController {
     void songChanged();
 
   private:
+    QString m_playbackMode = "sequential";
     QString m_state = "stopped";
     double m_position = 0, m_duration = 0, m_volume = .8, m_lastVolume = .8;
     QVariantMap m_song;

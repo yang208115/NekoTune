@@ -28,7 +28,9 @@ class ComponentTestSetup : public QObject {
     void qmlEngineAvailable(QQmlEngine *engine) {
         engine->rootContext()->setContextProperty("testLibrary", &m_library);
         engine->rootContext()->setContextProperty("testFixtures", this);
-        engine->rootContext()->setContextProperty("testTranslator", new I18n(engine));
+        auto *translator = new I18n(engine);
+        engine->rootContext()->setContextProperty("testTranslator", translator);
+        engine->rootContext()->setContextProperty("i18n", translator);
     }
 
   private:

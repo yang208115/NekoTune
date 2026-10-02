@@ -1,5 +1,5 @@
-#include "application/cover_service.h"
-#include "infrastructure/lyrics_storage.h"
+#include "application/lyrics/cover_service.h"
+#include "infrastructure/lyrics/lyrics_storage.h"
 #include <QFile>
 #include <QSignalSpy>
 #include <QTemporaryDir>

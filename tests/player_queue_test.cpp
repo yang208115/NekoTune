@@ -1,5 +1,5 @@
-#include "domain/player_queue.h"
-#include "ipc/serialization.h"
+#include "domain/playback/player_queue.h"
+#include "ipc/serialization/serialization.h"
 
 #include <QJsonArray>
 #include <QJsonObject>

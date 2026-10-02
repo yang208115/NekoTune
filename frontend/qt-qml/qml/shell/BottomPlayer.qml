@@ -51,11 +51,21 @@ Rectangle {
             contentItem: ColumnLayout {
                 spacing: 4
                 Label { Layout.fillWidth: true; text: bar.shell.hasSong ? bar.shell.song.title || bar.t("untitled") : bar.t("no_track_selected"); color: "#F5F1FA"; font.pixelSize: 13; font.weight: Font.DemiBold; elide: Text.ElideRight; textFormat: Text.PlainText }
-                Label { Layout.fillWidth: true; text: bar.shell.hasSong ? bar.shell.song.artist || bar.t("unknown_artist") : bar.t("browse_library"); color: "#AAA0B8"; font.pixelSize: 12; elide: Text.ElideRight; textFormat: Text.PlainText }
+                ArtistNames {
+                    id: nowPlayingArtists
+                    objectName: "nowPlayingArtists"
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: 0
+                    summarizeOverflow: true
+                    remainingTextTemplate: bar.t("additional_artists")
+                    artist: bar.shell.hasSong ? String(bar.shell.song.artist || "") : ""
+                    fallbackText: bar.t(bar.shell.hasSong ? "unknown_artist" : "browse_library")
+                }
             }
             onClicked: bar.shell.openNowPlaying()
             ToolTip.visible: hovered || activeFocus
             ToolTip.text: String(bar.shell.song.title || "")
+                + (nowPlayingArtists.names.length ? "\n" + nowPlayingArtists.names.join(" · ") : "")
         }
         IconButton {
             id: songMore

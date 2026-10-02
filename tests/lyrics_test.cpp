@@ -1,10 +1,10 @@
-#include "application/lyrics_service.h"
-#include "domain/krc_parser.h"
-#include "domain/lrc_parser.h"
-#include "infrastructure/lyrics_storage.h"
-#include "ipc/lyrics_serialization.h"
-#include "lyrics/kugou_provider.h"
-#include "lyrics/lrclib_provider.h"
+#include "application/lyrics/lyrics_service.h"
+#include "domain/lyrics/krc_parser.h"
+#include "domain/lyrics/lrc_parser.h"
+#include "infrastructure/lyrics/lyrics_storage.h"
+#include "ipc/serialization/lyrics_serialization.h"
+#include "infrastructure/lyrics/kugou_provider.h"
+#include "infrastructure/lyrics/lrclib_provider.h"
 
 #include <QDir>
 #include <QFile>

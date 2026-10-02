@@ -1,5 +1,5 @@
 #pragma once
-#include "domain/library_types.h"
+#include "domain/library/library_types.h"
 #include "domain/result.h"
 #include <QObject>
 #include <functional>

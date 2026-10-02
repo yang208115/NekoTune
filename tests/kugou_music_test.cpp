@@ -1,8 +1,8 @@
-#include "ipc/kugou_serialization.h"
-#include "kugou/kugou_music_service.h"
-#include "infrastructure/music_directory.h"
+#include "ipc/serialization/kugou_serialization.h"
+#include "infrastructure/kugou/kugou_music_service.h"
+#include "infrastructure/library/music_directory.h"
 #include "support/store_fixture.h"
-#include "domain/krc_parser.h"
+#include "domain/lyrics/krc_parser.h"
 
 #include <QBuffer>
 #include <QFile>
@@ -158,6 +158,7 @@ class KugouMusicTest final : public QObject {
     }
     void rejectsInsecureWorkerUrl();
     void storesAndClearsPrivateKey();
+    void searchResultsCarryTrustedCovers();
     void loginDownloadAndReuseSession();
     void reportsSmsAndLoginFailure();
     void rejectsPermissionRedirectAndNonAudio();
@@ -166,6 +167,44 @@ class KugouMusicTest final : public QObject {
     void downloadsCoverAndPreservesExistingFile();
     void rejectsInvalidCoverWithoutLosingAudio();
 };
+
+void KugouMusicTest::searchResultsCarryTrustedCovers() {
+    qputenv("KUGOU_ACCOUNT_API_KEY", "test-key");
+    QTemporaryDir dir;
+    FakeManager manager;
+    auto body = searchBody();
+    auto data = body.value("data").toObject();
+    auto rows = data.value("lists").toArray();
+    auto parent = rows.first().toObject();
+    parent.insert("Image", "http://imge.kugou.com/stdmusic/{size}/parent.jpg");
+    parent.insert("Grp", QJsonArray{
+                             QJsonObject{{"FileHash", QString(32, 'b')},
+                                         {"Image", "https://imge.kugou.com/stdmusic/{size}/variant.jpg"}},
+                             QJsonObject{{"FileHash", QString(32, 'c')}},
+                             QJsonObject{{"FileHash", QString(32, 'd')},
+                                         {"Image", "https://untrusted.example/cover.jpg"}}});
+    rows[0] = parent;
+    rows.append(QJsonObject{{"FileHash", QString(32, 'e')}, {"SongName", "No cover"}});
+    data.insert("lists", rows);
+    body.insert("data", data);
+    manager.routes.insert("/search", {json(body)});
+    KugouMusicService service(nullptr, &manager, QUrl("https://worker.example"),
+                              dir.filePath("session.json"), dir.filePath("Music"));
+    QSignalSpy events(&service, &KugouMusicService::eventReady);
+    QCOMPARE(service.startSearch("Song", 1), QString());
+    QTRY_VERIFY(hasEvent(events, "kugou.search_results"));
+    const auto result = nekotune::toJson(events.last().at(0).value<KugouEvent>()).value("songs").toArray();
+    QCOMPARE(result.size(), 5);
+    QCOMPARE(result[0].toObject().value("cover_url").toString(),
+             QString("https://imge.kugou.com/stdmusic/240/parent.jpg"));
+    QCOMPARE(result[1].toObject().value("cover_url").toString(),
+             QString("https://imge.kugou.com/stdmusic/240/variant.jpg"));
+    QCOMPARE(result[2].toObject().value("cover_url").toString(),
+             result[0].toObject().value("cover_url").toString());
+    QCOMPARE(result[3].toObject().value("cover_url").toString(), QString());
+    QCOMPARE(result[4].toObject().value("cover_url").toString(), QString());
+    QCOMPARE(manager.calls.size(), 1); // Searching does not download artwork in the backend.
+}
 
 void KugouMusicTest::rejectsInsecureWorkerUrl() {
     qputenv("KUGOU_ACCOUNT_API_KEY", "test-key");

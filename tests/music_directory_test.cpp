@@ -1,9 +1,9 @@
 #include "app_paths.h"
-#include "application/cover_service.h"
+#include "application/lyrics/cover_service.h"
 #include "i18n.h"
-#include "infrastructure/lyrics_storage.h"
-#include "infrastructure/music_directory.h"
-#include "infrastructure/sidecar_store.h"
+#include "infrastructure/lyrics/lyrics_storage.h"
+#include "infrastructure/library/music_directory.h"
+#include "infrastructure/lyrics/sidecar_store.h"
 #include "runtime/backend_runtime.h"
 #include "support/store_fixture.h"
 #include <QBuffer>
@@ -16,6 +16,7 @@
 #include <QProcess>
 #include <QProcessEnvironment>
 #include <QSignalSpy>
+#include <QSqlQuery>
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QUuid>
@@ -261,6 +262,99 @@ class MusicDirectoryTest final : public QObject {
         assets.setCurrent(hash("audio"), 7, false);
         assets.save(hash("audio"), 7, base, document);
         QVERIFY(QFileInfo(base + ".png").isFile());
+    }
+    void removesManagedFilesAndPreservesExternalOriginals() {
+        const auto root = AppPaths::musicDirectory();
+        const auto source = m_profile.filePath("cleanup-original/song.mp3");
+        write(source, "external song to retain");
+        write(source + ".lrc", "external lyrics to retain");
+        BackendRuntime runtime;
+        QVERIFY(runtime.start());
+        Rpc peer;
+        QVERIFY(peer.connect(qEnvironmentVariable("NEKOTUNE_SOCKET")));
+        auto imported = peer.call("library.import", {{"path", source}});
+        QCOMPARE(imported.value("status").toString(), QString("ok"));
+        const auto linkedPath = imported.value("data").toObject().value("path").toString();
+        const int linkedId = imported.value("data").toObject().value("song_id").toInt();
+        QVERIFY(QFileInfo(linkedPath).isSymLink());
+        const auto linkedBase = QFileInfo(linkedPath).absolutePath() + '/' + QFileInfo(linkedPath).completeBaseName();
+        write(linkedBase + ".lrc", "managed lyrics");
+        const auto outsideCover = m_profile.filePath("cleanup-original/cover.png");
+        write(outsideCover, "external cover to retain");
+        QVERIFY(QFile::link(outsideCover, linkedBase + ".png"));
+        const auto ownedPath = root + "/000100/000100.mp3";
+        write(ownedPath, "downloaded audio to remove");
+        imported = peer.call("library.import", {{"path", ownedPath}});
+        QCOMPARE(imported.value("status").toString(), QString("ok"));
+        const int ownedId = imported.value("data").toObject().value("song_id").toInt();
+        write(root + "/000100/000100.krc", "managed krc");
+        write(root + "/000100/000100.jpg", "managed cover");
+        write(root + "/000100/notes.txt", "unrelated file to retain");
+        QCOMPARE(peer.call("queue.add", {{"path", ownedPath}}).value("status").toString(), QString("ok"));
+        const auto playlist = peer.call("playlist.create", {{"name", "Cleanup"}}).value("data").toObject().value("playlist_id").toInt();
+        QCOMPARE(peer.call("playlist.add", {{"id", playlist}, {"song_id", linkedId}}).value("status").toString(), QString("ok"));
+        const auto result = peer.call("library.delete", {{"song_ids", QJsonArray{linkedId, ownedId}}, {"clean_files", true}});
+        QCOMPARE(result.value("status").toString(), QString("ok"));
+        QCOMPARE(result.value("data").toObject().value("deleted_count").toInt(), 2);
+        QVERIFY(result.value("data").toObject().value("cleanup_errors").toArray().isEmpty());
+        QVERIFY(!QFileInfo(linkedPath).isSymLink());
+        QVERIFY(!QFileInfo::exists(linkedBase + ".lrc"));
+        QVERIFY(!QFileInfo(linkedBase + ".png").isSymLink());
+        QVERIFY(!QFileInfo::exists(ownedPath));
+        QVERIFY(!QFileInfo::exists(root + "/000100/000100.krc"));
+        QVERIFY(!QFileInfo::exists(root + "/000100/000100.jpg"));
+        QCOMPARE(read(source), QByteArray("external song to retain"));
+        QCOMPARE(read(source + ".lrc"), QByteArray("external lyrics to retain"));
+        QCOMPARE(read(outsideCover), QByteArray("external cover to retain"));
+        QCOMPARE(read(root + "/000100/notes.txt"), QByteArray("unrelated file to retain"));
+        QVERIFY(peer.call("player.status").value("data").toObject().value("queue").toArray().isEmpty());
+        QVERIFY(peer.call("library.list").value("data").toObject().value("library").toObject().value("songs").toArray().isEmpty());
+        runtime.stop();
+        QVERIFY(runtime.start());
+        Rpc restored;
+        QVERIFY(restored.connect(qEnvironmentVariable("NEKOTUNE_SOCKET")));
+        QTest::qWait(100);
+        QVERIFY(restored.call("library.list").value("data").toObject().value("library").toObject().value("songs").toArray().isEmpty());
+        QCOMPARE(restored.call("library.import", {{"path", source}}).value("status").toString(), QString("ok"));
+        runtime.stop();
+    }
+    void cleanupRollsBackOnDatabaseFailureAndRejectsDirectorySymlinks() {
+        const auto source = m_profile.filePath("cleanup-rollback/song.mp3");
+        write(source, "rollback original");
+        BackendRuntime runtime;
+        QVERIFY(runtime.start());
+        Rpc peer;
+        QVERIFY(peer.connect(qEnvironmentVariable("NEKOTUNE_SOCKET")));
+        const auto imported = peer.call("library.import", {{"path", source}}).value("data").toObject();
+        const int id = imported.value("song_id").toInt();
+        const auto path = imported.value("path").toString();
+        QVERIFY(id > 0);
+        const auto folder = QFileInfo(path).absolutePath();
+        const auto base = folder + '/' + QFileInfo(path).completeBaseName();
+        write(base + ".lrc", "rollback lyrics");
+        DatabaseSession db(qEnvironmentVariable("NEKOTUNE_DB_PATH"));
+        QVERIFY(db.isReady());
+        QSqlQuery query(db.database());
+        QVERIFY(query.exec("CREATE TRIGGER reject_cleanup BEFORE DELETE ON songs BEGIN SELECT RAISE(ABORT, 'reject cleanup'); END"));
+        auto result = peer.call("library.delete", {{"song_ids", QJsonArray{id}}, {"clean_files", true}});
+        QCOMPARE(result.value("status").toString(), QString("error"));
+        QVERIFY(QFileInfo(path).isSymLink());
+        QCOMPARE(read(base + ".lrc"), QByteArray("rollback lyrics"));
+        QCOMPARE(read(source), QByteArray("rollback original"));
+        QVERIFY(query.exec("SELECT count(*) FROM managed_resources"));
+        QVERIFY(query.next());
+        QCOMPARE(query.value(0).toInt(), 1);
+        QVERIFY(query.exec("DROP TRIGGER reject_cleanup"));
+        const auto outside = m_profile.filePath("cleanup-rollback/relocated");
+        QVERIFY(QDir().rename(folder, outside));
+        QVERIFY(QFile::link(outside, folder));
+        result = peer.call("library.delete", {{"song_ids", QJsonArray{id}}, {"clean_files", true}});
+        QCOMPARE(result.value("status").toString(), QString("error"));
+        QCOMPARE(read(base + ".lrc"), QByteArray("rollback lyrics"));
+        QVERIFY(QFileInfo(path).isSymLink());
+        QCOMPARE(read(source), QByteArray("rollback original"));
+        QCOMPARE(peer.call("library.delete", {{"song_ids", QJsonArray{id}}, {"clean_files", "yes"}}).value("status").toString(), QString("error"));
+        runtime.stop();
     }
     void scansAndKeepsDeletionAcrossRestart() {
         const auto root = AppPaths::musicDirectory();

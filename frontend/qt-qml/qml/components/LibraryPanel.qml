@@ -12,13 +12,15 @@ Item {
     property var deletingSongIds: []
     property bool deletePending: false
     property string deleteError: ""
+    property string cleanupWarning: ""
+    property bool cleanManagedFiles: true
     property int skippedCount: 0
 
     signal importRequested()
     signal playRequested(var tagIds, int songId)
     signal editRequested(var song)
     signal playlistRequested(string action, var params)
-    signal deleteRequested(var songIds)
+    signal deleteRequested(var songIds, bool cleanFiles)
 
     readonly property var filteredSongs: controller.filteredSongs.items
     readonly property int playableCount: filteredSongs.filter(song => Boolean(song.available)).length
@@ -33,16 +35,25 @@ Item {
         controller.toggleSelectAll()
     }
 
-    function confirmDelete() {
+    function openDelete() {
         if (selectedSongIds.length === 0 || deletePending) return
         deletingSongIds = selectedSongIds.slice()
+        cleanManagedFiles = true
+        deleteError = ""
+        cleanupWarning = ""
+        deletePopup.open()
+    }
+    function confirmDelete() {
+        if (deletingSongIds.length === 0 || deletePending) return
         deleteError = ""
         deletePending = true
-        deleteRequested(deletingSongIds)
+        deleteRequested(deletingSongIds, cleanManagedFiles)
     }
 
-    function deleteSucceeded() {
+    function deleteSucceeded(errors) {
         deletePending = false
+        cleanupWarning = errors && errors.length ? i18n.text("cleanup_partial_warning", i18n.language)
+            + "\n" + errors.join("\n") : ""
         controller.clearSelection()
         deletingSongIds = []
         deletePopup.close()
@@ -88,7 +99,7 @@ Item {
             {key: "queue", label: i18n.text("add_to_queue", i18n.language), enabled: Boolean(song.available) && root.connected},
             {key: "playlist", label: i18n.text("add_to_playlist", i18n.language), enabled: Boolean(song.available) && root.connected},
             {key: "edit", label: i18n.text("edit_info", i18n.language), enabled: root.connected},
-            {key: "delete", label: i18n.text("remove_from_library", i18n.language), destructive: true, enabled: root.connected && !root.deletePending}
+            {key: "delete", label: i18n.text("delete", i18n.language), destructive: true, enabled: root.connected && !root.deletePending}
         ]
     }
     function songAction(action, song) {
@@ -96,7 +107,10 @@ Item {
         else if (action === "queue") queueAddRequested(String(song.path))
         else if (action === "playlist") addToPlaylist(song)
         else if (action === "edit") editRequested(song)
-        else if (action === "delete") { controller.selectRow(Number(song.song_id)); deleteError = ""; deletePopup.open() }
+        else if (action === "delete") {
+            controller.selectRow(Number(song.song_id))
+            openDelete()
+        }
     }
     function playlistSucceeded() { addPending = false; addPopup.close() }
     function playlistFailed(message) { addPending = false; operationError = message }
@@ -142,7 +156,7 @@ Item {
                 kind: "trash"
                 enabled: root.selectedSongIds.length > 0 && !root.deletePending && root.connected
                 tooltipText: i18n.text("delete_selected", i18n.language).replace("%1", root.selectedSongIds.length)
-                onClicked: { root.deleteError = ""; deletePopup.open() }
+                onClicked: root.openDelete()
             }
         }
         RowLayout {
@@ -156,6 +170,15 @@ Item {
             Label { text: root.selectedSongIds.length ? i18n.text("selected_count", i18n.language).replace("%1", root.selectedSongIds.length) : ""; color: "#CBB8FF"; font.pixelSize: 12 }
         }
         Label { Layout.fillWidth: true; visible: root.skippedCount > 0; text: i18n.text("unavailable_skipped", i18n.language).replace("%1", root.skippedCount); color: "#E8C58A"; wrapMode: Text.WordWrap }
+        Label {
+            objectName: "libraryCleanupWarning"
+            Layout.fillWidth: true
+            visible: root.cleanupWarning.length > 0
+            text: root.cleanupWarning
+            textFormat: Text.PlainText
+            color: "#E8A9C3"
+            wrapMode: Text.WrapAnywhere
+        }
         Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: "#332C41" }
         ListView {
             id: songList
@@ -221,11 +244,10 @@ Item {
         parent: Overlay.overlay
         anchors.centerIn: parent
         width: Math.min(430, parent.width - 40)
-        height: 210 + (root.deleteError ? 42 : 0)
+        height: Math.min(parent.height - 40, 330 + (root.deleteError ? 64 : 0))
         modal: true
         focus: true
         closePolicy: Popup.NoAutoClose
-        onClosed: if (!root.deletePending) root.deletingSongIds = []
         padding: 18
         background: Rectangle { objectName: "shortcutBlocker"; color: "#211C2D"; radius: 14; border.color: "#332C41" }
         ColumnLayout {
@@ -233,7 +255,7 @@ Item {
             spacing: 10
             Label {
                 text: i18n.text("delete_selected_title", i18n.language)
-                    .replace("%1", root.deletingSongIds.length || root.selectedSongIds.length)
+                    .replace("%1", root.deletingSongIds.length)
                 color: "#F5F1FA"
                 font.pixelSize: 16
                 font.weight: Font.DemiBold
@@ -242,6 +264,31 @@ Item {
                 Layout.fillWidth: true
                 text: i18n.text("delete_selected_hint", i18n.language)
                 color: "#AAA0B8"
+                wrapMode: Text.WordWrap
+            }
+            CheckBox {
+                id: cleanupChoice
+                objectName: "libraryCleanFilesCheckBox"
+                Layout.fillWidth: true
+                text: i18n.text("clean_managed_files", i18n.language)
+                checked: root.cleanManagedFiles
+                enabled: !root.deletePending
+                onToggled: root.cleanManagedFiles = checked
+                palette.windowText: "#F5F1FA"
+                indicator: Rectangle {
+                    width: 18; height: 18; radius: 4
+                    x: cleanupChoice.leftPadding
+                    y: (cleanupChoice.height - height) / 2
+                    color: cleanupChoice.checked ? "#CBB8FF" : "#17141F"
+                    border.color: "#8D809F"
+                    Rectangle { anchors.centerIn: parent; width: 8; height: 8; radius: 2; color: "#21172F"; visible: cleanupChoice.checked }
+                }
+            }
+            Label {
+                Layout.fillWidth: true
+                visible: root.cleanManagedFiles
+                text: i18n.text("clean_managed_files_hint", i18n.language)
+                color: "#E8A9C3"
                 wrapMode: Text.WordWrap
             }
             Label {
@@ -263,7 +310,7 @@ Item {
                 TextButton {
                     objectName: "libraryConfirmDeleteButton"
                     text: i18n.text("confirm_delete", i18n.language)
-                    enabled: !root.deletePending && root.selectedSongIds.length > 0
+                    enabled: !root.deletePending && root.deletingSongIds.length > 0
                     onClicked: root.confirmDelete()
                 }
             }

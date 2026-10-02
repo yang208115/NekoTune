@@ -92,7 +92,7 @@ NekoTune 使用基于换行分隔的 JSON 协议，通过 Unix domain socket 进
 
 ### `player.next`
 
-切换到队列中的下一项。
+按当前播放顺序切换到下一项；顺序和单曲循环模式在队尾停止。
 
 ```json
 {"id":4,"method":"player.next","params":{}}
@@ -100,7 +100,7 @@ NekoTune 使用基于换行分隔的 JSON 协议，通过 Unix domain socket 进
 
 ### `player.previous`
 
-切换到队列中的上一项。
+按当前播放顺序直接切换到上一项；随机模式返回播放历史。
 
 ```json
 {"id":5,"method":"player.previous","params":{}}
@@ -121,6 +121,20 @@ NekoTune 使用基于换行分隔的 JSON 协议，通过 Unix domain socket 进
 ```json
 {"id":7,"method":"player.set_volume","params":{"volume":0.8}}
 ```
+
+### `player.set_playback_mode`
+
+设置全局播放顺序，参数 `mode` 为 `sequential`（顺序）、`repeat_one`（单曲循环）、`shuffle`（随机）或 `repeat_all`（列表循环）。成功返回完整播放器状态，包含 `playback_mode`；非法值或保存失败返回错误并保留原模式。模式保存至 `config/settings.json`，首次使用默认顺序播放。切换不打断当前歌曲或改变进度。
+
+```json
+{"id":8,"method":"player.set_playback_mode","params":{"mode":"shuffle"}}
+```
+
+`player.status` 和首次连接事件均包含 `playback_mode`。模式变更广播 `{"event":"player.playback_mode_changed","playback_mode":"shuffle"}`，供所有客户端同步。
+
+顺序模式播到队尾停止；列表循环在队尾回到队首，上一首可从队首回到队尾。单曲循环只在自然结束时重复，手动切歌仍沿队列顺序。上一首直接切歌，不再根据 3 秒进度重播本曲；顺序和单曲循环在队首重新播放本曲。
+
+随机模式默认使用 `shuffle_bag`：每轮每个队列项播放一次，轮次结束后重新洗牌，至少两项时避免跨轮连续重复同一项。队列显示顺序保持不变，相同歌曲的不同 `queue_id` 分别参与。上一首回到播放历史，下一首先沿历史前进，无历史时上一首重播当前项。直接点播、替换队列或切换模式重建随机轮次；追加项加入本轮待播序列，删除项从待播序列和历史移除。随机历史不跨重启保存。
 
 ### `player.status`
 
@@ -223,7 +237,9 @@ NekoTune 使用基于换行分隔的 JSON 协议，通过 Unix domain socket 进
 {"id":26,"method":"playlist.play","params":{"id":2,"song_ids":[9,7],"song_id":9}}
 ```
 
-`library.delete` 接收非空、无重复的 `song_ids` 整数数组。成功时在同一数据库事务中移除对应的曲库记录、标签关联、所有歌单关联及队列项，返回 `data.deleted_count`，并广播曲库、歌单和队列变化；本地音乐文件不会删除。任何 ID 无效或数据库写入失败时整批不删除。若正在播放的歌曲被删除，尝试继续播放后续队列项；没有后续项则停止。
+`library.delete` 接收非空、无重复的 `song_ids` 整数数组和可选布尔值 `clean_files`（默认 `false`）。成功时在同一数据库事务中移除对应的曲库记录、标签关联、所有歌单关联及队列项，返回 `data.deleted_count`，并广播曲库、歌单和队列变化。默认保留本地文件；`clean_files: true` 同时清理已登记的编号目录中的音频或软链接和同名 `.krc`、`.lrc`、`.jpg`、`.jpeg`、`.png`、`.webp`，保留外部原文件和目录中的其他文件，只删除清理后的空目录。目录软链接或越界路径会拒绝清理。
+
+清理先暂存文件，再提交数据库删除；任何 ID 无效、暂存失败或数据库写入失败时整批回滚。数据库提交后删除暂存文件，未能删除的路径通过 `data.cleanup_errors` 返回，界面明确提示已移除歌曲但仍有文件待清理。酷狗下载正在进行时暂不允许清理。若正在播放的歌曲被删除，尝试继续播放后续队列项；没有后续项则停止。
 
 ```json
 {"id":22,"method":"library.list","params":{}}
@@ -244,6 +260,8 @@ NekoTune 使用基于换行分隔的 JSON 协议，通过 Unix domain socket 进
 - `kugou.cancel`：取消当前下载或歌词请求；已完成的音频文件保留。
 
 事件为 `kugou.code_sent`、`kugou.logged_in`、`kugou.search_results`（含 `songs`、`page`）、`kugou.download_progress`（含 `received`、`total`）、`kugou.download_stage`（`stage` 为 `lyrics` 或 `cover`）、`kugou.download_finished`（含 `path`、`song_id`、`lyric_status`、`cover_status`）、`kugou.download_cancelled` 和 `kugou.operation_failed`（含安全的 `message`）。`lyric_status` 可为 `saved`、`existing`、`none`、`uncertain`、`error` 或 `skipped`；`cover_status` 可为 `saved`、`existing`、`none`、`error` 或 `skipped`。本地封面通过 `player.status` 与 `player.track_changed` 的 `song.cover_url` 返回。账号信息和临时播放地址不会出现在事件中。
+
+搜索结果中的歌曲包含 `hash`、`title`、`artist`、`album`、`duration_ms` 和 `cover_url`。封面地址来自该版本的 `Image`，缺失时沿用主结果的 `Image`，规范为 HTTPS 的 `imge.kugou.com` 地址和 240 像素尺寸；无有效地址时 `cover_url` 为空字符串，界面显示默认封面。
 
 ### `song.metadata`
 
@@ -278,6 +296,8 @@ AI 配置接口是异步操作，不占用曲库写命令队列。`get` 与 `cle
 ```
 
 建议标签为最多 5 个非空、去重的 1～64 字符名称；优先规范到已有分类名称。不确定的歌名、歌手返回空字符串；客户端应保留该字段当前内容，将标签合并到草稿，最后通过 `song.update_metadata` 保存。`warning: "ai_partial_result"` 提示部分名称缺少依据。
+
+`artist` 保持字符串格式。AI 建议中的多人主署名按原顺序用英文逗号和空格连接，例如 `Orangestar, 初音ミク`；主署名中明确列出的制作人与虚拟歌手都应保留，歌词职务行中的作词、作曲等人员不自动加入。界面将逗号、中文逗号、顿号、分号或换行分隔的名字分别显示，名字内部的空格、`&` 和 `/` 保留。
 
 使用 60 秒总超时，最多同时处理 4 个生成或测试请求；窗口关闭、断开连接不重放请求，客户端必须丢弃过期结果。JSON 模式仅在上游明确不支持相应参数时回退一次，网络错误、鉴权失败或非法返回不会自动重试。
 
@@ -334,7 +354,7 @@ AI 操作失败沿用 `status: "error"` 和 `message`，后者为可翻译的 `a
 - 扫描同时为已有曲库中可访问但缺少时长的歌曲补齐记录，包括音乐目录之外的旧导入路径；不改动歌曲文件、标签或队列顺序。读取失败或文件丢失时保留未知时长，后续扫描可重试。
 - `library.scan_finished`：事件包含 `imported`、`skipped`、`failed` 和 `errors`（路径与安全错误信息数组）。扫描按内容 SHA-256 去重，不修改队列或自动联网获取配套文件；忽略 `config`、临时文件、目录软链接和曾删除的歌曲。
 - `library.import`、`playlist.add` 的路径导入、`queue.add`、带路径的 `player.play`：参数结构保持原样，外部音频统一建立编号软链接。`library.import` 返回的 `data.path`，以及歌单、队列和播放器的歌曲 `path`，均为管理后的音频路径。
-- `library.delete`：保留音频及配套文件，事务内记录内容 hash 的扫描忽略状态。手动导入或下载可恢复；扫描不会恢复。
+- `library.delete`：默认保留音频及配套文件；`clean_files: true` 清理托管文件。两种操作都会在事务内记录内容 hash 的扫描忽略状态。手动导入或下载可恢复；扫描不会恢复。
 - `library.assets_failed`：配套文件保存或封面下载失败事件，包含 `song_hash` 和 `message`；不会中断音频播放。
 
 歌曲对象（曲库、队列、歌单和 `song.metadata`）包含持久化的 `duration_ms`，单位为毫秒，`0` 表示未知。导入和扫描在后台读取本地音频时长；旧数据库自动新增字段，已知时长不会被读取失败的结果清空。

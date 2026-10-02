@@ -1,4 +1,4 @@
-#include "kugou/kugou_account_session.h"
+#include "infrastructure/kugou/kugou_account_session.h"
 #include <QFile>
 #include <QTemporaryDir>
 #include <QtTest>

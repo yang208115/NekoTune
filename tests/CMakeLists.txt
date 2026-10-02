@@ -95,3 +95,7 @@ endif()
 add_executable(nekotune_audio_duration_test audio_duration_test.cpp)
 target_link_libraries(nekotune_audio_duration_test PRIVATE nekotune_core Qt6::Test)
 add_test(NAME nekotune_audio_duration_test COMMAND nekotune_audio_duration_test)
+
+add_executable(nekotune_playback_order_test playback_order_test.cpp)
+target_link_libraries(nekotune_playback_order_test PRIVATE nekotune_core nekotune_frontend Qt6::Test)
+add_test(NAME nekotune_playback_order_test COMMAND nekotune_playback_order_test)

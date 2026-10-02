@@ -1,5 +1,5 @@
 #pragma once
-#include "domain/library_types.h"
+#include "domain/library/library_types.h"
 #include <QHash>
 namespace nekotune {
 class ITransaction {

@@ -1,5 +1,5 @@
 #pragma once
-#include "application/library_service.h"
+#include "application/library/library_service.h"
 #include "domain/ai_backend.h"
 
 namespace nekotune {

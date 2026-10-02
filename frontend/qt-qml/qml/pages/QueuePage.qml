@@ -20,6 +20,8 @@ Item {
         anchors.margins: 20
         playlistController: page.controllers.playlists
         queueController: page.controllers.queue
+        playbackController: page.controllers.playback
+        playbackMode: page.controllers.playback.playbackMode
         connected: page.transport.connected
         onQueueAddRequested: path => page.controllers.queue.addPath(path)
         onLibraryRequested: page.shell.navigate("library")
