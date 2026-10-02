@@ -2,8 +2,16 @@
 namespace nekotune {
 LyricsController::LyricsController(PlayerEngine &player, LyricsService *service)
     : m_player(player), m_service(service), m_sources(service->sources()) {
+    m_snapshot.offline = service->offline();
     qRegisterMetaType<LyricsSnapshot>();
+    qRegisterMetaType<LyricsQuery>();
+    qRegisterMetaType<LyricsDocument>();
     m_service->moveToThread(&m_thread);
+    connect(m_service, &LyricsService::assetsReady, this,
+            [this](const LyricsQuery &request, const LyricsDocument &document, quint64 revision) {
+                if (revision == m_revision && request.trackId == query().trackId)
+                    emit assetsReady(request.trackId, document, revision);
+            });
     connect(&m_thread, &QThread::finished, m_service, &QObject::deleteLater);
     connect(m_service, &LyricsService::changed, this, [this](const LyricsSnapshot &state) {
         if (state.revision != m_revision || state.trackId != query().trackId)
@@ -80,6 +88,8 @@ Result<void> LyricsController::search(const QString &trackId, const MetadataPatc
     m_player.cancelPendingMetadataRefresh();
     auto revision = ++m_revision;
     m_snapshot.revision = revision;
+    m_snapshot.state = QStringLiteral("searching");
+    emit changed(m_snapshot);
     QMetaObject::invokeMethod(m_service, [service = m_service, request, revision, source] {
         service->search(request, revision, source);
     });

@@ -91,7 +91,8 @@ void KugouDownloadJob::beginAudio(const QUrl &url, int redirects) {
                 reply->abort();
                 return;
             }
-            if (!QDir().mkpath(m_musicDirectory)) {
+            if (!QDir().mkpath(m_destinationBase.isEmpty() ? m_musicDirectory
+                                                           : QFileInfo(m_destinationBase).absolutePath())) {
                 m_audioError = QStringLiteral("Cannot create music directory");
                 reply->abort();
                 return;
@@ -99,7 +100,8 @@ void KugouDownloadJob::beginAudio(const QUrl &url, int redirects) {
             const auto base = safeName(m_selected.title) + QStringLiteral(" - ") +
                               safeName(m_selected.artist) + QStringLiteral(" [") + m_selected.hash.toLower() +
                               QStringLiteral("]");
-            m_audioPath = QDir(m_musicDirectory).filePath(base + suffix);
+            m_audioPath = m_destinationBase.isEmpty() ? QDir(m_musicDirectory).filePath(base + suffix)
+                                                      : m_destinationBase + suffix;
             if (QFileInfo::exists(m_audioPath)) {
                 m_audioError = QStringLiteral("Audio file already exists");
                 reply->abort();
@@ -508,7 +510,8 @@ bool KugouDownloadJob::reuseExisting() {
                       QStringLiteral(" [") + m_selected.hash.toLower() + QStringLiteral("]");
     for (const auto &suffix : {QStringLiteral(".mp3"), QStringLiteral(".flac"), QStringLiteral(".aac"),
                                QStringLiteral(".m4a"), QStringLiteral(".ogg")}) {
-        const auto existing = QDir(m_musicDirectory).filePath(base + suffix);
+        const auto existing = m_destinationBase.isEmpty() ? QDir(m_musicDirectory).filePath(base + suffix)
+                                                          : m_destinationBase + suffix;
         if (QFileInfo(existing).isFile() && QFileInfo(existing).size() > 0) {
             m_audioPath = existing;
             fetchLyrics();

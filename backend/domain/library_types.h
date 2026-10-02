@@ -14,6 +14,8 @@ struct SongMetadata {
     QString customTitle;
     QString artist;
     QString lyrics;
+    QString sourceName;
+    qint64 durationMs = 0;
 };
 
 struct MetadataPatch {
@@ -26,6 +28,8 @@ struct MetadataPatch {
 struct ImportedFile {
     QString path;
     QString hash;
+    QString sourceName;
+    qint64 durationMs = 0;
 };
 
 struct QueueRecord {

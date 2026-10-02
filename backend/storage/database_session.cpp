@@ -1,4 +1,7 @@
 #include "storage/database_session.h"
+#include "app_paths.h"
+#include <QFile>
+#include <QLockFile>
 
 #include <QCoreApplication>
 #include <QDir>
@@ -30,38 +33,91 @@ DatabaseSession::~DatabaseSession() {
 }
 
 QString DatabaseSession::defaultDatabasePath() {
-    const auto env = QProcessEnvironment::systemEnvironment();
-    const QString explicitPath = env.value(QStringLiteral("NEKOTUNE_DB_PATH"));
-    if (!explicitPath.isEmpty()) {
-        return explicitPath;
-    }
-
-    const QDir currentDir(QDir::currentPath());
-    if (currentDir.exists(QStringLiteral("CMakeLists.txt")) && currentDir.exists(QStringLiteral("backend")) &&
-        currentDir.exists(QStringLiteral("build"))) {
-        return currentDir.filePath(QStringLiteral("build/nekotune.sqlite3"));
-    }
-
-    const QDir appDir(QCoreApplication::applicationDirPath());
-    if (appDir.exists(QStringLiteral("../CMakeCache.txt"))) {
-        return QFileInfo(
-                   QDir(appDir.filePath(QStringLiteral(".."))).filePath(QStringLiteral("nekotune.sqlite3")))
-            .absoluteFilePath();
-    }
-    if (appDir.exists(QStringLiteral("CMakeCache.txt"))) {
-        return appDir.filePath(QStringLiteral("nekotune.sqlite3"));
-    }
-
-    QString dataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
-    if (dataDir.isEmpty()) {
-        dataDir = QDir::currentPath();
-    }
-
-    return QDir(dataDir).filePath(QStringLiteral("nekotune.sqlite3"));
+    const auto explicitPath = qEnvironmentVariable("NEKOTUNE_DB_PATH");
+    return explicitPath.isEmpty() ? AppPaths::databasePath() : explicitPath;
 }
+namespace {
+QString legacyDatabasePath() {
+    const QDir current(QDir::currentPath()), app(QCoreApplication::applicationDirPath());
+    QStringList candidates;
+    if (current.exists("CMakeLists.txt") && current.exists("backend"))
+        candidates.append(current.filePath("build/nekotune.sqlite3"));
+    if (app.exists("../CMakeCache.txt"))
+        candidates.append(app.filePath("../nekotune.sqlite3"));
+    if (app.exists("CMakeCache.txt"))
+        candidates.append(app.filePath("nekotune.sqlite3"));
+    candidates.append(
+        QDir(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)).filePath("nekotune.sqlite3"));
+    const QDir data(QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation));
+    candidates.append(data.filePath("NekoTune/NekoTune/nekotune.sqlite3"));
+    candidates.append(data.filePath("NekoTune/NekoTune Backend/nekotune.sqlite3"));
+    for (const auto &path : candidates)
+        if (QFileInfo(path).isFile())
+            return QFileInfo(path).absoluteFilePath();
+    return {};
+}
+bool snapshotDatabase(const QString &source, const QString &target, QString &error) {
+    const auto connection = "nekotune-migration-" + QUuid::createUuid().toString();
+    const auto temporary = target + ".migration-" + QUuid::createUuid().toString(QUuid::WithoutBraces);
+    bool ok = false;
+    {
+        auto db = QSqlDatabase::addDatabase("QSQLITE", connection);
+        db.setDatabaseName(source);
+        db.setConnectOptions("QSQLITE_OPEN_READONLY;QSQLITE_BUSY_TIMEOUT=5000");
+        if (db.open()) {
+            QSqlQuery query(db);
+            auto escaped = temporary;
+            escaped.replace("'", "''");
+            ok = query.exec("VACUUM INTO '" + escaped + "'");
+            if (!ok)
+                error = query.lastError().text();
+        } else
+            error = db.lastError().text();
+    }
+    QSqlDatabase::removeDatabase(connection);
+    if (ok) {
+        {
+            auto db = QSqlDatabase::addDatabase("QSQLITE", connection);
+            db.setDatabaseName(temporary);
+            db.setConnectOptions("QSQLITE_OPEN_READONLY");
+            if (db.open()) {
+                QSqlQuery query(db);
+                ok = query.exec("PRAGMA quick_check") && query.next() && query.value(0).toString() == "ok";
+            } else
+                ok = false;
+            if (!ok)
+                error = "Migrated database failed validation";
+        }
+        QSqlDatabase::removeDatabase(connection);
+    }
+    if (ok)
+        ok = QFile::rename(temporary, target);
+    if (!ok) {
+        QFile::remove(temporary);
+        if (error.isEmpty())
+            error = "Cannot publish migrated database";
+    }
+    return ok;
+}
+} // namespace
 
 bool DatabaseSession::initialize(const QString &databasePath) {
     m_databasePath = databasePath;
+    if (databasePath == AppPaths::databasePath()) {
+        if (!AppPaths::prepare(&m_error))
+            return false;
+        QLockFile lock(AppPaths::configFile("database-migration.lock"));
+        if (!lock.tryLock(5000)) {
+            setError("Database migration is busy");
+            return false;
+        }
+        if (!QFileInfo::exists(databasePath) && qEnvironmentVariable("NEKOTUNE_HOME").isEmpty() &&
+            qEnvironmentVariable("NEKOTUNE_DB_PATH").isEmpty()) {
+            const auto source = legacyDatabasePath();
+            if (!source.isEmpty() && !snapshotDatabase(source, databasePath, m_error))
+                return false;
+        }
+    }
     const QFileInfo databaseFile(databasePath);
     const QString parentPath = databaseFile.absolutePath();
     if (!parentPath.isEmpty() && !QDir().mkpath(parentPath)) {
@@ -106,11 +162,37 @@ bool DatabaseSession::migrate() {
         return false;
     }
 
+    if (!query.exec("PRAGMA table_info(songs)")) {
+        setError(query.lastError().text());
+        return false;
+    }
+    bool hasSourceName = false, hasDuration = false;
+    while (query.next()) {
+        hasSourceName |= query.value(1).toString() == "source_name";
+        hasDuration |= query.value(1).toString() == "duration_ms";
+    }
+    query.finish();
+    if (!hasSourceName && !query.exec("ALTER TABLE songs ADD COLUMN source_name TEXT NOT NULL DEFAULT ''")) {
+        setError(query.lastError().text());
+        return false;
+    }
     if (!m_db.transaction()) {
         setError(m_db.lastError().text());
         return false;
     }
+    if (!hasDuration &&
+        !query.exec("ALTER TABLE songs ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0 CHECK(duration_ms >= 0)")) {
+        setError(query.lastError().text());
+        m_db.rollback();
+        return false;
+    }
     const QStringList statements{
+        QStringLiteral("CREATE TABLE IF NOT EXISTS managed_resources (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                       "hash TEXT UNIQUE, original_path TEXT NOT NULL DEFAULT '', source_name TEXT NOT NULL "
+                       "DEFAULT '', path TEXT NOT NULL DEFAULT '')"),
+        QStringLiteral("CREATE TABLE IF NOT EXISTS resource_sources (provider_hash TEXT PRIMARY KEY, "
+                       "resource_id INTEGER NOT NULL REFERENCES managed_resources(id))"),
+        QStringLiteral("CREATE TABLE IF NOT EXISTS scan_ignored (hash TEXT PRIMARY KEY)"),
         QStringLiteral("CREATE TABLE IF NOT EXISTS playlists (id INTEGER PRIMARY KEY AUTOINCREMENT, name "
                        "TEXT NOT NULL)"),
         QStringLiteral("CREATE TABLE IF NOT EXISTS playlist_items (playlist_id INTEGER NOT NULL REFERENCES "

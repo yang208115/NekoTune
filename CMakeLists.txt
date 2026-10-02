@@ -23,8 +23,22 @@ find_package(Qt6 6.6 REQUIRED COMPONENTS
     Test
 )
 find_package(ZLIB REQUIRED)
+find_package(Qt6Keychain 0.17 CONFIG REQUIRED)
+
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET libavformat libavutil)
+
+# Linux-only reader for credentials saved by the previous libsecret backend.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    pkg_check_modules(LIBSECRET REQUIRED IMPORTED_TARGET libsecret-1)
+    find_package(Threads REQUIRED)
+endif()
 
 qt_standard_project_setup(REQUIRES 6.6)
+
+add_library(nekotune_paths STATIC shared/app_paths.cpp)
+target_include_directories(nekotune_paths PUBLIC ${CMAKE_SOURCE_DIR}/shared)
+target_link_libraries(nekotune_paths PUBLIC Qt6::Core)
 
 add_subdirectory(backend)
 add_subdirectory(frontend/qt-qml)

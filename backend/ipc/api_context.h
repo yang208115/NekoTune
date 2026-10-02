@@ -1,4 +1,5 @@
 #pragma once
+#include "application/ai_service.h"
 #include "application/collection_service.h"
 #include "application/cover_service.h"
 #include "application/kugou_service.h"
@@ -22,6 +23,10 @@ struct ApiContext {
     KugouService &kugou;
     QString databasePath;
     CoverService &covers;
+    std::function<bool()> scan;
+    QString musicDirectory;
+    QString configDirectory;
+    AiService *ai = nullptr;
     QJsonObject playbackStatus() const;
     QJsonObject libraryStatus() const;
     QJsonArray queueItems() const;
@@ -34,6 +39,7 @@ void registerPlayerApi(IpcRouter &, ApiContext &);
 void registerLibraryApi(IpcRouter &, ApiContext &);
 void registerLyricsApi(IpcRouter &, ApiContext &);
 void registerKugouApi(IpcRouter &, ApiContext &);
+void registerAiApi(IpcRouter &, ApiContext &);
 bool positiveId(const QJsonValue &value);
 Result<int> requiredId(const QJsonObject &params, const QString &key);
 } // namespace nekotune

@@ -8,6 +8,10 @@ namespace nekotune {
 Result<std::optional<LyricsDocument>> LyricsStorage::readLocal(const LyricsQuery &query,
                                                                const QString &path) const {
     const QFileInfo audio(path);
+    if (audio.isSymLink() && audio.exists() &&
+        !QFileInfo(audio.dir().filePath(audio.completeBaseName() + ".krc")).exists() &&
+        !QFileInfo(audio.dir().filePath(audio.completeBaseName() + ".lrc")).exists())
+        return readLocal(query, audio.canonicalFilePath());
     QString localKrcPath;
     QString localPath = audio.absoluteDir().filePath(audio.completeBaseName() + QStringLiteral(".lrc"));
     const auto sidecars = audio.absoluteDir().entryInfoList(QDir::Files | QDir::NoDotAndDotDot);

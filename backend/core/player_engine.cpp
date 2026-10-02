@@ -50,7 +50,7 @@ PlaybackSnapshot PlayerEngine::snapshot() const {
     if (!song.metadata.customTitle.isEmpty())
         result.metadata.title = song.metadata.customTitle;
     if (result.metadata.title.isEmpty())
-        result.metadata.title = QFileInfo(song.path).completeBaseName();
+        result.metadata.title = song.metadata.sourceName.isEmpty() ? QFileInfo(song.path).completeBaseName() : song.metadata.sourceName;
     if (!song.metadata.artist.isEmpty())
         result.metadata.artist = song.metadata.artist;
     return result;

@@ -1,4 +1,5 @@
 #include "kugou/kugou_music_service.h"
+#include "app_paths.h"
 
 #include <QDir>
 #include <QJsonArray>
@@ -28,9 +29,10 @@ bool validDfid(const QString &value) {
 
 } // namespace
 
-KugouMusicService::KugouMusicService(QObject *parent, QNetworkAccessManager *manager, const QUrl &baseUrl,
-                                     const QString &sessionPath, const QString &musicDirectory,
-                                     const QString &keyPath)
+KugouMusicService::KugouMusicService(
+    QObject *parent, QNetworkAccessManager *manager, const QUrl &baseUrl, const QString &sessionPath,
+    const QString &musicDirectory, const QString &keyPath,
+    std::function<Result<QString>(const QString &, const QString &)> destination)
     : IKugouBackend(parent), m_manager(manager ? manager : new QNetworkAccessManager(this)) {
     qRegisterMetaType<KugouEvent>();
     const auto env = QProcessEnvironment::systemEnvironment();
@@ -49,19 +51,13 @@ KugouMusicService::KugouMusicService(QObject *parent, QNetworkAccessManager *man
         m_configurationError = QStringLiteral("Invalid Kugou Worker URL");
     }
     m_baseUrl.setPath({});
-    m_keyPath = keyPath.isEmpty()
-                    ? QDir(QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation))
-                          .filePath(QStringLiteral("NekoTune/kugou-account-key"))
-                    : keyPath;
-    m_sessionPath = sessionPath.isEmpty()
-                        ? QDir(QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation))
-                              .filePath(QStringLiteral("NekoTune/kugou-session.json"))
-                        : sessionPath;
-    const auto musicRoot = QStandardPaths::writableLocation(QStandardPaths::MusicLocation);
-    m_musicDirectory =
-        musicDirectory.isEmpty()
-            ? QDir(musicRoot.isEmpty() ? QDir::homePath() : musicRoot).filePath(QStringLiteral("NekoTune"))
-            : musicDirectory;
+    m_destination = std::move(destination);
+    QString directoryError;
+    if (!AppPaths::prepare(&directoryError))
+        m_configurationError = directoryError;
+    m_keyPath = keyPath.isEmpty() ? AppPaths::configFile("kugou-account-key") : keyPath;
+    m_sessionPath = sessionPath.isEmpty() ? AppPaths::configFile("kugou-session.json") : sessionPath;
+    m_musicDirectory = musicDirectory.isEmpty() ? AppPaths::musicDirectory() : musicDirectory;
     m_account = std::make_unique<KugouAccountSession>(m_keyPath, m_sessionPath);
     m_api = std::make_unique<KugouApiClient>(*m_manager, m_baseUrl, *m_account);
     m_download = std::make_unique<KugouDownloadJob>(*m_manager, *m_api, m_musicDirectory);
@@ -109,7 +105,8 @@ KugouStatus KugouMusicService::status() const {
             !m_account->cookies.value(QStringLiteral("token")).isEmpty() &&
                 !m_account->cookies.value(QStringLiteral("userid")).isEmpty() &&
                 validDfid(m_account->cookies.value(QStringLiteral("dfid"))),
-            m_busy, m_downloadActive};
+            m_busy, m_downloadActive,
+            !m_account->keyError.isEmpty() ? m_account->keyError : m_account->sessionError};
 }
 
 bool KugouMusicService::businessOk(const QJsonObject &body, const QString &expected) {
@@ -274,11 +271,18 @@ QString KugouMusicService::startDownload(const QString &hash) {
         return QStringLiteral("Log in to Kugou first");
     if (!m_songs.contains(hash))
         return QStringLiteral("Search for the song again before downloading");
+    QString destinationBase;
+    if (m_destination) {
+        auto destination = m_destination(hash, m_songs.value(hash).title);
+        if (!destination)
+            return destination.error().message;
+        destinationBase = destination.value();
+    }
     m_selected = m_songs.value(hash);
     m_busy = true;
     m_downloadActive = true;
     m_cancelled = false;
-    m_download->prepare(m_selected);
+    m_download->prepare(m_selected, destinationBase);
     if (m_download->reuseExisting())
         return {};
     QJsonObject body{{QStringLiteral("hash"), hash}, {QStringLiteral("quality"), QStringLiteral("128")}};

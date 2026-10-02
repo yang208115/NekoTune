@@ -1,7 +1,9 @@
 #include "application/cover_service.h"
+#include <QDateTime>
 #include <QDir>
 #include <QFileInfo>
 #include <QUrl>
+#include <QUrlQuery>
 
 namespace nekotune {
 CoverService::CoverService(std::unique_ptr<ILyricsStorage> storage) : m_storage(std::move(storage)) {}
@@ -23,10 +25,34 @@ QString CoverService::resolve(const QString &path, const QString &trackId) const
         const QFileInfo audio(path);
         const auto base = QDir(audio.absolutePath()).filePath(audio.completeBaseName());
         for (const auto &suffix : {".jpg", ".jpeg", ".png", ".webp"})
-            if (QFileInfo(base + QLatin1String(suffix)).isFile())
-                return QUrl::fromLocalFile(base + QLatin1String(suffix)).toString();
+            if (const QFileInfo cover(base + QLatin1String(suffix)); cover.isFile()) {
+                auto url = QUrl::fromLocalFile(cover.absoluteFilePath());
+                bool numbered = false;
+                audio.completeBaseName().toLongLong(&numbered);
+                if (numbered && audio.completeBaseName() == audio.dir().dirName()) {
+                    QUrlQuery version;
+                    version.addQueryItem("v", QString("%1-%2-%3")
+                                                  .arg(cover.lastModified().toMSecsSinceEpoch())
+                                                  .arg(cover.size())
+                                                  .arg(m_localVersions.value(trackId)));
+                    url.setQuery(version);
+                }
+                return url.toString();
+            }
+        if (audio.isSymLink() && audio.exists()) {
+            const QFileInfo original(audio.canonicalFilePath());
+            const auto originalBase = original.dir().filePath(original.completeBaseName());
+            for (const auto &suffix : {".jpg", ".jpeg", ".png", ".webp"})
+                if (QFileInfo(originalBase + QLatin1String(suffix)).isFile())
+                    return QUrl::fromLocalFile(originalBase + QLatin1String(suffix)).toString();
+        }
     }
     return m_offline ? QString() : cachedCover(trackId);
+}
+void CoverService::assetsUpdated(const QString &trackId) {
+    m_covers.remove(trackId);
+    ++m_localVersions[trackId];
+    emit changed();
 }
 
 void CoverService::updateLyrics(const LyricsSnapshot &state) {

@@ -11,7 +11,7 @@ void DownloadService::importDownloaded(const QString &path, const QString &lyric
             }
             auto result = m_library.importFile(file.value(), title, artist);
             if (result)
-                emit finished(path, result.value().id, lyric, cover);
+                emit finished(file.value().path, result.value().id, lyric, cover);
             else
                 emit importFailed(path);
             done();

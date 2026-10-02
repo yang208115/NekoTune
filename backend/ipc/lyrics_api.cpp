@@ -1,4 +1,5 @@
 #include "ipc/api_context.h"
+#include "app_paths.h"
 namespace nekotune {
 void registerLyricsApi(IpcRouter &router, ApiContext &api) {
     router.registerMethod("lyrics.sources", [&api](const auto &, auto done) {
@@ -14,6 +15,10 @@ void registerLyricsApi(IpcRouter &router, ApiContext &api) {
     router.registerMethod("lyrics.set_offline", [&api](const QJsonObject &params, auto done) {
         if (!params.value("offline").isBool()) {
             done(error(failure("offline must be a boolean")));
+            return;
+        }
+        if (!AppPaths::saveSetting("lyrics_offline", params.value("offline"))) {
+            done(error(failure("Cannot save lyrics preference", ErrorCode::Storage)));
             return;
         }
         api.lyrics.setOffline(params.value("offline").toBool());

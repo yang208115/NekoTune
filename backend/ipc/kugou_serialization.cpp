@@ -6,7 +6,8 @@ QJsonObject toJson(const KugouStatus &status) {
             {"key_saved", status.keySaved},
             {"logged_in", status.loggedIn},
             {"busy", status.busy},
-            {"download_active", status.downloadActive}};
+            {"download_active", status.downloadActive},
+            {"credential_error", status.credentialError}};
 }
 QJsonObject toJson(const KugouEvent &event) {
     QJsonObject data;

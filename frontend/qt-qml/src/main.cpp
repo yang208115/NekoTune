@@ -1,5 +1,6 @@
 #include "controllers/app_controllers.h"
 #include "i18n.h"
+#include "app_paths.h"
 #include "ipc_client.h"
 
 #ifdef NEKOTUNE_EMBED_BACKEND
@@ -40,8 +41,7 @@ class CoverNetworkManagerFactory final : public QQmlNetworkAccessManagerFactory 
     QNetworkAccessManager *create(QObject *parent) override {
         auto *manager = new CoverNetworkManager(parent);
         auto *cache = new QNetworkDiskCache(manager);
-        const auto directory = QDir(QStandardPaths::writableLocation(QStandardPaths::CacheLocation))
-                                   .filePath(QStringLiteral("covers"));
+        const auto directory = nekotune::AppPaths::configFile("covers");
         cache->setCacheDirectory(directory);
         cache->setMaximumCacheSize(64 * 1024 * 1024);
         manager->setCache(cache);
@@ -53,6 +53,8 @@ int main(int argc, char *argv[]) {
     QGuiApplication app(argc, argv);
     QGuiApplication::setApplicationName(QStringLiteral("NekoTune"));
     QGuiApplication::setOrganizationName(QStringLiteral("NekoTune"));
+    QString directoryError;
+    if (!nekotune::AppPaths::prepare(&directoryError)) { qCritical() << directoryError; return 1; }
     QQuickStyle::setStyle(QStringLiteral("Fusion"));
 
 #ifdef NEKOTUNE_EMBED_BACKEND

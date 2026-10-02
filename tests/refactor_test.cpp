@@ -8,6 +8,7 @@
 #include "ipc/serialization.h"
 #include "runtime/backend_runtime.h"
 #include "support/store_fixture.h"
+#include "app_paths.h"
 #include <QCryptographicHash>
 #include <QDataStream>
 #include <QFile>
@@ -141,6 +142,7 @@ class RefactorTest final : public QObject {
         m_audio = m_directory.filePath("test.wav");
         qputenv("NEKOTUNE_SOCKET", m_socket.toUtf8());
         qputenv("NEKOTUNE_DB_PATH", m_database.toUtf8());
+        qputenv("NEKOTUNE_HOME", m_directory.filePath("music").toUtf8());
         qputenv("XDG_CONFIG_HOME", m_directory.filePath("config").toUtf8());
         qputenv("XDG_DATA_HOME", m_directory.filePath("data").toUtf8());
         qputenv("XDG_CACHE_HOME", m_directory.filePath("cache").toUtf8());
@@ -304,7 +306,8 @@ class RefactorTest final : public QObject {
             })(),
             5000);
         for (int index = 0; index < paths.size(); ++index)
-            QCOMPARE(queue[index].toObject().value("path").toString(), paths[index]);
+            QCOMPARE(QFileInfo(queue[index].toObject().value("path").toString()).canonicalFilePath(),
+                     QFileInfo(paths[index]).canonicalFilePath());
         QCOMPARE(queue[0].toObject().value("song_id"), queue[2].toObject().value("song_id"));
         QVERIFY(queue[0].toObject().value("queue_id") != queue[2].toObject().value("queue_id"));
         const auto large = m_directory.filePath("pending.bin");
@@ -426,6 +429,7 @@ class RefactorTest final : public QObject {
         restored.stop();
     }
     void artworkMatchesAcrossIpcCollections() {
+        QVERIFY(AppPaths::saveSetting("lyrics_offline", false));
         const auto path = m_directory.filePath("covers.wav");
         writeAudio(path, char(83));
         QFile audio(path);

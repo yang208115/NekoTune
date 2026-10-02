@@ -127,6 +127,7 @@ Rectangle {
             }
         }
         Label {
+            objectName: "trackDuration"
             text: {
                 const duration = Number(row.song.duration || row.song.duration_ms || 0)
                 if (duration <= 0) return "--:--"

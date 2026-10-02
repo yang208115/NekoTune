@@ -1,4 +1,5 @@
 #include "support/store_fixture.h"
+#include "app_paths.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -13,7 +14,7 @@ class StoreFixtureTest final : public QObject {
     Q_OBJECT
 
   private slots:
-    void usesBuildDatabasePathInDevelopment();
+    void usesManagedDatabasePath();
     void storesAndUpdatesSongMetadata();
     void remembersImportedPathsAcrossRestart();
     void preservesLegacyAsrTables();
@@ -56,11 +57,9 @@ void StoreFixtureTest::preservesLegacyAsrTables() {
     }
 }
 
-void StoreFixtureTest::usesBuildDatabasePathInDevelopment() {
+void StoreFixtureTest::usesManagedDatabasePath() {
     QCOMPARE(nekotune::StoreFixture::defaultDatabasePath(),
-             QFileInfo(
-                 QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("../nekotune.sqlite3")))
-                 .absoluteFilePath());
+             nekotune::AppPaths::databasePath());
 }
 
 void StoreFixtureTest::storesAndRestoresQueue() {

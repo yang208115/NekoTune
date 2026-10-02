@@ -2,9 +2,11 @@
 #include <QFileInfo>
 namespace nekotune {
 QJsonObject ApiContext::withCover(QJsonObject song) const {
-    if (!song.isEmpty())
-        song.insert("cover_url",
-                    covers.resolve(song.value("path").toString(), song.value("song_hash").toString()));
+    if (!song.isEmpty()) {
+        const auto path = song.value("path").toString().isEmpty() ? song.value("first_path").toString()
+                                                                  : song.value("path").toString();
+        song.insert("cover_url", covers.resolve(path, song.value("song_hash").toString()));
+    }
     return song;
 }
 QJsonObject ApiContext::playbackStatus() const {
@@ -31,6 +33,8 @@ QJsonObject ApiContext::status() const {
     state.insert("queue", queueItems());
     state.insert("playlists", playlistList());
     state.insert("database_path", databasePath);
+    state.insert("music_directory", musicDirectory);
+    state.insert("config_directory", configDirectory);
     state.insert("lyrics", toJson(lyrics.snapshot()));
     state.insert("kugou", toJson(kugou.status()));
     return state;
@@ -49,9 +53,11 @@ QJsonArray ApiContext::playlistList() const {
             auto item = toJson(song.value());
             item.remove("lyrics");
             item.insert("path", record.path);
-            item.insert("title", song.value().customTitle.trimmed().isEmpty()
-                                     ? QFileInfo(record.path).completeBaseName()
-                                     : song.value().customTitle.trimmed());
+            item.insert("title",
+                        song.value().customTitle.trimmed().isEmpty()
+                            ? (song.value().sourceName.isEmpty() ? QFileInfo(record.path).completeBaseName()
+                                                                 : song.value().sourceName)
+                            : song.value().customTitle.trimmed());
             items.append(withCover(item));
         }
         result.append(QJsonObject{{"id", playlist.id}, {"name", playlist.name}, {"items", items}});

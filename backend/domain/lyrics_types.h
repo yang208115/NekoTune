@@ -63,3 +63,5 @@ struct LyricsSnapshot {
 };
 } // namespace nekotune
 Q_DECLARE_METATYPE(nekotune::LyricsSnapshot)
+Q_DECLARE_METATYPE(nekotune::LyricsQuery)
+Q_DECLARE_METATYPE(nekotune::LyricsDocument)

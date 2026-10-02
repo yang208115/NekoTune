@@ -16,13 +16,16 @@ class ISongRepository {
     virtual QString errorString() const = 0;
     virtual std::optional<SongMetadata> getOrCreateSong(const QString &hash, const QString &path,
                                                         const QString &customTitle = {},
-                                                        const QString &artist = {}) = 0;
+                                                        const QString &artist = {},
+                                                        const QString &sourceName = {},
+                                                        qint64 durationMs = 0) = 0;
     virtual QVector<SongMetadata> songs() const = 0;
     virtual std::optional<SongMetadata> songById(int songId) const = 0;
     virtual std::optional<SongMetadata> updateMetadata(int songId, const QString &customTitle,
                                                        const QString &artist, const QString &lyrics) = 0;
     virtual QVector<QString> pathsForSong(int songId) const = 0;
     virtual QHash<int, QVector<QString>> songPaths() const = 0;
+    virtual bool updateDuration(int songId, qint64 durationMs) = 0;
     virtual bool erase(int songId) = 0;
 };
 class IQueueRepository {

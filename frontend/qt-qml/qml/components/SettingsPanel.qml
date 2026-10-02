@@ -8,6 +8,7 @@ Item {
     id: root
     required property var client
     required property var translator
+    property var ai: null
     property bool saving: false
     property string message: ""
     property bool failed: false
@@ -67,6 +68,14 @@ Item {
             }
         }
 
+        AiSettingsPanel {
+            Layout.fillWidth: true
+            visible: root.ai !== null
+            ai: root.ai
+            translator: root.translator
+            connected: root.connected
+        }
+
         Rectangle {
             Layout.fillWidth: true
             implicitHeight: settingsColumn.implicitHeight + 28
@@ -103,6 +112,14 @@ Item {
                     wrapMode: Text.WordWrap
                     text: root.t("kugou_key_help")
                     color: "#AAA0B8"
+                }
+
+                Label {
+                    Layout.fillWidth: true
+                    visible: Boolean(root.account.credential_error)
+                    text: root.t("kugou_keyring_error")
+                    color: "#E8A0A8"
+                    wrapMode: Text.WordWrap
                 }
 
                 RowLayout {

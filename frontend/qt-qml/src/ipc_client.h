@@ -15,7 +15,8 @@ class IpcClient final : public QObject {
     ~IpcClient() override;
     bool connected() const { return m_socket.state() == QLocalSocket::ConnectedState; }
     QString error() const { return m_error; }
-    void request(const QString &method, const QJsonObject &params = {}, Completion completion = {});
+    void request(const QString &method, const QJsonObject &params = {}, Completion completion = {},
+                 bool reportError = true);
     static QString normalizePath(const QString &path);
     Q_INVOKABLE void connectBackend();
   signals:
@@ -30,6 +31,7 @@ class IpcClient final : public QObject {
     struct Pending {
         QString method;
         Completion completion;
+        bool reportError = true;
     };
     void readMessages();
     void setError(const QString &message);

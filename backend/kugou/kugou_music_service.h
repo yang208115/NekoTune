@@ -1,12 +1,15 @@
 #pragma once
+#include "domain/result.h"
 #include "kugou/kugou_download_job.h"
+#include <functional>
 namespace nekotune {
 class KugouMusicService final : public IKugouBackend {
     Q_OBJECT
   public:
-    explicit KugouMusicService(QObject *parent = nullptr, QNetworkAccessManager *manager = nullptr,
-                               const QUrl &baseUrl = {}, const QString &sessionPath = {},
-                               const QString &musicDirectory = {}, const QString &keyPath = {});
+    explicit KugouMusicService(
+        QObject *parent = nullptr, QNetworkAccessManager *manager = nullptr, const QUrl &baseUrl = {},
+        const QString &sessionPath = {}, const QString &musicDirectory = {}, const QString &keyPath = {},
+        std::function<Result<QString>(const QString &, const QString &)> destination = {});
     ~KugouMusicService() override;
     KugouStatus status() const override;
     void shutdown();
@@ -30,5 +33,6 @@ class KugouMusicService final : public IKugouBackend {
     QHash<QString, KugouSong> m_songs;
     KugouSong m_selected;
     bool m_busy = false, m_downloadActive = false, m_cancelled = false;
+    std::function<Result<QString>(const QString &, const QString &)> m_destination;
 };
 } // namespace nekotune

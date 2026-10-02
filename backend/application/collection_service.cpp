@@ -13,7 +13,7 @@ Result<int> CollectionService::enqueue(const ImportedFile &file, bool play) {
     Transaction tx(m_transaction);
     if (!tx)
         return failure(m_transaction.errorString(), ErrorCode::Storage);
-    auto song = m_songs.getOrCreateSong(file.hash, file.path);
+    auto song = m_songs.getOrCreateSong(file.hash, file.path, {}, {}, file.sourceName, file.durationMs);
     if (!song)
         return failure(m_songs.errorString(), ErrorCode::Storage);
     auto next = m_queue.queue();
@@ -36,7 +36,7 @@ Result<void> CollectionService::addFileToPlaylist(int id, const ImportedFile &fi
     Transaction tx(m_transaction);
     if (!tx)
         return failure(m_transaction.errorString(), ErrorCode::Storage);
-    auto song = m_songs.getOrCreateSong(file.hash, file.path);
+    auto song = m_songs.getOrCreateSong(file.hash, file.path, {}, {}, file.sourceName, file.durationMs);
     if (!song || !m_playlists.addPlaylistSong(id, {file.path, song->id}) || !tx.commit())
         return failure(m_transaction.errorString(), ErrorCode::Storage);
     emit libraryChanged();

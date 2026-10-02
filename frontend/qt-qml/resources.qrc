@@ -21,6 +21,7 @@
         <file>qml/components/SeekSlider.qml</file>
         <file>qml/components/QueuePanel.qml</file>
         <file>qml/components/SettingsPanel.qml</file>
+        <file>qml/components/AiSettingsPanel.qml</file>
         <file>qml/components/TextButton.qml</file>
         <file>qml/components/Theme.qml</file>
         <file>qml/pages/KugouPage.qml</file>

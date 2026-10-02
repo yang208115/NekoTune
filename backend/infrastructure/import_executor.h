@@ -14,6 +14,11 @@ class ImportExecutor final : public IFileInspector {
     ImportExecutor();
     ~ImportExecutor() override;
     void inspect(const QString &path, Completion completion) override;
+    void inspectUnmanaged(const QString &path, Completion completion);
+    void discover(const QString &directory, std::function<void(QStringList)> completion);
+    void setMapper(std::function<Result<ImportedFile>(const ImportedFile &)> mapper) {
+        m_mapper = std::move(mapper);
+    }
     void shutdown() override;
 
   private:
@@ -23,5 +28,6 @@ class ImportExecutor final : public IFileInspector {
     std::shared_ptr<std::atomic_bool> m_cancelled;
     QHash<quint64, Completion> m_pending;
     quint64 m_nextId = 1;
+    std::function<Result<ImportedFile>(const ImportedFile &)> m_mapper;
 };
 } // namespace nekotune

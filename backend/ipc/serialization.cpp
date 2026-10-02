@@ -4,7 +4,8 @@ namespace nekotune {
 QJsonObject toJson(const SongMetadata &song) {
     return {{"song_id", song.id},           {"song_hash", song.hash},
             {"first_path", song.firstPath}, {"custom_title", song.customTitle},
-            {"artist", song.artist},        {"lyrics", song.lyrics}};
+            {"artist", song.artist},        {"lyrics", song.lyrics},
+            {"duration_ms", song.durationMs}};
 }
 QJsonObject toJson(const QueueItem &item, int position, bool includeLyrics) {
     auto result = toJson(item.metadata);
@@ -14,7 +15,8 @@ QJsonObject toJson(const QueueItem &item, int position, bool includeLyrics) {
     result.insert("queue_id", item.id);
     result.insert("path", item.path);
     result.insert("title", item.metadata.customTitle.trimmed().isEmpty()
-                               ? QFileInfo(item.path).completeBaseName()
+                               ? (item.metadata.sourceName.isEmpty() ? QFileInfo(item.path).completeBaseName()
+                                                                     : item.metadata.sourceName)
                                : item.metadata.customTitle.trimmed());
     if (position >= 0) {
         result.insert("position", position);
@@ -44,11 +46,12 @@ QJsonObject toJson(const LibrarySnapshot &library) {
         item.remove("lyrics");
         item.insert("path", song.path);
         item.insert("available", !song.path.isEmpty());
-        item.insert(
-            "title",
-            song.metadata.customTitle.trimmed().isEmpty()
-                ? QFileInfo(song.path.isEmpty() ? song.metadata.firstPath : song.path).completeBaseName()
-                : song.metadata.customTitle.trimmed());
+        item.insert("title", song.metadata.customTitle.trimmed().isEmpty()
+                                 ? (song.metadata.sourceName.isEmpty()
+                                        ? QFileInfo(song.path.isEmpty() ? song.metadata.firstPath : song.path)
+                                              .completeBaseName()
+                                        : song.metadata.sourceName)
+                                 : song.metadata.customTitle.trimmed());
         item.insert("tags", toJson(song.tags));
         songs.append(item);
     }

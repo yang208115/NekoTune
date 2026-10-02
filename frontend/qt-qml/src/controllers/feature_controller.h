@@ -10,6 +10,7 @@ class FeatureController : public QObject {
     void requestFailed(const QString &method, const QString &message);
 
   protected:
-    void send(const QString &method, const QJsonObject &params = {}, IpcClient::Completion completion = {});
+    void send(const QString &method, const QJsonObject &params = {}, IpcClient::Completion completion = {},
+              bool reportError = true);
     IpcClient &m_client;
 };

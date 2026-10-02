@@ -9,13 +9,15 @@ class SongRepository final : public ISongRepository {
     QString errorString() const override { return m_session.errorString(); }
     std::optional<SongMetadata> getOrCreateSong(const QString &hash, const QString &path,
                                                 const QString &customTitle = {},
-                                                const QString &artist = {}) override;
+                                                const QString &artist = {},
+                                                const QString &sourceName = {}, qint64 durationMs = 0) override;
     QVector<SongMetadata> songs() const override;
     std::optional<SongMetadata> songById(int songId) const override;
     std::optional<SongMetadata> updateMetadata(int songId, const QString &customTitle, const QString &artist,
                                                const QString &lyrics) override;
     QVector<QString> pathsForSong(int songId) const override;
     QHash<int, QVector<QString>> songPaths() const override;
+    bool updateDuration(int songId, qint64 durationMs) override;
     bool erase(int songId) override;
 
   private:

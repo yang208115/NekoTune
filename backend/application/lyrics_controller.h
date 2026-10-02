@@ -18,6 +18,7 @@ class LyricsController final : public QObject {
     void shutdown();
   signals:
     void changed(const nekotune::LyricsSnapshot &snapshot);
+    void assetsReady(const QString &trackId, const nekotune::LyricsDocument &document, quint64 revision);
 
   private:
     LyricsQuery query() const;

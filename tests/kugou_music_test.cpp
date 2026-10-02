@@ -1,5 +1,7 @@
 #include "ipc/kugou_serialization.h"
 #include "kugou/kugou_music_service.h"
+#include "infrastructure/music_directory.h"
+#include "support/store_fixture.h"
 #include "domain/krc_parser.h"
 
 #include <QBuffer>
@@ -150,6 +152,7 @@ class KugouMusicTest final : public QObject {
     void initTestCase() {
         QVERIFY(m_profile.isValid());
         qputenv("XDG_CONFIG_HOME", m_profile.filePath("config").toUtf8());
+        qputenv("NEKOTUNE_HOME", m_profile.filePath("music").toUtf8());
         qputenv("XDG_DATA_HOME", m_profile.filePath("data").toUtf8());
         qunsetenv("KUGOU_ACCOUNT_API_KEY_FILE");
     }
@@ -205,13 +208,10 @@ void KugouMusicTest::storesAndClearsPrivateKey() {
         QVERIFY(!QFileInfo::exists(keyPath));
         QCOMPARE(service.saveAccountKey(QStringLiteral("saved-key")), QString());
         QVERIFY(nekotune::toJson(service.status()).value(QStringLiteral("key_saved")).toBool());
-        QCOMPARE(QFileInfo(keyPath).permissions() &
-                     (QFileDevice::ReadGroup | QFileDevice::WriteGroup | QFileDevice::ReadOther |
-                      QFileDevice::WriteOther | QFileDevice::ExeGroup | QFileDevice::ExeOther),
-                 QFileDevice::Permissions{});
-        QFile stored(keyPath);
-        QVERIFY(stored.open(QIODevice::ReadOnly));
-        QCOMPARE(stored.readAll(), QByteArray("saved-key"));
+        QVERIFY(!QFileInfo::exists(keyPath));
+        const auto stored = systemCredentialStore()->read(keyPath);
+        QVERIFY(stored && stored.value());
+        QCOMPARE(*stored.value(), QByteArray("saved-key"));
         QVERIFY(!QJsonDocument(nekotune::toJson(service.status())).toJson().contains("saved-key"));
     }
     {
@@ -275,8 +275,13 @@ void KugouMusicTest::loginDownloadAndReuseSession() {
                                  {QStringLiteral("content"), QString::fromLatin1(binaryKrc.toBase64())}})});
     const auto session = dir.filePath(QStringLiteral("session.json"));
     const auto music = dir.filePath(QStringLiteral("Music"));
+    StoreFixture downloadStore(dir.filePath("downloads.sqlite3"));
+    QVERIFY(downloadStore.isReady());
+    MusicDirectory directory(downloadStore.db, music);
     KugouMusicService service(nullptr, &manager, QUrl(QStringLiteral("https://worker.example")), session,
-                              music);
+                              music, {}, [&directory](const QString &hash, const QString &title) {
+                                  return directory.reserveDownload(hash, title);
+                              });
     QSignalSpy events(&service, &KugouMusicService::eventReady);
     QSignalSpy audio(&service, &KugouMusicService::audioReady);
     QCOMPARE(nekotune::toJson(service.status()).value(QStringLiteral("logged_in")).toBool(), false);
@@ -284,9 +289,9 @@ void KugouMusicTest::loginDownloadAndReuseSession() {
     QTRY_VERIFY(hasEvent(events, QStringLiteral("kugou.code_sent")));
     QCOMPARE(manager.calls.value(QStringLiteral("/register/dev")), 1);
     QCOMPARE(manager.calls.value(QStringLiteral("/captcha/sent")), 1);
-    QVERIFY(QFileInfo::exists(session));
-    QCOMPARE(QFileInfo(session).permissions() & (QFileDevice::ReadGroup | QFileDevice::ReadOther),
-             QFileDevice::Permissions{});
+    QVERIFY(!QFileInfo::exists(session));
+    const auto persisted = systemCredentialStore()->read(session);
+    QVERIFY(persisted && persisted.value());
 
     events.clear();
     QCOMPARE(service.startLogin(QStringLiteral("13800138000"), QStringLiteral("123456")), QString());
@@ -302,6 +307,7 @@ void KugouMusicTest::loginDownloadAndReuseSession() {
     QCOMPARE(service.startDownload(QString::fromLatin1(kHash)), QString());
     QTRY_COMPARE(audio.count(), 1);
     const auto path = audio.at(0).at(0).toString();
+    QCOMPARE(path, QDir(music).filePath("000001/000001.mp3"));
     QCOMPARE(audio.at(0).at(1).toString(), QStringLiteral("saved"));
     QVERIFY(QFileInfo(path).isFile());
     const auto lrcPath = QFileInfo(path).absolutePath() + QLatin1Char('/') +

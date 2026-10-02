@@ -6,6 +6,7 @@
 LibraryController::LibraryController(IpcClient &client) : FeatureController(client) {
     connect(&client, &IpcClient::eventReceived, this, [this](const QJsonObject &event) {
         auto name = event.value("event").toString();
+        if (name == "server.connected") send("library.scan", {});
         if (name == "library.changed" || name == "server.connected")
             refreshLibrary();
     });

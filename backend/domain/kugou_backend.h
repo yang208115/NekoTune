@@ -10,6 +10,7 @@ struct KugouStatus {
     bool loggedIn = false;
     bool busy = false;
     bool downloadActive = false;
+    QString credentialError;
 };
 
 struct KugouSearchItem {

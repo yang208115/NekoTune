@@ -69,7 +69,7 @@ ApplicationWindow {
             }
         }
     }
-    MetadataEditor { id: metadataEditor; shell: root; controller: root.app.library; translator: root.translator }
+    MetadataEditor { id: metadataEditor; shell: root; controller: root.app.library; ai: root.app.ai; translator: root.translator }
     TagEditor { id: tagEditor; shell: root; controller: root.app.tags; translator: root.translator }
     function pageStatus(id) {
         const index = root.pages.findIndex(page => page.id === id)

@@ -17,6 +17,9 @@ Result<std::optional<QVector<int>>> requestedSongs(const QJsonObject &params) {
 }
 }
 void registerLibraryApi(IpcRouter &router, ApiContext &api) {
+    router.registerMethod("library.scan", [&api](const auto &, auto done) {
+        done(success({{"started", api.scan && api.scan()}}));
+    });
     router.registerMethod("library.list", [&api](const auto &, auto done) {
         done(success({{"library", api.libraryStatus()}}));
     });

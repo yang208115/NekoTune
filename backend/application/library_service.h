@@ -21,10 +21,12 @@ class LibraryService final : public QObject {
     QVector<SongTag> tagsFor(int id) const;
     Result<SongMetadata> importFile(const ImportedFile &file, const QString &title = {},
                                     const QString &artist = {});
+    Result<void> backfillDuration(int id, const QString &hash, qint64 durationMs);
     Result<SongMetadata> update(int id, const MetadataPatch &patch);
     QString availablePath(int songId) const;
   signals:
     void changed();
+    void durationUpdated(const nekotune::SongMetadata &metadata);
     void metadataChanged(const nekotune::SongMetadata &metadata);
 
   private:

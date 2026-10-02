@@ -46,6 +46,10 @@ GUI 线程只运行前端。后端线程创建播放器适配器、IPC、网络�
 
 ## 前端状态与页面
 
+AI 功能由领域层 `IAiBackend`、应用层 `AiService` 和基础设施层 `AiBackend`/`AiSettings` 组成。应用服务在数据库所属线程读取歌曲和标签快照；独立 AI 线程负责本地歌词读取、密钥库操作及 Qt 网络请求，不接触数据库连接。配置通过共享路径模块保存，密钥按配置目录和规范化服务地址隔离。原生密钥库调用仍通过既有 CredentialStore 执行，不增加明文回退。
+
+`song.suggest_metadata` 只生成建议，不加入 `CommandScheduler` 的写队列。每次调用有独立的请求对象、总超时与一次性的兼容回退；关机时先取消网络请求并完成回调，再停止 AI 线程。前端 `AiController` 用递增请求代次隔离关闭、切歌、重开同一歌曲后的迟到结果；AI 操作错误在设置卡片或编辑器中翻译展示。保存仍复用歌曲元数据事务，不迁移数据库，也不写音频内嵌标签。
+
 `IpcClient` 只管理连接、协议解析、请求 ID 和完成回调。每个功能控制器订阅自己需要的事件，不存在一个供所有页面绑定的全量 `status` 对象。
 
 播放位置、时长、音量、曲目分别通知。曲库、队列、歌单和标签通过 `RecordModel` 维护稳定 ID；更新使用插入、移动、删除和 `dataChanged`，避免整表重置。曲库控制器拥有筛选和勾选状态，播放位置更新不能改变用户选择。
@@ -91,4 +95,6 @@ git diff --check
 
 需要检查实际页面时，可运行 `QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software NEKOTUNE_TEST_SCREENSHOT=/tmp/nekotune.png ./build/tests/nekotune_refactor_test realQmlMetadataSelectionAndMute`。该测试使用隔离的数据和 Socket，输出各页面截图；截图仍需人工查看，不能只检查文件是否生成。
 
-运行时检查需隔离 `NEKOTUNE_SOCKET`、`NEKOTUNE_DB_PATH` 和 XDG 配置、数据、缓存目录。网络单测使用模拟响应，不触发真实短信、登录或下载。QML 检查应区分静态警告、交互回归和实际截图，不能用编译成功替代视觉验收。
+运行时检查需隔离 `NEKOTUNE_HOME`、`NEKOTUNE_SOCKET`、`NEKOTUNE_DB_PATH` 和 XDG 配置、数据、缓存目录。网络单测使用模拟响应，不触发真实短信、登录或下载。QML 检查应区分静态警告、交互回归和实际截图，不能用编译成功替代视觉验收。
+
+音乐目录的基础路径和 JSON 设置由共享 `nekotune_paths` 提供，前后端使用相同的 `NEKOTUNE_HOME`。资源编号及来源映射由后端基础设施维护；导入线程只做遍历和 hash 检查，资源登记和曲库事务在后端线程执行。扫描逐文件提交到命令调度器，避免整个扫描占住用户操作。在线歌词服务发出已接受的文档，歌词控制器验证歌曲和 revision 后交给配套文件存储；封面请求在切歌、重新搜索或离线时取消，QML 仍只读取 IPC 状态。

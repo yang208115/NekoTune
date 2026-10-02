@@ -233,12 +233,12 @@ NekoTune 使用基于换行分隔的 JSON 协议，通过 Unix domain socket 进
 
 ### 酷狗音乐下载
 
-账号与下载由后端异步处理；以下耗时方法先返回操作受理结果，完成情况通过事件广播。`kugou.status` 返回 `data.kugou`，含 `configured`、`key_saved`、`logged_in`、`busy` 和 `download_active`，不返回 Cookie 或密钥。`kugou.search` 可匿名使用，其余账号操作需要在设置页保存密钥，或配置 `KUGOU_ACCOUNT_API_KEY` / `KUGOU_ACCOUNT_API_KEY_FILE`。设置页密钥优先，存于用户配置目录的 `NekoTune/kugou-account-key`（`0600`）；清除后回退到环境配置。
+账号与下载由后端异步处理；以下耗时方法先返回操作受理结果，完成情况通过事件广播。`kugou.status` 返回 `data.kugou`，含 `configured`、`key_saved`、`logged_in`、`busy`、`download_active` 和 `credential_error`，不返回 Cookie 或密钥。`kugou.search` 可匿名使用，其余账号操作需要在设置页保存密钥，或配置 `KUGOU_ACCOUNT_API_KEY` / `KUGOU_ACCOUNT_API_KEY_FILE`。设置页密钥优先，存于系统密钥环；清除后回退到环境配置。
 
-- `kugou.save_key`：传入 `key` 字符串，原子保存到本机私有文件并立即生效；响应仅返回密钥配置状态。
+- `kugou.save_key`：传入 `key` 字符串，保存到系统密钥环并回读校验后立即生效；响应仅返回密钥配置状态。
 - `kugou.clear_key`：删除设置页保存的密钥，并重新读取启动环境配置；响应仅返回密钥配置状态。
 - `kugou.send_code`：传入 `mobile`，必要时先注册设备，再发送短信验证码。
-- `kugou.login`：传入 `mobile`、`code`；成功后将会话保存到本机私有文件。
+- `kugou.login`：传入 `mobile`、`code`；成功后将会话保存到系统密钥环。
 - `kugou.search`：传入 `keywords` 和可选 `page`（默认 1），每页请求 30 条搜索结果。
 - `kugou.download`：传入当前搜索结果的歌曲 `hash`；后端获取音频地址、下载文件、尝试保存可靠匹配的同名 KRC 与 LRC，并导入曲库。已有歌曲不自动补取 KRC。
 - `kugou.cancel`：取消当前下载或歌词请求；已完成的音频文件保留。
@@ -253,6 +253,36 @@ NekoTune 使用基于换行分隔的 JSON 协议，通过 Unix domain socket 进
 {"id":14,"method":"song.metadata","params":{"song_id":1}}
 ```
 
+### `ai.config.get` / `ai.config.set` / `ai.config.clear_key`
+
+AI 配置接口是异步操作，不占用曲库写命令队列。`get` 与 `clear_key` 无参数，`set` 必须提供 `base_url` 和 `model`，可选提供非空 `api_key`。省略 Key 保留该服务原有 Key，清除必须使用独立方法；地址变化后不会使用其他服务的 Key。
+
+```json
+{"id":70,"method":"ai.config.set","params":{"base_url":"https://api.example.com/v1","model":"your-model","api_key":"your-key"}}
+{"id":70,"status":"ok","data":{"config":{"base_url":"https://api.example.com/v1","model":"your-model","configured":true,"key_saved":true,"credential_error":""}}}
+```
+
+`configured` 表示地址和模型已设置，不代表连接测试通过。`key_saved` 表示当前服务保存了密钥引用；密钥库不可用或条目丢失时 `credential_error` 非空，请重存或清除。返回值从不包含明文 Key。Base URL 仅接受 HTTP(S)，不接受内嵌凭据、查询参数或 URL fragment；自动追加 `/chat/completions`，不覆盖已有路径。Keyless 服务可省略 Key。
+
+### `ai.test`
+
+无参数。使用已保存配置发送一次不含歌曲资料的短请求，同时检查鉴权、模型和返回 JSON 结构。成功返回 `{"connected":true}`，不会修改歌曲或配置。
+
+### `song.suggest_metadata`
+
+为单首歌曲生成建议，不修改数据库、文件或标签。必填正整数 `song_id`，可选 `draft` 对象含 `custom_title`、`artist`、`lyrics` 字符串和 `tags` 字符串数组。草稿缺失字段使用已保存内容。歌词优先取非空草稿、已保存自定义歌词、本地歌词、缓存；传给模型的是限长纯文本，不会触发在线歌词搜索。输入包含原始文件名和最多 200 个已有分类，不包含本地绝对路径和歌曲 hash。
+
+```json
+{"id":71,"method":"song.suggest_metadata","params":{"song_id":1,"draft":{"custom_title":"原始歌名","artist":"","tags":["收藏"]}}}
+{"id":71,"status":"ok","data":{"song_id":1,"custom_title":"夜空","artist":"演唱者","tags":["中文","抒情"],"warning":""}}
+```
+
+建议标签为最多 5 个非空、去重的 1～64 字符名称；优先规范到已有分类名称。不确定的歌名、歌手返回空字符串；客户端应保留该字段当前内容，将标签合并到草稿，最后通过 `song.update_metadata` 保存。`warning: "ai_partial_result"` 提示部分名称缺少依据。
+
+使用 60 秒总超时，最多同时处理 4 个生成或测试请求；窗口关闭、断开连接不重放请求，客户端必须丢弃过期结果。JSON 模式仅在上游明确不支持相应参数时回退一次，网络错误、鉴权失败或非法返回不会自动重试。
+
+AI 操作失败沿用 `status: "error"` 和 `message`，后者为可翻译的 `ai_error_*` 标识，包括 `configuration`、`url`、`model`、`key`、`keyring`、`key_missing`、`settings`、`auth`、`rate_limit`、`timeout`、`network`、`service`、`request`、`response`、`refused`、`busy`、`cancelled`。参数校验错误仍返回说明文字。上游错误正文及凭据不会原样回传。
+
 ### `song.update_metadata`
 
 更新指定歌曲的用户自定义元数据。`custom_title` 也可用 `title` 传入，`artist` 也可用 `author` 传入。可选 `tags` 为标签名称数组，提供时在同一事务中创建缺失标签并替换该歌曲的全部标签；未传入的字段会保持原值。歌曲信息和标签更新后广播 `library.changed`，原有歌单与队列更新事件仍会发送。
@@ -263,7 +293,7 @@ NekoTune 使用基于换行分隔的 JSON 协议，通过 Unix domain socket 进
 
 ## 歌词
 
-后端负责解析、搜索和缓存歌词，Qt/QML 客户端只通过 IPC 获取结果。播放曲目后按“同目录同名 `.krc` → `.lrc` → 歌曲自定义歌词 → 本地歌词缓存 → LRCLIB”顺序加载。`.krc` 支持酷狗二进制与已解码文本，损坏时回退 `.lrc`。缓存文件位于 `QStandardPaths::AppDataLocation/lyrics-cache`，以音频内容 hash（或标题、歌手、专辑和时长）为键，由 `QSaveFile` 原子写入；旧版缓存仍可读取。刷新跳过缓存和自定义歌词，同名文件仍优先。
+后端负责解析、搜索和缓存歌词，Qt/QML 客户端只通过 IPC 获取结果。播放曲目后按“同目录同名 `.krc` → `.lrc` → 歌曲自定义歌词 → 本地歌词缓存 → LRCLIB”顺序加载。`.krc` 支持酷狗二进制与已解码文本，损坏时回退 `.lrc`。缓存文件位于 `~/Music/NekoTune/config/lyrics-cache`，以音频内容 hash（或标题、歌手、专辑和时长）为键，由 `QSaveFile` 原子写入；旧版缓存仍可读取。刷新跳过缓存和自定义歌词，同名文件仍优先。
 
 `lyrics.changed` 广播当前歌曲的 `track_id`、`revision`、`state` 和可选 `document`、`candidates`。`document.format` 为 `krc`、`lrc` 或 `plain`；`document.lines` 保留 `{time_ms,text}`，KRC 行另有 `duration_ms` 和 `words`，每个词组包含 `{text,offset_ms,time_ms,duration_ms}`，时间单位均为毫秒。普通歌词位于 `document.plain_text`。酷狗候选及选定歌词的 `cover_url` 为可选封面地址。状态包括 `loading`、`waiting_metadata`、`searching`、`ready`、`instrumental`、`not_found`、`offline`、`error` 和 `candidates`。
 
@@ -295,3 +325,22 @@ NekoTune 使用基于换行分隔的 JSON 协议，通过 Unix domain socket 进
 `song.update_metadata` 支持部分字段更新：缺少的字段保留，空字符串明确清空文本，空 `tags` 数组明确清空标签。编辑前使用 `song.metadata` 获取完整资料，不应把列表中未包含的歌词字段视为已有空歌词。
 
 队列写入失败返回错误，并保留原来的队列和播放状态；成功响应不再掩盖持久化失败。
+
+## 音乐目录和扫描
+
+默认音乐目录为 `~/Music/NekoTune`，应用数据目录为其下的 `config`。`NEKOTUNE_HOME` 可覆盖音乐根目录，`NEKOTUNE_DB_PATH` 仍可单独覆盖数据库。`player.status` 除原有 `database_path` 外增加 `music_directory` 和 `config_directory`。
+
+- `library.scan`：无参数，异步扫描音乐目录，返回 `data.started`。`true` 表示启动新任务，`false` 表示已有扫描正在进行。后端启动及独立前端首次连接自动发起扫描。
+- 扫描同时为已有曲库中可访问但缺少时长的歌曲补齐记录，包括音乐目录之外的旧导入路径；不改动歌曲文件、标签或队列顺序。读取失败或文件丢失时保留未知时长，后续扫描可重试。
+- `library.scan_finished`：事件包含 `imported`、`skipped`、`failed` 和 `errors`（路径与安全错误信息数组）。扫描按内容 SHA-256 去重，不修改队列或自动联网获取配套文件；忽略 `config`、临时文件、目录软链接和曾删除的歌曲。
+- `library.import`、`playlist.add` 的路径导入、`queue.add`、带路径的 `player.play`：参数结构保持原样，外部音频统一建立编号软链接。`library.import` 返回的 `data.path`，以及歌单、队列和播放器的歌曲 `path`，均为管理后的音频路径。
+- `library.delete`：保留音频及配套文件，事务内记录内容 hash 的扫描忽略状态。手动导入或下载可恢复；扫描不会恢复。
+- `library.assets_failed`：配套文件保存或封面下载失败事件，包含 `song_hash` 和 `message`；不会中断音频播放。
+
+歌曲对象（曲库、队列、歌单和 `song.metadata`）包含持久化的 `duration_ms`，单位为毫秒，`0` 表示未知。导入和扫描在后台读取本地音频时长；旧数据库自动新增字段，已知时长不会被读取失败的结果清空。
+
+每首歌曲使用独立的递增编号目录，例如 `000001/000001.flac`。下载音频为真实文件，外部音频为绝对软链接；程序获取的同编号 KRC、LRC 和封面始终为真实文件。成功在线匹配或手动选定后更新配套文件；结果受歌曲 hash 和歌词 revision 约束，过期请求不能覆盖新选择。音频断链后保留歌曲资料和配套文件，曲库 `available` 为 `false`。
+
+设置和缓存集中在 `config`；首次默认目录迁移保留旧数据库和缓存，不覆盖已有目标。账号密钥和会话迁入系统密钥环，回读校验成功后删除旧明文凭据；失败保留原文件并返回 `credential_error`。设置页保存的语言优先于系统语言，`NEKOTUNE_LANGUAGE` 优先于保存语言；`lyrics.set_offline` 持久保存到 `config/settings.json`。
+
+酷狗状态 `kugou.status` 的 `credential_error` 字段在系统密钥环访问或旧凭据迁移失败时返回错误说明，正常时为空字符串；不包含凭据内容。`key_saved` 表示密钥已通过 QtKeychain 保存到系统安全存储（Windows 凭据管理器、macOS Keychain 或 Linux Secret Service / KWallet）。保存失败不会回退为明文存储。Linux 升级时会回读校验并迁移旧 libsecret 条目，成功后清理旧条目。

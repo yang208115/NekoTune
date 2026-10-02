@@ -1,4 +1,5 @@
 #include "infrastructure/lyrics_cache.h"
+#include "app_paths.h"
 
 #include <QCryptographicHash>
 #include <QDir>
@@ -13,8 +14,7 @@ namespace nekotune {
 
 LyricsCache::LyricsCache(const QString &directory)
     : m_directory(directory.isEmpty()
-                      ? QDir(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation))
-                            .filePath(QStringLiteral("lyrics-cache"))
+                      ? AppPaths::configFile("lyrics-cache")
                       : directory) {}
 
 QString LyricsCache::directory() const { return m_directory; }

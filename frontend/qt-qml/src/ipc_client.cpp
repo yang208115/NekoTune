@@ -42,18 +42,19 @@ QString IpcClient::normalizePath(const QString &path) {
     QUrl url(path);
     return url.isLocalFile() ? url.toLocalFile() : path;
 }
-void IpcClient::request(const QString &method, const QJsonObject &params, Completion completion) {
+void IpcClient::request(const QString &method, const QJsonObject &params, Completion completion, bool reportError) {
     if (!connected()) {
         connectBackend();
         const QString message = "Backend is not connected";
-        setError(message);
+        if (reportError)
+            setError(message);
         if (completion)
             completion({}, message);
         emit requestFailed(method, message);
         return;
     }
     auto id = m_nextId++;
-    m_pending.insert(id, {method, std::move(completion)});
+    m_pending.insert(id, {method, std::move(completion), reportError});
     m_socket.write(QJsonDocument(QJsonObject{{"id", id}, {"method", method}, {"params", params}})
                        .toJson(QJsonDocument::Compact) +
                    "\n");
@@ -98,7 +99,8 @@ void IpcClient::readMessages() {
         auto message = payload.value("status") == "error" ? payload.value("message").toString() : QString();
         auto data = payload.value("data").toObject();
         if (!message.isEmpty()) {
-            setError(message);
+            if (pending.reportError)
+                setError(message);
             if (pending.completion)
                 pending.completion({}, message);
             emit requestFailed(pending.method, message);

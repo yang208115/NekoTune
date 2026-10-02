@@ -82,11 +82,14 @@ void KugouApiClient::accountRequest(const QString &route, const QJsonObject &bod
                     const auto updated = result.take(QStringLiteral("cookies"));
                     if (failure.isEmpty() && updated.isObject()) {
                         const auto values = updated.toObject();
+                        const auto previous = m_account.cookies;
                         for (auto it = values.begin(); it != values.end(); ++it)
                             if (it.value().isString())
                                 m_account.cookies.insert(it.key(), it.value().toString());
-                        if (!m_account.saveSession())
-                            failure = QStringLiteral("Cannot save Kugou session");
+                        if (!m_account.saveSession()) {
+                            m_account.cookies = previous;
+                            failure = m_account.sessionError;
+                        }
                     }
                     callback(result, failure);
                 });

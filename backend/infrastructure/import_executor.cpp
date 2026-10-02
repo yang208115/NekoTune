@@ -1,6 +1,8 @@
 #include "infrastructure/import_executor.h"
+#include "infrastructure/audio_duration.h"
 #include <QCryptographicHash>
 #include <QDateTime>
+#include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QPointer>
@@ -28,6 +30,36 @@ void ImportExecutor::complete(quint64 id, Result<ImportedFile> result) {
         completion(std::move(result));
 }
 void ImportExecutor::inspect(const QString &path, Completion completion) {
+    inspectUnmanaged(path, [this, completion = std::move(completion)](Result<ImportedFile> file) {
+        completion(file && m_mapper ? m_mapper(file.value()) : std::move(file));
+    });
+}
+void ImportExecutor::discover(const QString &directory, std::function<void(QStringList)> completion) {
+    QPointer<ImportExecutor> guard(this);
+    auto cancelled = m_cancelled;
+    QMetaObject::invokeMethod(m_worker, [guard, cancelled, directory, completion] {
+        QStringList paths, folders{directory};
+        const QStringList suffixes{"mp3", "m4a", "aac", "wav", "flac", "ogg"};
+        while (!folders.isEmpty() && !cancelled->load()) {
+            const auto folder = folders.takeLast();
+            for (const auto &entry :
+                 QDir(folder).entryInfoList(QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot)) {
+                if (entry.isDir()) {
+                    if (!entry.isSymLink() && entry.fileName() != "config")
+                        folders.append(entry.absoluteFilePath());
+                } else if (suffixes.contains(entry.suffix().toLower()))
+                    paths.append(entry.absoluteFilePath());
+            }
+        }
+        if (!guard || cancelled->load())
+            return;
+        QMetaObject::invokeMethod(guard, [guard, completion, paths] {
+            if (guard)
+                completion(paths);
+        });
+    });
+}
+void ImportExecutor::inspectUnmanaged(const QString &path, Completion completion) {
     if (m_cancelled->load()) {
         completion(failure(QStringLiteral("Import cancelled"), ErrorCode::Cancelled));
         return;
@@ -55,10 +87,16 @@ void ImportExecutor::inspect(const QString &path, Completion completion) {
                     return failure(file.errorString(), ErrorCode::Io);
                 hash.addData(chunk);
             }
+            const auto duration = readAudioDuration(info.absoluteFilePath(), *cancelled);
+            if (cancelled->load())
+                return failure(QStringLiteral("Import cancelled"), ErrorCode::Cancelled);
             info.refresh();
             if (info.size() != size || info.lastModified() != modified)
                 return failure(QStringLiteral("File changed during import"), ErrorCode::Io);
-            return ImportedFile{info.absoluteFilePath(), QString::fromLatin1(hash.result().toHex())};
+            return ImportedFile{info.absoluteFilePath(), QString::fromLatin1(hash.result().toHex()),
+                                info.isSymLink() ? QFileInfo(info.symLinkTarget()).completeBaseName()
+                                                 : info.completeBaseName(),
+                                duration};
         };
         auto result = inspect();
         if (!guard || cancelled->load())

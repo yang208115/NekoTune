@@ -14,6 +14,7 @@ class LyricsService final : public QObject {
     explicit LyricsService(const QVector<LyricsProvider *> &providers,
                            std::unique_ptr<ILyricsStorage> storage, QObject *parent = nullptr);
     QVector<LyricsSource> sources() const;
+    bool offline() const { return m_offline; }
     void shutdown() { cancel(); }
     void load(const LyricsQuery &query, const QString &path, const QString &customLyrics, quint64 revision,
               bool metadataReady, bool force = false);
@@ -30,6 +31,8 @@ class LyricsService final : public QObject {
 
   signals:
     void changed(const nekotune::LyricsSnapshot &snapshot);
+    void assetsReady(const nekotune::LyricsQuery &query, const nekotune::LyricsDocument &document,
+                     quint64 revision);
 
   private:
     void completed(quint64 token, const QVector<LyricsCandidate> &candidates);

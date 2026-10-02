@@ -9,7 +9,8 @@ class KugouDownloadJob final : public QObject {
   public:
     KugouDownloadJob(QNetworkAccessManager &manager, KugouApiClient &api, QString directory)
         : m_manager(&manager), m_api(api), m_musicDirectory(std::move(directory)) {}
-    void prepare(const KugouSong &song) {
+    void prepare(const KugouSong &song, const QString &base = {}) {
+        m_destinationBase = base;
         m_selected = song;
         m_downloadActive = true;
         m_cancelled = false;
@@ -45,6 +46,7 @@ class KugouDownloadJob final : public QObject {
     QNetworkAccessManager *m_manager;
     KugouApiClient &m_api;
     QString m_musicDirectory;
+    QString m_destinationBase;
     QPointer<QNetworkReply> m_reply;
     std::unique_ptr<QSaveFile> m_audioFile;
     QString m_audioPath, m_audioError;

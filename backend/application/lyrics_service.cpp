@@ -269,6 +269,7 @@ void LyricsService::apply(const LyricsDocument &document, bool cache) {
     const bool cacheFailed = cache && !m_storage->writeCache(m_query, document);
     m_snapshot.cacheWarning = cacheFailed;
     publish(document.instrumental ? QStringLiteral("instrumental") : QStringLiteral("ready"));
+    if (cache) emit assetsReady(m_query, document, m_revision);
 }
 
 } // namespace nekotune

@@ -1,6 +1,10 @@
 #pragma once
 #include "application/download_service.h"
+#include "infrastructure/ai_backend.h"
 #include "infrastructure/import_executor.h"
+#include "infrastructure/music_directory.h"
+#include "infrastructure/sidecar_store.h"
+#include "runtime/library_scanner.h"
 #include "infrastructure/qt_playback_backend.h"
 #include "ipc/api_context.h"
 #include "ipc/ipc_server.h"
@@ -23,11 +27,14 @@ class BackendSession final : public QObject {
 
   private:
     DatabaseSession m_database;
+    MusicDirectory m_music;
     SongRepository m_songs;
     QueueRepository m_queueRepository;
     PlaylistRepository m_playlistRepository;
     TagRepository m_tagRepository;
     LibraryService m_library;
+    AiBackend m_aiBackend;
+    AiService m_ai{m_aiBackend, m_library, m_tagRepository};
     PlaylistService m_playlists;
     TagService m_tags;
     QueueService m_queue;
@@ -35,12 +42,14 @@ class BackendSession final : public QObject {
     PlayerEngine m_player;
     LyricsController m_lyrics;
     CoverService m_covers;
+    SidecarStore m_sidecars;
     ImportExecutor m_imports;
     KugouMusicService m_kugouBackend;
     KugouService m_kugou{m_kugouBackend};
     CollectionService m_collections;
     ApiContext m_api;
     IpcRouter m_router;
+    LibraryScanner m_scanner;
     DownloadService m_downloads;
     IpcServer m_server;
     bool m_stopped = false;

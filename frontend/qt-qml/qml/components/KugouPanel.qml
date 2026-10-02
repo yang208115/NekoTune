@@ -100,6 +100,7 @@ Item {
             Layout.fillWidth: true
             Label { Layout.fillWidth: true; text: root.t("kugou_music"); color: "#F5F1FA"; font.pixelSize: 26; font.weight: Font.DemiBold }
             TextButton {
+                objectName: "kugouAccountButton"
                 text: root.t(root.account.logged_in ? "account_logged_in" : "kugou_login")
                 subtle: true
                 enabled: !root.waiting && !root.account.busy
@@ -133,7 +134,14 @@ Item {
             Layout.fillWidth: true
             visible: !root.account.logged_in
             Label { Layout.fillWidth: true; text: root.t("anonymous_search_hint"); color: "#AAA0B8"; font.pixelSize: 12; wrapMode: Text.WordWrap }
-            TextButton { text: root.t(root.account.configured ? "kugou_login" : "open_settings"); subtle: true; onClicked: root.account.configured ? loginPopup.open() : root.settingsRequested() }
+        }
+        Label {
+            objectName: "kugouCredentialError"
+            Layout.fillWidth: true
+            visible: Boolean(root.account.credential_error)
+            text: root.t("kugou_keyring_error")
+            color: "#E8A0A8"
+            wrapMode: Text.WordWrap
         }
         Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: "#332C41" }
         ListView {

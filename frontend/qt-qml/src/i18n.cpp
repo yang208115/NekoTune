@@ -1,4 +1,6 @@
 #include "i18n.h"
+#include "app_paths.h"
+#include <QDebug>
 
 #include <QFile>
 #include <QLocale>
@@ -16,6 +18,8 @@ I18n::I18n(QObject *parent)
                                          .value(QStringLiteral("NEKOTUNE_LANGUAGE"));
     if (!environmentLanguage.isEmpty()) {
         m_language = normalizeLanguage(environmentLanguage);
+    } else if (const auto saved = nekotune::AppPaths::setting("language"); saved.isString()) {
+        m_language = normalizeLanguage(saved.toString());
     } else {
         m_language = QLocale::system().language() == QLocale::Chinese
             ? QStringLiteral("zh")
@@ -35,6 +39,8 @@ void I18n::setLanguage(const QString &language)
         return;
     }
 
+    if (!nekotune::AppPaths::saveSetting("language", normalized))
+        qWarning() << "Cannot save NekoTune language preference";
     m_language = normalized;
     emit languageChanged();
 }

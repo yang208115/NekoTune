@@ -2,7 +2,8 @@ import QtQuick
 import QtTest
 import "../../frontend/qt-qml/qml/components" as PlayerComponents
 
-Item {
+Rectangle {
+    color: "#0E0D14"
     id: scene
     width: 900
     height: 640
@@ -132,6 +133,37 @@ Item {
             panel.deleteSucceeded()
             compare(panel.selectedSongIds.length, 0)
             tryCompare(popup, "opened", false)
+        }
+
+        function test_persistedDurationDoesNotDependOnSelectionOrPlayback() {
+            testFixtures.seedLibrary({tags: [], songs: [
+                {song_id: 1, title: "夜空", artist: "示例歌手", available: true, duration_ms: 192000},
+                {song_id: 2, title: "Magical Lights", artist: "示例歌手", available: true, duration_ms: 245000},
+                {song_id: 3, title: "未知时长", available: false, duration_ms: 0}
+            ]})
+            waitForRendering(panel)
+            const first = findChild(findChild(panel, "libraryRow1"), "trackDuration")
+            const second = findChild(findChild(panel, "libraryRow2"), "trackDuration")
+            const missing = findChild(findChild(panel, "libraryRow3"), "trackDuration")
+            compare(first.text, "3:12")
+            compare(second.text, "4:05")
+            compare(missing.text, "--:--")
+            const path = testFixtures.screenshotPath("library-persisted-durations")
+            if (path) {
+                waitForRendering(panel)
+                wait(150)
+                grabImage(scene).save(path)
+            }
+            testLibrary.selectRow(2)
+            compare(first.text, "3:12")
+            compare(second.text, "4:05")
+            panel.currentSong = {song_id: 1}
+            panel.currentDuration = 193000
+            compare(first.text, "3:13")
+            compare(second.text, "4:05")
+            panel.currentSong = {song_id: 2}
+            panel.currentDuration = 245000
+            compare(first.text, "3:12")
         }
 
         function test_addFromLibraryUsesSongId() {
