@@ -44,6 +44,9 @@ Item {
 
         function cleanup() { panel = null }
 
+        // Queue and playlist views share a panel but use independent source collections.
+        // Clearing the queue must not hide songs in the selected playlist.
+        // Removing the selected playlist returns the panel to the queue scope.
         function test_navigationShowsOnlySelectedCollection() {
             compare(panel.visibleItems.length, 1)
             compare(panel.visibleItems[0].title, "Queue song")
@@ -58,6 +61,9 @@ Item {
             compare(panel.visibleItems.length, 0)
         }
 
+        // Queue commands address a queue occurrence, while playlist commands address a song.
+        // Switching collection changes the command contract even when both rows refer to one file.
+        // The fixture gives those identities different numbers to catch accidental substitution.
         function test_playAndRemoveUseCollectionIdentity() {
             panel.playSong(panel.visibleItems[0])
             compare(queueSpy.signalArguments[0][0], 7)
@@ -74,6 +80,10 @@ Item {
             compare(removeSpy.count, 1)
         }
 
+        // Two occurrences of the same song must remain independently selectable and removable.
+        // Double-clicking the second row must submit its occurrence ID, not the shared song ID.
+        // Playlist search instead submits the visible song context and chosen song identity.
+        // Selection alone must not emit a playback command in either scope.
         function test_searchAndQueueIdentity() {
             panel.queue = [
                 {id: 7, queue_id: 7, song_id: 3, title: "Same song", path: "/music/a.wav"},
@@ -99,6 +109,9 @@ Item {
             compare(panel.visibleItems.length, 0)
         }
 
+        // The submitted name is trimmed while the user's edit remains intact on failure.
+        // Sending create does not imply that persistence succeeded.
+        // The dialog stays open for retry and closes only on matching completion.
         function test_createPlaylistFromDialog() {
             panel.currentPlaylist = 1
             waitForRendering(panel)

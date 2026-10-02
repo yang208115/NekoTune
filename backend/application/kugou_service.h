@@ -3,6 +3,11 @@
 #include "domain/result.h"
 
 namespace nekotune {
+/// Adapts provider admission strings into application Result values.
+/// It forwards asynchronous provider events without account internals.
+/// Immediate Result success means started, not completed or imported.
+/// Saved audio is handed to DownloadService through runtime wiring.
+/// This boundary keeps the IPC layer independent of HTTP implementation.
 class KugouService final : public QObject {
     Q_OBJECT
   public:

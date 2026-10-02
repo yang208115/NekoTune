@@ -11,6 +11,10 @@ using namespace nekotune;
 class CoverTest final : public QObject {
     Q_OBJECT
   private slots:
+    // Local artwork is authoritative even when a remote cache is also available.
+    // Changing offline mode must not hide an image that can already be read from disk.
+    // The competing filenames expose the sidecar preference order used by the resolver.
+    // This guards the shared cover contract consumed by library and player views.
     void localCoverPriorityAndOffline() {
         QTemporaryDir directory;
         QVERIFY(directory.isValid());
@@ -37,6 +41,12 @@ class CoverTest final : public QObject {
         QCOMPARE(covers.resolve(directory.filePath("missing.wav"), "other"), QString());
     }
 
+    // Cached selections belong to an audio hash, not the current row's position.
+    // Changing tracks must not carry a previous track's image into the next snapshot.
+    // Selecting a new cached cover invalidates the resolved value once, not on every lookup.
+    // Offline mode suppresses remote URLs while retaining usable local cache files.
+    // Reopening the cache checks that the selected artwork survives restart.
+    // Clearing a selection also clears the negative lookup state for that identity.
     void cachedAndSelectedCoversFollowTrackIdentity() {
         QTemporaryDir directory;
         QVERIFY(directory.isValid());

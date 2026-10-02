@@ -7,6 +7,12 @@
 #include <QPointer>
 #include <functional>
 namespace nekotune {
+/// One-reply JSON transport used by the admitted account/search operation.
+/// Empty request bodies select anonymous GET, nonempty bodies select POST.
+/// Only POST sends the account admission key to the configured Worker.
+/// Account requests additionally attach backend-private cookie state.
+/// Returned cookies are removed before the public callback receives data.
+/// The owning service enforces operation admission and handles cancellation.
 class KugouApiClient final : public QObject {
     Q_OBJECT
   public:

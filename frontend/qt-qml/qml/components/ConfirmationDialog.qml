@@ -2,6 +2,11 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
+// Confirmation admission and backend completion are separate moments.
+// busy prevents duplicate submission and premature automatic dismissal.
+// completed closes only after the owning operation reports success.
+// failed restores controls and retains the explanation for retry.
+// The shortcut blocker keeps transport keys out of the modal interaction.
 Popup {
     id: dialog
     property string title: ""

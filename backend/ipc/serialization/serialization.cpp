@@ -7,6 +7,11 @@ QJsonObject toJson(const SongMetadata &song) {
             {"artist", song.artist},        {"lyrics", song.lyrics},
             {"duration_ms", song.durationMs}};
 }
+// Queue and song identities coexist in the public row shape.
+// id/queue_id address an occurrence; song_id addresses library metadata.
+// Repeated occurrences therefore have distinct action targets.
+// Large lyrics are omitted from normal list rows unless explicitly needed.
+// Presentation title can fall back to the preserved original source name.
 QJsonObject toJson(const QueueItem &item, int position, bool includeLyrics) {
     auto result = toJson(item.metadata);
     if (!includeLyrics)
@@ -39,6 +44,11 @@ QJsonArray toJson(const QVector<SongTag> &tags) {
         result.append(QJsonObject{{"id", tag.id}, {"name", tag.name}});
     return result;
 }
+// Availability is derived from the service-selected usable path.
+// Missing audio does not remove the row or its editable metadata.
+// Do not infer availability from a nonempty historical first_path.
+// The row intentionally omits lyrics; editors use song.metadata.
+// Tags retain stable IDs used by intersection filtering and selection.
 QJsonObject toJson(const LibrarySnapshot &library) {
     QJsonArray songs;
     for (const auto &song : library.songs) {

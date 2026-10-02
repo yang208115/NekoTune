@@ -24,6 +24,7 @@ Result<int> CollectionService::enqueue(const ImportedFile &file, bool play) {
     next.markCurrent();
     if (!m_queueRepo.saveQueue({next.records(), next.currentIndex()}) || !tx.commit())
         return failure(m_transaction.errorString(), ErrorCode::Storage);
+    // Song registration and queue append are one transaction; publish neither on partial success.
     if (play)
         m_player.applyCommittedQueue(next, true, true, true);
     else
@@ -31,6 +32,11 @@ Result<int> CollectionService::enqueue(const ImportedFile &file, bool play) {
     emit libraryChanged();
     return id;
 }
+// Importing into a playlist spans song registration and membership.
+// Validate the destination before opening the database transaction.
+// Commit both writes together so a failed membership save cannot
+// leave a half-completed collection operation visible to observers.
+// This path neither appends to the queue nor starts playback.
 Result<void> CollectionService::addFileToPlaylist(int id, const ImportedFile &file) {
     if (!m_playlists.playlistById(id))
         return failure(QStringLiteral("Playlist does not exist"));
@@ -44,6 +50,10 @@ Result<void> CollectionService::addFileToPlaylist(int id, const ImportedFile &fi
     emit playlistsChanged();
     return {};
 }
+// Existing-library insertion requires a currently usable audio path.
+// The playlist stores that path as its selected playback source.
+// Membership is independent of any occurrences already in the queue.
+// Reject missing destinations before broadcasting playlist changes.
 Result<void> CollectionService::addSongToPlaylist(int id, int songId) {
     auto song = m_library.metadata(songId);
     if (!song)
@@ -82,6 +92,7 @@ Result<void> CollectionService::playPlaylist(int id, int songId,
     int start = songId ? -1 : 0;
     auto records = playlist->items;
     if (songIds) {
+        // The client supplies its visible order; membership checks prevent injecting other songs.
         records.clear();
         QSet<int> seen;
         for (int requested : *songIds) {
@@ -97,6 +108,7 @@ Result<void> CollectionService::playPlaylist(int id, int songId,
     }
     for (const auto &record : records) {
         auto song = m_songs.songById(record.songId);
+        // A playlist is an explicit sequence: one unavailable entry rejects the replacement.
         if (!song || !QFileInfo(record.path).isFile())
             return failure(QStringLiteral("Playlist file is unavailable: %1").arg(record.path));
         if (record.songId == songId)
@@ -144,6 +156,7 @@ Result<CollectionPlayResult> CollectionService::playLibrary(const QVector<int> &
         for (const auto &tag : item.tags)
             assigned.insert(tag.id);
         bool matches = true;
+        // Multiple tags are an intersection, matching the library's visible filtering rule.
         for (int id : tagIds)
             if (!assigned.contains(id)) {
                 matches = false;
@@ -154,6 +167,7 @@ Result<CollectionPlayResult> CollectionService::playLibrary(const QVector<int> &
         if (!matches)
             continue;
         if (item.path.isEmpty()) {
+            // Library playback skips unavailable files and reports them without silently deleting them.
             result.skippedSongIds.append(item.metadata.id);
             continue;
         }
@@ -172,6 +186,14 @@ Result<CollectionPlayResult> CollectionService::playLibrary(const QVector<int> &
     emit libraryChanged();
     return result;
 }
+// Deletion is a batch operation across all three collections.
+// Validate every ID before preparing the replacement queue or files.
+// Persist survivors and remove playlist references in one transaction.
+// Audio hashes are also remembered to prevent automatic reimport.
+// Optional managed cleanup stages renames rather than immediate unlink.
+// Database failure restores those staged entries through handle lifetime.
+// After commit, publish queue state and report any cleanup leftovers.
+// The external original behind an audio symlink is never a target.
 Result<CollectionDeleteResult> CollectionService::deleteSongs(const QVector<int> &ids, bool cleanFiles) {
     QSet<int> selected;
     QStringList hashes;
@@ -191,6 +213,7 @@ Result<CollectionDeleteResult> CollectionService::deleteSongs(const QVector<int>
     bool removed = current >= 0 && selected.contains(old.at(current).metadata.id);
     bool resume = m_player.playing();
     int nextId = 0;
+    // When deleting the current track, continue at the next surviving occurrence without wrapping.
     if (removed)
         for (int i = current + 1; i < old.size(); ++i)
             if (!selected.contains(old.at(i).metadata.id)) {
@@ -209,6 +232,7 @@ Result<CollectionDeleteResult> CollectionService::deleteSongs(const QVector<int>
         return failure(m_transaction.errorString(), ErrorCode::Storage);
     std::unique_ptr<IManagedFileRemoval> removal;
     if (cleanFiles) {
+        // Rename assets first; the handle restores them on any subsequent database failure.
         auto staged = m_managedFiles->stageRemoval(hashes);
         if (!staged)
             return staged.error();
@@ -220,6 +244,7 @@ Result<CollectionDeleteResult> CollectionService::deleteSongs(const QVector<int>
     if (!tx.commit())
         return failure(m_transaction.errorString(), ErrorCode::Storage);
     m_player.applyCommittedQueue(next, removed, resume);
+    // Unlinking is irreversible after the database commit; report leftovers as cleanup warnings.
     const auto cleanupErrors = removal ? removal->commit() : QStringList{};
     emit libraryChanged();
     emit playlistsChanged();

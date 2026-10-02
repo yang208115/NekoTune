@@ -2,6 +2,12 @@
 #include <cmath>
 #include <limits>
 namespace nekotune {
+// Navigation/queue mutations join the serialized command scheduler.
+// Pause, stop, seek, volume and status remain directly responsive.
+// Playing a path includes asynchronous inspection in that mutation slot.
+// Playing without a path resumes the existing queue through PlayerEngine.
+// Responses include authoritative state after the accepted operation.
+// The client should reconcile that state instead of predicting selection.
 void registerPlayerApi(IpcRouter &router, ApiContext &api) {
     auto control = [&](const QString &name, auto operation, bool serialized) {
         router.registerMethod(
@@ -32,6 +38,10 @@ void registerPlayerApi(IpcRouter &router, ApiContext &api) {
                           [&api](const auto &, auto done) { done(success(api.queueStatus())); });
     router.registerMethod("player.seek", [&api](const QJsonObject &params, auto done) {
         auto value = params.value("position");
+        // Validate before converting floating point to signed milliseconds.
+        // Infinity, negative values and out-of-range doubles must be rejected.
+        // The domain seek operation then receives a representable nonnegative value.
+        // Submillisecond input is intentionally truncated to the playback clock unit.
         double number = value.toDouble(-1);
         if (!value.isDouble() || !std::isfinite(number) || number < 0 ||
             number >= double(std::numeric_limits<qint64>::max())) {

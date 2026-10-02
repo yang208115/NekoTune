@@ -19,6 +19,7 @@ void ImportExecutor::shutdown() {
         return;
     m_thread.quit();
     m_thread.wait();
+    // Worker replies may already be queued; taking pending callbacks makes late replies harmless.
     auto pending = std::move(m_pending);
     m_pending.clear();
     for (const auto &completion : pending)
@@ -29,11 +30,22 @@ void ImportExecutor::complete(quint64 id, Result<ImportedFile> result) {
     if (completion)
         completion(std::move(result));
 }
+// The worker returns an unmanaged value before resource registration.
+// The mapper then creates/reuses the numbered managed resource locally.
+// Keeping mapping on this thread preserves database connection affinity.
+// Mapper failure is delivered through the same inspection completion.
+// The caller never receives an apparently managed path after a failed map.
 void ImportExecutor::inspect(const QString &path, Completion completion) {
     inspectUnmanaged(path, [this, completion = std::move(completion)](Result<ImportedFile> file) {
         completion(file && m_mapper ? m_mapper(file.value()) : std::move(file));
     });
 }
+// Directory discovery only enumerates supported audio candidates.
+// Hashing, probing and deletion-ignore checks happen later per file.
+// Avoid recursively following directory symlinks or the config tree.
+// This prevents cycles and accidental inclusion of application caches.
+// The result is delivered once enumeration has completed normally.
+// Shutdown can abandon discovery without invoking a stale scan owner.
 void ImportExecutor::discover(const QString &directory, std::function<void(QStringList)> completion) {
     QPointer<ImportExecutor> guard(this);
     auto cancelled = m_cancelled;
@@ -45,6 +57,7 @@ void ImportExecutor::discover(const QString &directory, std::function<void(QStri
             for (const auto &entry :
                  QDir(folder).entryInfoList(QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot)) {
                 if (entry.isDir()) {
+                    // Do not follow directory links outside the tree or scan app-owned configuration.
                     if (!entry.isSymLink() && entry.fileName() != "config")
                         folders.append(entry.absoluteFilePath());
                 } else if (suffixes.contains(entry.suffix().toLower()))
@@ -59,6 +72,13 @@ void ImportExecutor::discover(const QString &directory, std::function<void(QStri
         });
     });
 }
+// Capture size and modification time before hashing and probing.
+// Both operations use the same file path but can take significant time.
+// The final metadata check catches detectable changes during that work.
+// Hash identity describes audio bytes rather than its displayed filename.
+// Probe failure is non-fatal and produces an unknown duration value.
+// Cancellation is checked during chunks and after probing returns.
+// Only the owning thread removes a pending completion from the map.
 void ImportExecutor::inspectUnmanaged(const QString &path, Completion completion) {
     if (m_cancelled->load()) {
         completion(failure(QStringLiteral("Import cancelled"), ErrorCode::Cancelled));
@@ -91,6 +111,7 @@ void ImportExecutor::inspectUnmanaged(const QString &path, Completion completion
             if (cancelled->load())
                 return failure(QStringLiteral("Import cancelled"), ErrorCode::Cancelled);
             info.refresh();
+            // Reject a hash/duration pair collected while the input was being replaced or written.
             if (info.size() != size || info.lastModified() != modified)
                 return failure(QStringLiteral("File changed during import"), ErrorCode::Io);
             return ImportedFile{info.absoluteFilePath(), QString::fromLatin1(hash.result().toHex()),

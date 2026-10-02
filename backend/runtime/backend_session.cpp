@@ -5,6 +5,9 @@
 #include "infrastructure/lyrics/lrclib_provider.h"
 namespace nekotune {
 namespace {
+// Providers are parented before the service is moved to its worker thread.
+// That move carries their child network objects into the same thread affinity.
+// The controller then owns service shutdown and thread joining as one lifetime unit.
 LyricsService *createLyrics() {
     auto *lrclib = new LrclibProvider;
     auto *kugou = new KugouProvider;
@@ -15,6 +18,13 @@ LyricsService *createLyrics() {
     return service;
 }
 } // namespace
+// This is the composition root for both desktop and split operation.
+// Repositories share the one database session created on this thread.
+// Application services receive interfaces, not global adapter lookups.
+// IPC routes and event wiring are registered once for this session.
+// Artwork enrichment is centralized before snapshots reach any view.
+// Worker adapters exchange value snapshots with this backend thread.
+// Keep new feature wiring here rather than growing PlayerEngine.
 BackendSession::BackendSession()
     : m_music(m_database), m_songs(m_database), m_queueRepository(m_database),
       m_playlistRepository(m_database), m_tagRepository(m_database),
@@ -65,6 +75,9 @@ BackendSession::BackendSession()
     connect(&m_collections, &CollectionService::libraryChanged, this, libraryChanged);
     connect(&m_collections, &CollectionService::playlistsChanged, this, playlistsChanged);
     connect(&m_playlists, &PlaylistService::changed, this, playlistsChanged);
+    // Duration enrichment updates every queued occurrence through library identity.
+    // Playlist snapshots are also invalidated so all views share the same stored duration.
+    // Neither notification selects another track or rebuilds collection membership.
     connect(&m_library, &LibraryService::durationUpdated, &m_queue, &QueueService::updateMetadata);
     connect(&m_library, &LibraryService::durationUpdated, this,
             [playlistsChanged](const SongMetadata &) { playlistsChanged(); });
@@ -100,6 +113,9 @@ BackendSession::BackendSession()
     connect(&m_player, &PlayerEngine::errorOccurred, this, [this](const QString &message) {
         m_server.broadcastEvent({{"event", "player.error"}, {"message", message}});
     });
+    // Update the sidecar's accepted identity before handling later assetsReady notifications.
+    // The same lyric snapshot also updates cover resolution for every collection view.
+    // Request revisions protect both presentation and eventual filesystem publication.
     connect(&m_lyrics, &LyricsController::changed, this, [this](const LyricsSnapshot &state) {
         m_sidecars.setCurrent(state.trackId, state.revision, state.offline);
         m_covers.updateLyrics(state);
@@ -114,6 +130,9 @@ BackendSession::BackendSession()
         m_server.broadcastEvent(
             {{"event", "library.assets_failed"}, {"song_hash", hash}, {"message", message}});
     });
+    // Artwork changes affect current track, library, playlists and repeated queue occurrences.
+    // Broadcast all their existing snapshot channels instead of giving each view a resolver.
+    // This keeps local/offline cover precedence consistent even when only one asset was updated.
     connect(&m_covers, &CoverService::changed, this,
             [libraryChanged, playlistsChanged, queueChanged, trackChanged] {
                 trackChanged();
@@ -123,6 +142,9 @@ BackendSession::BackendSession()
             });
     connect(&m_kugou, &KugouService::eventReady, this,
             [this](const KugouEvent &event) { m_server.broadcastEvent(toJson(event)); });
+    // Publish download_finished only after the application import transaction has succeeded.
+    // The supplied path can be the managed/deduplicated path rather than the raw download target.
+    // Lyric and cover statuses preserve useful partial success from optional enrichment.
     connect(&m_downloads, &DownloadService::finished, this,
             [this](const QString &path, int id, const QString &lyric, const QString &cover) {
                 m_server.broadcastEvent({{"event", "kugou.download_finished"},
@@ -138,6 +160,11 @@ BackendSession::BackendSession()
     });
 }
 BackendSession::~BackendSession() { shutdown(); }
+// Database readiness and socket ownership are startup prerequisites.
+// Only a successfully listening backend starts automatic discovery.
+// The frontend also requests a scan on reconnect; scanner admission
+// coalesces that request with this already-active startup scan.
+// Listening success does not imply that discovery has finished yet.
 bool BackendSession::start() {
     if (!m_database.isReady() || !m_server.listen())
         return false;
@@ -153,6 +180,7 @@ void BackendSession::shutdown() {
     m_stopped = true;
     m_scanner.shutdown();
     m_sidecars.shutdown();
+    // Reject new work, then cancel queued commands before import shutdown completes active callbacks.
     m_server.stopAccepting();
     m_router.shutdown();
     m_aiBackend.shutdown();

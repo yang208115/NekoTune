@@ -4,6 +4,9 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
+// Diagnostic presentation uses backend position directly, without KRC visual extrapolation.
+// This lets timestamps and next-line deltas reveal timing errors in the authoritative stream.
+// The panel emits seek intent while leaving lyric lookup and playback ownership in controllers.
 Rectangle {
     id: root
 
@@ -18,6 +21,9 @@ Rectangle {
     readonly property var lines: document.lines || []
     readonly property int activeIndex: findActiveIndex()
     readonly property var activeLine: activeIndex >= 0 && activeIndex < lines.length ? lines[activeIndex] : ({})
+    // Before the first timed row there is no active line, so no next-line delta is shown either.
+    // After the final row, the absent next line remains an empty object.
+    // The format helpers distinguish absence from a legitimate timestamp of zero.
     readonly property var nextLine: activeIndex >= 0 && activeIndex + 1 < lines.length ? lines[activeIndex + 1] : ({})
 
     color: "#11151b"
@@ -123,6 +129,9 @@ Rectangle {
                 }
             }
 
+            // Only a valid active row is scrolled into view.
+            // Seeking before the first line must not attempt to position a delegate at index -1.
+            // Contain keeps the diagnostic row visible without forcing the normal player's centered layout.
             onCurrentIndexChanged: {
                 if (currentIndex >= 0 && currentIndex < count)
                     positionViewAtIndex(currentIndex, ListView.Contain)
@@ -134,6 +143,9 @@ Rectangle {
         return root.translator ? root.translator.text(key, root.translator.language) : key
     }
 
+    // Backend parsers deliver lines sorted by absolute millisecond timestamps.
+    // An upper-bound search chooses the last eligible row when timestamps are duplicated.
+    // Returning -1 before the first row avoids falsely showing its text as already sung.
     function findActiveIndex() {
         let low = 0
         let high = root.lines.length

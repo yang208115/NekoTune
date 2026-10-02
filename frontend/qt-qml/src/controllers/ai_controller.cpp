@@ -30,6 +30,7 @@ void AiController::saveConfiguration(const QVariantMap &config) {
 void AiController::clearKey() { configRequest("ai.config.clear_key"); }
 void AiController::testConnection() { configRequest("ai.test"); }
 void AiController::discardSuggestion() {
+    // Closing/changing editors invalidates the result locally; the remote request may still finish.
     ++m_generation;
     m_generating = false;
     m_suggestionError.clear();

@@ -42,6 +42,11 @@ QString IpcClient::normalizePath(const QString &path) {
     QUrl url(path);
     return url.isLocalFile() ? url.toLocalFile() : path;
 }
+// Allocate correlation identity before writing the framed request.
+// Register the callback before bytes can trigger a backend response.
+// Disconnected calls fail immediately while connection retry continues.
+// No implicit queue of replayable mutations is kept across connections.
+// Feature-specific reportError avoids unrelated global banner changes.
 void IpcClient::request(const QString &method, const QJsonObject &params, Completion completion, bool reportError) {
     if (!connected()) {
         connectBackend();
@@ -60,6 +65,8 @@ void IpcClient::request(const QString &method, const QJsonObject &params, Comple
                    "\n");
 }
 void IpcClient::failPending() {
+    // Reconnect restores observation only: replaying a mutation could apply it twice after a lost reply.
+    // Clear before callbacks, which may themselves submit requests or update controller state.
     auto pending = std::move(m_pending);
     m_pending.clear();
     for (const auto &request : pending) {
@@ -69,6 +76,7 @@ void IpcClient::failPending() {
     }
 }
 void IpcClient::readMessages() {
+    // A readyRead signal is not a message boundary; retain incomplete frames for the next read.
     m_buffer.append(m_socket.readAll());
     if (m_buffer.size() > 64 * 1024 * 1024) {
         setError("Backend response too large");
@@ -95,6 +103,7 @@ void IpcClient::readMessages() {
         auto id = payload.value("id").toInteger(-1);
         if (!m_pending.contains(id))
             continue;
+        // Consume before invoking user callbacks so each request can complete at most once.
         auto pending = m_pending.take(id);
         auto message = payload.value("status") == "error" ? payload.value("message").toString() : QString();
         auto data = payload.value("data").toObject();

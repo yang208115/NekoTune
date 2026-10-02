@@ -35,6 +35,9 @@ Rectangle {
             selectionSpy.clear()
             playSpy.clear()
         }
+        // Artist delegates remain part of the row's selection surface.
+        // Clicking a displayed name selects the row without accidentally starting playback.
+        // The names remain separate literal labels rather than one joined text string.
         function test_independentNamesAndRowSelection() {
             const names = findChild(track, "trackArtists")
             compare(names.names, ["Orangestar", "初音ミク"])
@@ -47,6 +50,9 @@ Rectangle {
             compare(selectionSpy.count, 1)
             compare(playSpy.count, 0)
         }
+        // Only explicit list delimiters split artist metadata.
+        // Slashes, ampersands and spaces may belong to a group's actual name.
+        // Case-insensitive duplicates collapse while the first spelling and literal text are retained.
         function test_explicitSeparatorsAndDuplicates_data() {
             return [
                 {tag: "comma", input: "Orangestar,初音ミク", expected: ["Orangestar", "初音ミク"]},
@@ -61,6 +67,9 @@ Rectangle {
             artists.artist = data.input
             compare(artists.names, data.expected)
         }
+        // Long artist names share the available row width instead of overlapping one another.
+        // Both may elide, but each must keep positive width on the same baseline.
+        // The geometry assertions catch overflow that a text-value comparison cannot detect.
         function test_longNamesStayInsideSingleLine() {
             artists.width = 120
             artists.artist = "A very long name for the first artist, Another very long second artist"
@@ -74,6 +83,9 @@ Rectangle {
             verify(first.mapToItem(artists, first.width, 0).x <= second.mapToItem(artists, 0, 0).x)
             verify(second.mapToItem(artists, second.width, 0).x <= artists.width)
         }
+        // Changing metadata must replace the derived names instead of appending to old delegates.
+        // Compact mode reserves room for an overflow count; full mode exposes all names.
+        // Unavailable audio replaces artist metadata with the file-availability explanation.
         function test_metadataSwitchAndUnavailableFallback() {
             artists.artist = "A, B"
             compare(artists.names.length, 2)
@@ -98,6 +110,10 @@ Rectangle {
             compare(names.fallbackText, i18n.text("file_unavailable", i18n.language))
         }
 
+        // Summary fitting reserves space for the localized remaining-artist count.
+        // Growing the width should reveal more complete names before hiding the count entirely.
+        // An individually long name may elide while the count remains within bounds.
+        // Accessible text retains the full list even when the visual summary is shortened.
         function test_summaryFitsNamesAndCountsAcrossWidths() {
             artists.summarizeOverflow = true
             artists.remainingTextTemplate = "+%1位"

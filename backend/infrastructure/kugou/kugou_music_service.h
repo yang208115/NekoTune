@@ -3,6 +3,13 @@
 #include "infrastructure/kugou/kugou_download_job.h"
 #include <functional>
 namespace nekotune {
+/// Coordinates search/account state and a single download pipeline.
+/// Search records retain trusted provider data used by later download.
+/// Download accepts hashes from the current search snapshot only.
+/// The destination callback reserves a managed basename before transfer.
+/// Audio transfer, lyric acquisition and cover acquisition are separate stages.
+/// Saved audio emits audioReady and is imported by application wiring.
+/// No queue changes or playback decisions belong in this adapter.
 class KugouMusicService final : public IKugouBackend {
     Q_OBJECT
   public:

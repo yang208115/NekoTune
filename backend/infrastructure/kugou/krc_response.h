@@ -2,6 +2,11 @@
 #include "domain/lyrics/krc_parser.h"
 #include <QJsonObject>
 namespace nekotune {
+// Provider responses carry base64 rather than a ready text document.
+// Validate both binary decoding and parsed lyric usefulness here.
+// Keep original binary bytes for an authentic .krc file on disk.
+// The decoded text is used by the lyric viewer without another request.
+// Returning no payload lets callers use their existing LRC fallback.
 inline std::optional<KrcPayload> readKrcResponse(const QJsonObject &response) {
     const auto content = response.value(QStringLiteral("content"));
     if (response.value(QStringLiteral("status")).toInt() != 200 || !content.isString())

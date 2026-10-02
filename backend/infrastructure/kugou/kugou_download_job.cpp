@@ -54,6 +54,13 @@ void KugouDownloadJob::discardAudio() {
     }
 }
 
+// Audio transfer streams into a temporary QSaveFile.
+// Choose a supported extension from the response's audio content type.
+// Revalidate redirected URLs rather than enabling automatic redirects.
+// Check existing destination both at creation and before final commit.
+// Only the committed audio path proceeds to optional asset stages.
+// Temporary files are discarded on transfer errors or early cancellation.
+// Post-audio asset failures preserve a recoverable downloaded song.
 void KugouDownloadJob::beginAudio(const QUrl &url, int redirects) {
     if (!trustedAudioUrl(url) || redirects > 3) {
         finishOperation(KugouEventType::OperationFailed, QStringLiteral("Unsafe audio redirect"));
@@ -116,6 +123,7 @@ void KugouDownloadJob::beginAudio(const QUrl &url, int redirects) {
             }
         }
         m_audioBytes += chunk.size();
+        // Enforce the actual streamed size too: Content-Length may be absent or inaccurate.
         if (m_audioBytes > kMaxAudioBytes || m_audioFile->write(chunk) != chunk.size()) {
             m_audioError = m_audioBytes > kMaxAudioBytes ? QStringLiteral("Audio exceeds 100 MiB")
                                                          : QStringLiteral("Cannot write audio file");
@@ -155,6 +163,7 @@ void KugouDownloadJob::beginAudio(const QUrl &url, int redirects) {
             finishOperation(KugouEventType::OperationFailed, message);
             return;
         }
+        // Only publish a complete audio file; cancellation/error discards the temporary download.
         if (!m_audioFile->commit()) {
             discardAudio();
             finishOperation(KugouEventType::OperationFailed, QStringLiteral("Cannot save audio file"));
@@ -165,6 +174,12 @@ void KugouDownloadJob::beginAudio(const QUrl &url, int redirects) {
     });
 }
 
+// Lyric acquisition is tied to this newly downloaded provider version.
+// Normalize title/artist and compare known duration when possible.
+// Unknown duration does not prove a specific version is correct.
+// Equal best matches are left uncertain instead of blindly selecting.
+// Missing/uncertain/error statuses do not invalidate saved audio.
+// The pipeline still proceeds to cover handling and local import.
 void KugouDownloadJob::fetchLyrics() {
     if (m_cancelled) {
         finishAudio(QStringLiteral("skipped"));
@@ -218,6 +233,7 @@ void KugouDownloadJob::fetchLyrics() {
                         } else if (difference == bestDifference)
                             ambiguous = true;
                     }
+                    // Equal-best matches often represent alternate versions; retain audio without guessing lyrics.
                     if (selectedIndex < 0 || ambiguous) {
                         finishAudio(QStringLiteral("uncertain"));
                         return;
@@ -234,6 +250,7 @@ void KugouDownloadJob::fetchKrc(const QJsonObject &candidate, std::function<void
         callback(QStringLiteral("existing"));
         return;
     }
+    // The Worker handles LRC only; the native endpoint returns encoded KRC with word timing.
     QUrl url(QStringLiteral("https://lyrics.kugou.com/download"));
     QUrlQuery query;
     query.addQueryItem(QStringLiteral("ver"), QStringLiteral("1"));
@@ -293,6 +310,11 @@ void KugouDownloadJob::fetchKrc(const QJsonObject &candidate, std::function<void
             });
 }
 
+// Try the human-readable fallback even after saving a valid KRC.
+// This keeps an LRC sidecar available to other local tools.
+// Never overwrite an existing user file at the sidecar destination.
+// Prefer a successful KRC status in the final lyric outcome.
+// LRC failure alone must not turn a saved KRC into a lyric failure.
 void KugouDownloadJob::fetchLrc(const QJsonObject &candidate, const QString &krcStatus) {
     if (m_cancelled) {
         finishAudio(QStringLiteral("skipped"));
@@ -406,6 +428,7 @@ void KugouDownloadJob::fetchCover(const QString &lyricStatus, const QUrl &url, i
         QBuffer buffer(bytes.get());
         buffer.open(QIODevice::ReadOnly);
         QImageReader reader(&buffer);
+        // Derive the extension from decoded content, not a remote filename or Content-Type claim.
         const auto format = reader.format().toLower();
         const auto dimensions = reader.size();
         if ((format != "jpeg" && format != "jpg" && format != "png" && format != "webp") ||
@@ -442,6 +465,7 @@ QString KugouDownloadJob::cancelDownload() {
     if (!m_downloadActive)
         return QStringLiteral("No active Kugou download");
     m_cancelled = true;
+    // Committed audio survives cancellation during optional asset stages and can still be imported.
     m_api.cancel();
     if (m_reply)
         m_reply->abort();
@@ -454,6 +478,11 @@ QString KugouDownloadJob::cancelDownload() {
     return {};
 }
 
+// Used for the legacy descriptive download destination path only.
+// Remove separators/control characters and platform-sensitive punctuation.
+// Bound UTF-8 bytes by whole codepoints so Unicode stays valid.
+// The managed numbered destination avoids remote-title naming entirely.
+// The provider hash further distinguishes descriptive-name collisions.
 QString KugouDownloadJob::safeName(const QString &value) {
     QString result = value;
     result.replace(QRegularExpression(QStringLiteral("[<>:\"/\\\\|?*\\x00-\\x1f]")), QStringLiteral("_"));

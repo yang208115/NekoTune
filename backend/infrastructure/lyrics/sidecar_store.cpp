@@ -11,6 +11,7 @@
 namespace nekotune {
 namespace {
 bool atomicWrite(const QString &path, const QByteArray &bytes) {
+    // Sidecars are owned files; never follow a link or fall back to truncating the destination in place.
     if (QFileInfo(path).isSymLink())
         return false;
     QSaveFile file(path);
@@ -42,8 +43,15 @@ void SidecarStore::setCurrent(const QString &hash, quint64 revision, bool offlin
     m_offline = offline;
 }
 bool SidecarStore::current(const QString &hash, quint64 revision, quint64 generation) const {
+    // Generation also distinguishes two saves within the same lyric revision, not just track changes.
     return hash == m_hash && revision == m_revision && generation == m_generation;
 }
+// Only the current song/revision is eligible for managed sidecar writes.
+// Cancel any older cover save before starting this asset generation.
+// Remove obsolete KRC when a newly selected result no longer has it,
+// otherwise local-priority loading would keep choosing stale word timing.
+// Retain existing artwork when the provider supplies no replacement URL.
+// Lyric writes can succeed even if optional cover validation later fails.
 void SidecarStore::save(const QString &hash, quint64 revision, const QString &base,
                         const LyricsDocument &document) {
     if (base.isEmpty() || hash != m_hash || revision != m_revision)
@@ -69,6 +77,12 @@ void SidecarStore::save(const QString &hash, quint64 revision, const QString &ba
     if (!m_offline && !url.isEmpty())
         fetchCover(hash, revision, m_generation, base, url);
 }
+// Remote artwork is optional and remains bounded in bytes and pixels.
+// Each redirect is checked against the trusted HTTPS image endpoint.
+// Hash, revision and save generation must all still match on completion.
+// This stops an earlier cover from replacing a newer lyric selection.
+// Only decoded JPEG/PNG/WebP content becomes a managed image sidecar.
+// Signal failure without undoing an already saved lyric document.
 void SidecarStore::fetchCover(const QString &hash, quint64 revision, quint64 generation, const QString &base,
                               const QUrl &url, int redirects) {
     if (!current(hash, revision, generation) || m_offline)
@@ -113,6 +127,7 @@ void SidecarStore::fetchCover(const QString &hash, quint64 revision, quint64 gen
                 QBuffer buffer(bytes.get());
                 buffer.open(QIODevice::ReadOnly);
                 QImageReader reader(&buffer);
+                // Byte limits do not bound decoded pixels; inspect dimensions and decode before publishing.
                 const auto size = reader.size();
                 const auto format = reader.format();
                 QString suffix;

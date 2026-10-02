@@ -45,6 +45,12 @@ void write(const QString &path, const QByteArray &bytes) {
 class AudioDurationTest final : public QObject {
   Q_OBJECT
 private slots:
+  // The generated WAV has a known duration without depending on an external media fixture.
+  // Import probes the source while the managed library records the linked audio identity.
+  // Missing, cancelled and invalid probes return unknown duration rather than failing import.
+  // Reimporting an unknown value must not erase an already persisted positive duration.
+  // Hashing the source again checks that probing and registration did not alter its bytes.
+  // The queue should consume stored metadata rather than reopening audio in the UI thread.
   void probesOffThreadAndPreservesManagedFile() {
     QTemporaryDir dir;
     const auto path = dir.filePath("原曲.wav");
@@ -88,6 +94,11 @@ private slots:
     QVERIFY(repeated);
     QCOMPARE(repeated.value().durationMs, 1500);
   }
+  // An old songs table intentionally omits the duration column.
+  // Schema repair must retain its existing identity and user-edited metadata.
+  // Backfilling duration should update that row instead of creating a replacement song.
+  // Reopening the database verifies persistence beyond the current repository instance.
+  // The migration and backfill have separate responsibilities and are exercised together here.
   void migratesLegacySchemaAndPreservesDurationAcrossRestart() {
     QTemporaryDir dir;
     const auto path = dir.filePath("db.sqlite3");
@@ -125,6 +136,12 @@ private slots:
     QCOMPARE(restored.songById(7)->durationMs, 192000);
     QCOMPARE(restored.songs().first().durationMs, 192000);
   }
+  // Legacy paths and managed links must both be eligible for duration probing.
+  // Unavailable files and content whose hash has changed remain unknown.
+  // Duration enrichment cannot replace custom lyrics, tags or collection membership.
+  // Existing queue records should receive the updated metadata for their song identity.
+  // Another scan must be idempotent once the positive duration has been persisted.
+  // The assertions separate metadata repair from queue construction and playback selection.
   void backfillsLegacyAndManagedSongsWithoutChangingCollections() {
     QTemporaryDir dir;
     const auto path = dir.filePath("outside.wav");
@@ -178,6 +195,12 @@ private slots:
     QCOMPARE(store.songById(song->id)->durationMs, 1500);
     imports.shutdown();
   }
+  // A worker result belongs to the hash observed when its probe was scheduled.
+  // The wrong hash therefore cannot enrich a different or subsequently replaced song.
+  // A rejecting SQL trigger must leave both stored duration and change notifications untouched.
+  // A valid write emits a change only when it actually fills an unknown duration.
+  // Existing positive values are not replaced by later probe results.
+  // Deleting the song before completion must not resurrect it or clear scan suppression.
   void rejectsStaleResultsAndRollsBackFailedWrites() {
     QTemporaryDir dir;
     StoreFixture store(dir.filePath("db.sqlite3"));

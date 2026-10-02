@@ -19,6 +19,10 @@ namespace nekotune {
 Q_LOGGING_CATEGORY(kugouLog, "nekotune.lyrics.kugou")
 
 namespace {
+// Search fields can contain provider-added emphasis markup.
+// Remove that decoration before matching or plain-text presentation.
+// Decode the common entities without treating the value as rich text.
+// The result remains untrusted descriptive data, not executable markup.
 QString cleanText(QString value) {
     static const QRegularExpression emphasis(QStringLiteral("</?em\\b[^>]*>"),
                                              QRegularExpression::CaseInsensitiveOption);
@@ -29,6 +33,10 @@ QString cleanText(QString value) {
         .replace(QStringLiteral("&quot;"), QStringLiteral("\""));
 }
 
+// Provider IDs can arrive as strings or JSON numeric values.
+// Accept only finite representable numeric values on the numeric path.
+// The upper bound avoids identities already rounded by JSON doubles.
+// Invalid values use zero and are filtered by the caller's rules.
 qint64 integer(const QJsonValue &value) {
     if (value.isString()) {
         bool ok = false;
@@ -133,6 +141,11 @@ void KugouProvider::get(const QString &path, const QUrlQuery &params, quint64 to
             });
 }
 
+// Discard resolution handles from the previous song search.
+// The UI will receive a new candidate revision for this result set.
+// Expand grouped releases while deduplicating their provider hashes.
+// Fallback labels/artwork come from the group's parent when missing.
+// Bound candidate counts so a remote response cannot grow UI state freely.
 void KugouProvider::request(const LyricsQuery &query, quint64 token, bool) {
     m_resolutions.clear();
     QUrlQuery params;
@@ -162,6 +175,7 @@ void KugouProvider::request(const LyricsQuery &query, quint64 token, bool) {
                 seen.insert(hash.toCaseFolded());
                 LyricsCandidate song;
                 song.songResult = true;
+                // Retain song-resolution details in the provider; the client selects a candidate index.
                 song.resolverHandle = QString::number(++m_handle);
                 m_resolutions.insert(song.resolverHandle,
                                      {hash, {}, integer(item.value(QStringLiteral("MixSongID")))});
@@ -249,6 +263,7 @@ void KugouProvider::choose(const LyricsCandidate &candidate, quint64 token) {
             });
         return;
     }
+    // KRC failure falls back to LRC for this selected version, rather than silently choosing another song.
     const auto downloadLrc = [this, token, candidate, resolution]() {
         QUrlQuery params;
         params.addQueryItem(QStringLiteral("id"), QString::number(candidate.document.providerId));
@@ -276,6 +291,7 @@ void KugouProvider::choose(const LyricsCandidate &candidate, quint64 token) {
     params.addQueryItem(QStringLiteral("accesskey"), resolution.accessKey);
     params.addQueryItem(QStringLiteral("fmt"), QStringLiteral("krc"));
     params.addQueryItem(QStringLiteral("charset"), QStringLiteral("utf8"));
+    // The Worker lyric endpoint supports LRC; fetch KRC directly to preserve word timing.
     get(
         QStringLiteral("https://lyrics.kugou.com/download"), params, token,
         [this, token, candidate, downloadLrc](const QJsonObject &body) {

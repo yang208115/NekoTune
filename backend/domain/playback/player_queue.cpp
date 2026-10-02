@@ -35,6 +35,7 @@ bool PlayerQueue::removeAt(int index) {
     m_items.removeAt(index);
 
     if (index == previousCurrentIndex) {
+        // Choosing a successor belongs to the playback operation, not to generic removal.
         m_currentIndex = -1;
     } else if (index < previousCurrentIndex) {
         --m_currentIndex;
@@ -48,6 +49,7 @@ bool PlayerQueue::removeAt(int index) {
 void PlayerQueue::clear() {
     m_items.clear();
     m_currentIndex = -1;
+    // Keep the ID counter: late UI actions must not address a new entry using an old ID.
 }
 
 void PlayerQueue::markCurrent() {

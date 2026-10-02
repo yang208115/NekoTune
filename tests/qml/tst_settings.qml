@@ -53,6 +53,10 @@ Item {
 
         function cleanup() { panel = null }
 
+        // The password field holds only newly entered secret text and clears immediately on submit.
+        // Saved status arrives from the backend rather than revealing or refilling the key.
+        // The pending state lasts through save/clear confirmation and guards duplicate submissions.
+        // An empty field cannot accidentally request replacement with an empty secret.
         function test_saveAndClearKey() {
             const field = findChild(panel, "kugouKeyField")
             const save = findChild(panel, "kugouSaveKeyButton")

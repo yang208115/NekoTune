@@ -79,6 +79,7 @@ void KugouApiClient::accountRequest(const QString &route, const QJsonObject &bod
     requestJson(route, request,
                 [this, callback = std::move(callback)](QJsonObject result, const QString &error) {
                     QString failure = error;
+                    // Cookies are backend-private; strip them before forwarding account results.
                     const auto updated = result.take(QStringLiteral("cookies"));
                     if (failure.isEmpty() && updated.isObject()) {
                         const auto values = updated.toObject();
@@ -87,6 +88,7 @@ void KugouApiClient::accountRequest(const QString &route, const QJsonObject &bod
                             if (it.value().isString())
                                 m_account.cookies.insert(it.key(), it.value().toString());
                         if (!m_account.saveSession()) {
+                            // Do not expose a successful session update that cannot survive restart.
                             m_account.cookies = previous;
                             failure = m_account.sessionError;
                         }
@@ -94,6 +96,10 @@ void KugouApiClient::accountRequest(const QString &route, const QJsonObject &bod
                     callback(result, failure);
                 });
 }
+// Cancellation deliberately disconnects the normal reply callback.
+// The admitted download/service operation supplies its terminal outcome.
+// This avoids abort() triggering a second failure/completion sequence.
+// Keep deferred deletion so no callback frees its active reply stack.
 void KugouApiClient::cancel() {
     m_cancelled = true;
     if (m_reply) {

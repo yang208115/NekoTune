@@ -14,6 +14,7 @@ LyricsController::LyricsController(PlayerEngine &player, LyricsService *service)
             });
     connect(&m_thread, &QThread::finished, m_service, &QObject::deleteLater);
     connect(m_service, &LyricsService::changed, this, [this](const LyricsSnapshot &state) {
+        // A hash alone is insufficient: refresh/search can supersede a request for the same track.
         if (state.revision != m_revision || state.trackId != query().trackId)
             return;
         m_snapshot = state;
@@ -39,9 +40,16 @@ LyricsQuery LyricsController::query() const {
     auto state = m_player.snapshot();
     if (!state.song)
         return {};
+    // The decoder may still expose the previous source's duration until metadata is ready.
     return {state.metadata.title, state.metadata.artist, state.metadata.album, m_ready ? state.duration : 0,
             state.song->metadata.hash};
 }
+// Clear the presentation snapshot immediately for the new revision.
+// The worker receives a copied queue item, not live player references.
+// It can perform local reads or provider work after playback changes.
+// Returned state is accepted only for the still-current hash/revision.
+// An empty queue schedules worker clear so old requests are cancelled.
+// Offline preference survives presentation resets across track changes.
 void LyricsController::load(bool ready, bool force) {
     auto request = query();
     auto current = m_player.snapshot();
@@ -85,6 +93,7 @@ Result<void> LyricsController::search(const QString &trackId, const MetadataPatc
         request.album = album.trimmed();
     if (request.title.isEmpty())
         return failure(QStringLiteral("Search title is required"));
+    // A delayed automatic load must not replace the user's search fields and candidates.
     m_player.cancelPendingMetadataRefresh();
     auto revision = ++m_revision;
     m_snapshot.revision = revision;
@@ -95,6 +104,10 @@ Result<void> LyricsController::search(const QString &trackId, const MetadataPatc
     });
     return {};
 }
+// Candidate indices are meaningful only within their published revision.
+// Validate on the backend thread before forwarding to the worker.
+// The worker checks revision again when its queued invocation executes.
+// This protects a click that races a newer search or track switch.
 Result<void> LyricsController::select(const QString &trackId, quint64 revision, int index) {
     if (trackId.isEmpty() || trackId != query().trackId || revision != m_revision)
         return failure(QStringLiteral("Lyrics results are no longer current"));

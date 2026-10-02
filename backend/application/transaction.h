@@ -1,6 +1,7 @@
 #pragma once
 #include "domain/repositories.h"
 namespace nekotune {
+/// Rolls back on every early return, including a failed commit; does not nest transactions.
 class Transaction final {
   public:
     explicit Transaction(ITransaction &session) : m_session(session), m_active(session.begin()) {}

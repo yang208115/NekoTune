@@ -1,5 +1,10 @@
 #pragma once
 #include "controllers/feature_controller.h"
+/// Consumes public account flags and forwards provider outcome events.
+/// Progress/stage events are frequent and do not need a status query each.
+/// Terminal/account events refresh authoritative status once they settle.
+/// The controller never receives the stored admission key or cookies.
+/// Saved-audio recovery uses the existing library import command.
 class KugouController final : public FeatureController {
     Q_OBJECT
     Q_PROPERTY(QVariantMap account READ account NOTIFY changed)
@@ -30,6 +35,10 @@ class KugouController final : public FeatureController {
                           {"key_saved", false},
                           {"download_active", false}};
 };
+/// Credential input is write-only through explicit settings operations.
+/// The caller clears its password field after submitting the value.
+/// Clear removes the stored override; launch configuration may still apply.
+/// Operation feedback uses flags and failure text rather than key contents.
 class SettingsController final : public FeatureController {
     Q_OBJECT
   public:

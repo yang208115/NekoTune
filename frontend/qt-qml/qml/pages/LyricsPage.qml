@@ -1,6 +1,10 @@
 import QtQuick
 import QtQuick.Controls
 import "../components"
+// Playback detail consumes the same confirmed controller state as the bottom bar.
+// Its Return action closes the overlay and restores the browse surface.
+// Transport/seek/volume commands still go through feature controllers.
+// The detail view introduces no separate queue or lyric source policy.
 PlayerPanel {
     id: page
     required property var shell

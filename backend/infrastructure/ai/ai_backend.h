@@ -6,6 +6,12 @@
 
 namespace nekotune {
 class AiWorker;
+/// Provides asynchronous config/generation from an isolated AI thread.
+/// Pending callback maps belong to the calling backend thread.
+/// Workers receive copied input and return values through queued calls.
+/// Suggestions have a user-visible deadline even if the keyring stalls.
+/// A bounded number of in-flight generations prevents runaway request state.
+/// Shutdown resolves callbacks once and joins the worker before destruction.
 class AiBackend final : public IAiBackend {
   public:
     explicit AiBackend(std::shared_ptr<CredentialStore> store = systemCredentialStore(),

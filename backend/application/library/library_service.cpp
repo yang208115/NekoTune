@@ -4,6 +4,10 @@
 namespace nekotune {
 LibraryService::LibraryService(ISongRepository &songs, ITagRepository &tags, ITransaction &transaction)
     : m_songs(songs), m_tags(tags), m_transaction(transaction) {}
+// Read songs, paths and tags in bulk before assembling the view.
+// Choose a usable path without dropping records whose files vanished.
+// The empty path is the frontend's explicit availability indication.
+// Display metadata remains tied to the song's stable identity.
 LibrarySnapshot LibraryService::snapshot() const {
     LibrarySnapshot result;
     result.tags = m_tags.tags();
@@ -66,6 +70,7 @@ Result<SongMetadata> LibraryService::update(int id, const MetadataPatch &patch) 
     if (!tx)
         return failure(m_transaction.errorString(), ErrorCode::Storage);
     const auto &song = current.value();
+    // Omitted fields reuse the stored metadata; empty supplied values still mean clear.
     auto updated =
         m_songs.updateMetadata(id, patch.title.value_or(song.customTitle), patch.artist.value_or(song.artist),
                                patch.lyrics.value_or(song.lyrics));

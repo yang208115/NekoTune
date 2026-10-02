@@ -68,6 +68,9 @@ Rectangle {
                 grabImage(scene).save(path)
             }
         }
+        // Account access has one entry point across logged-out and logged-in states.
+        // Changing authentication updates its label without introducing another login button.
+        // The same entry opens the account dialog while logged out.
         function test_singleEntryAcrossLoginStates() {
             waitForRendering(panel)
             compare(visibleLoginButtons(panel), 1)
@@ -85,6 +88,8 @@ Rectangle {
             compare(visibleLoginButtons(panel), 0)
             screenshot("kugou-logged-in")
         }
+        // A locked or unconfigured credential store must remain visible to the user.
+        // It must not remove the account entry needed to resolve the configuration problem.
         function test_errorAndUnconfiguredEntry() {
             fakeClient.account = {configured: false, logged_in: false, busy: false, credential_error: "locked"}
             tryCompare(findChild(panel, "kugouCredentialError"), "visible", true)
@@ -92,6 +97,9 @@ Rectangle {
             mouseClick(findChild(panel, "kugouAccountButton"))
             tryCompare(findChild(panel, "kugouLoginPopup"), "opened", true)
         }
+        // Search rows distinguish a loaded image, an absent URL and a failed image request.
+        // Only Image.Ready may display artwork above the fallback.
+        // A failed cover must not leave a broken-image layer covering the placeholder.
         function test_searchCoversAndFallback() {
             fakeClient.kugouEvent({event: "kugou.search_results", page: 1, songs: [
                 {hash: "a", title: "STAGE OF SEKAI", artist: "はりー", cover_url: "qrc:/artwork/default-cover.png"},
@@ -114,6 +122,10 @@ Rectangle {
             compare(broken.visible, false)
             screenshot("kugou-search-covers")
         }
+        // Wide rows align their artist and album columns with the header.
+        // Narrow rows switch to compact metadata while retaining a usable download action.
+        // Download clicks must not select the containing row or start playback through Enter.
+        // Pending download state disables the action until a completion or cancellation event.
         function test_responsiveColumnsAndDownloadsDoNotSelectRows() {
             scene.width = 1360; scene.height = 700
             panel.submittedQuery = "STAGE OF SEKAI"
@@ -155,6 +167,10 @@ Rectangle {
             verify(download.mapToItem(row, download.width, 0).x <= row.width)
             verify(title.width > 0)
         }
+        // Paging reuses the submitted query rather than an unsent input edit.
+        // Pending search disables navigation until the corresponding result arrives.
+        // An unauthenticated account may browse results but cannot start a download.
+        // An empty result page stops forward navigation and hides the unused column header.
         function test_paginationAndAccountRestrictions() {
             panel.submittedQuery = "Night"
             fakeClient.kugouEvent({event: "kugou.search_results", page: 2, songs: [{hash: "a", title: "Song"}]})

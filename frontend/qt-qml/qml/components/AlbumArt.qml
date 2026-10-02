@@ -1,6 +1,11 @@
 import QtQuick
 import QtQuick.Controls
 
+// The backend supplies one canonical artwork URL for this song.
+// Render the local placeholder underneath the asynchronous image.
+// Show the replacement only after Image.Ready to avoid empty/error frames.
+// No-song state has its own artwork rather than reusing a stale URL.
+// Component sizing follows its container without changing cover precedence.
 Item {
     id: root
 

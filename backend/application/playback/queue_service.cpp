@@ -3,6 +3,10 @@
 namespace nekotune {
 QueueService::QueueService(IQueueRepository &repository, ISongRepository &songs, ITransaction &transaction)
     : m_repository(repository), m_transaction(transaction) {
+    // Persistent records contain song identity and path, not live occurrence IDs.
+    // Reconstruct occurrences in order while retaining selected-index correspondence.
+    // Missing metadata is filtered, but unavailable audio paths remain for later playback handling.
+    // Restoration itself never loads the decoder or resumes sound.
     const auto snapshot = repository.loadQueue();
     int current = -1;
     for (int i = 0; i < snapshot.items.size(); ++i) {
@@ -10,6 +14,7 @@ QueueService::QueueService(IQueueRepository &repository, ISongRepository &songs,
         auto song = songs.songById(record.songId);
         if (!song || record.path.isEmpty())
             continue;
+        // Dropped stale records shift indices; restore selection in the filtered in-memory queue.
         if (i == snapshot.currentIndex)
             current = m_queue.size();
         m_queue.add(record.path, *song);
@@ -22,6 +27,7 @@ Result<void> QueueService::commit(PlayerQueue next) {
     Transaction tx(m_transaction);
     if (!tx || !m_repository.saveQueue({next.records(), next.currentIndex()}) || !tx.commit())
         return failure(m_transaction.errorString(), ErrorCode::Storage);
+    // Observers see the new queue only once both its items and current index are durable.
     adoptCommitted(std::move(next));
     return {};
 }

@@ -63,12 +63,19 @@ Result<void> KugouAccountSession::saveCredential(const QString &path, const QByt
     auto saved = m_store->write(path, bytes);
     if (!saved)
         return saved;
+    // Verify the secure copy before deleting any plaintext legacy credential.
     const auto verified = m_store->read(path);
     if (!verified || !verified.value() || *verified.value() != bytes)
         return failure(QStringLiteral("Cannot verify system keyring write; legacy files retained"),
                        ErrorCode::Storage);
     return removeLegacy(path);
 }
+// A secure-store error is not permission to read a plaintext fallback.
+// Only a confirmed missing secure entry starts legacy migration.
+// Check limits and structure for secure values as well as legacy files.
+// Symlinked legacy files are rejected to avoid following unrelated paths.
+// Cleanup warnings can coexist with a usable verified secure credential.
+// The caller retains those warnings as non-secret status information.
 Result<std::optional<QByteArray>> KugouAccountSession::loadCredential(const QString &path, qsizetype limit) {
     auto stored = m_store->read(path);
     if (!stored)
@@ -104,6 +111,11 @@ Result<std::optional<QByteArray>> KugouAccountSession::loadCredential(const QStr
     }
     return std::optional<QByteArray>{};
 }
+// Prefer a saved native credential, then explicit environment sources.
+// An environment string is read at launch and is not saved implicitly.
+// An explicit external key file is never migrated or removed.
+// keySaved therefore describes persistence rather than configuration.
+// Clearing a saved key can reveal a still-present launch override.
 void KugouAccountSession::loadKey() {
     key.clear();
     keySaved = false;

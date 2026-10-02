@@ -2,6 +2,9 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import "../components"
+// Edits the reusable global tag catalog, not one song's tag-assignment draft.
+// Zero tagId selects creation; positive IDs select rename/delete of that stable identity.
+// Request completion, rather than the button click, determines whether the dialog closes.
 Popup {
     id: tagEditor
     required property var shell
@@ -17,6 +20,9 @@ Popup {
         saveError = ""
         open()
     }
+    // Capture the catalog ID and display spelling at dialog opening.
+    // Reset old pending/error state so a previous failed operation does not disable this edit.
+    // Renaming keeps song associations by ID; it does not create a replacement tag.
     function openForTag(tag) {
         tagId = Number(tag.id)
         tagNameField.text = String(tag.name)
@@ -30,6 +36,9 @@ Popup {
     height: (tagId ? 238 : 180) + (saveError ? 48 : 0)
     modal: true
     focus: true
+    // Prevent dismissal while a catalog mutation is awaiting its backend result.
+    // The same pending state disables inputs so the submitted ID/name remain coherent.
+    // Failure releases the controls and preserves the user's text for retry.
     closePolicy: pending ? Popup.NoAutoClose : Popup.CloseOnEscape
     padding: 18
     background: Rectangle {
@@ -103,6 +112,9 @@ Popup {
     }
     Connections {
         target: tagEditor.controller
+        // Controller signals also include unrelated operations, so only tag methods settle this popup.
+        // The pending flag prevents an idle dialog from closing on background catalog activity.
+        // The controller owns request serialization; this popup owns presentation state.
         function onRequestSucceeded(method) {
             if (tagEditor.pending && method.startsWith("tag.")) { tagEditor.pending = false; tagEditor.close() }
         }

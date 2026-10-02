@@ -3,6 +3,12 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 
+// Consumes already parsed absolute line/word times from backend snapshots.
+// LRC lines follow backend position; KRC can interpolate brief visual progress.
+// Interpolation is bounded and re-anchored by every playback update.
+// Manual scrolling suspends automatic follow so readers can inspect other lines.
+// Seek requests use the line's timestamp rather than its list index.
+// Plain lyrics use a separate wrapped view without timing selection.
 Item {
     id: root
 
@@ -63,6 +69,7 @@ Item {
         anchorClock = Date.now()
     }
     onPositionChanged: {
+        // Preserve interpolation for small updates, but snap on seeks or backward jumps to resync words.
         if (!playing || Math.abs(position - displayPosition) > 250 || position < anchorPosition - 40)
             displayPosition = position
         anchorPosition = position
@@ -214,6 +221,9 @@ Item {
                         }
 
                         Item {
+                            // Reveal a second identically shaped plain-text layer through a clipping rectangle.
+                            // Animating the clip width keeps word layout and line height stable while color advances.
+                            // Changing font weight or replacing text for progress would trigger unwanted reflow.
                             id: reveal
                             objectName: "krcReveal" + lineDelegate.index + "_" + wordItem.index
                             width: wordItem.width * wordItem.progress
@@ -247,6 +257,9 @@ Item {
                         root.userScrolling = false
                         resumeAutoScrollTimer.stop()
                         followScroll.stop()
+                        // The clicked row is already positioned by this interaction.
+                        // Remember its index so the arriving seek acknowledgment does not start another follow animation.
+                        // Manual seeking also clears the temporary user-scroll suspension above.
                         root.lastAutoIndex = lineDelegate.index
                         root.seekRequested(lineDelegate.timeMs)
                         lyricsList.positionViewAtIndex(lineDelegate.index, ListView.Center)
@@ -305,6 +318,8 @@ Item {
             root.activeIndex = -1
             return
         }
+        // Upper bound chooses the last line at/before playback, including duplicate timestamps;
+        // before the first timestamp, low - 1 deliberately leaves every line inactive.
         let low = 0
         let high = root.lines.length
         while (low < high) {
@@ -317,6 +332,9 @@ Item {
         root.activeIndex = low - 1
     }
 
+    // Word intervals are half-open: a word stops being active at its exact end timestamp.
+    // Gaps between intervals therefore legitimately have no active word.
+    // Revealed progress is computed separately so completed words stay visible during those gaps.
     function wordIndex(words, timeMs) {
         if (!words || words.length === 0) return -1
         for (let index = 0; index < words.length; index += 1) {
@@ -326,6 +344,9 @@ Item {
         return -1
     }
 
+    // Clamp extrapolated media position to a visible reveal fraction between zero and one.
+    // A zero-duration marker changes instantaneously at its timestamp instead of dividing by zero.
+    // Backward seeking recomputes this fraction directly, without preserving old reveal state.
     function wordProgress(word, timeMs) {
         const start = Number(word.time_ms)
         const duration = Number(word.duration_ms)
@@ -336,11 +357,15 @@ Item {
     function scrollToActive(forceAnimation) {
         if (root.userScrolling || root.activeIndex < 0 || root.activeIndex >= lyricsList.count)
             return
+        // Track the previous automatic target separately from the active timestamp lookup.
+        // Only adjacent changes normally animate; a large seek can require direct delegate positioning.
+        // Repeated updates within one lyric line must not restart the same scrolling animation.
         const previous = root.lastAutoIndex
         root.lastAutoIndex = root.activeIndex
         if (previous === root.activeIndex && !forceAnimation) return
         const item = lyricsList.itemAtIndex(root.activeIndex)
         const adjacent = Math.abs(root.activeIndex - previous) === 1
+        // Large seeks may target an uninstantiated delegate; let ListView position it directly.
         if (!root.reducedMotion && item && (adjacent || forceAnimation)) {
             const targetY = Math.max(0, Math.min(item.y + item.height / 2 - lyricsList.height * 0.42,
                                                 Math.max(0, lyricsList.contentHeight - lyricsList.height)))

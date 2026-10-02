@@ -5,6 +5,8 @@
 #include <memory>
 
 namespace nekotune {
+/// Resolves the common artwork URL for every view; local sidecars precede cached remote artwork.
+/// Returns an empty URL when no local artwork exists and remote artwork is disabled or absent.
 class CoverService final : public QObject {
     Q_OBJECT
   public:

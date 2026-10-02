@@ -3,6 +3,11 @@
 #include "domain/result.h"
 #include <QObject>
 namespace nekotune {
+/// Provides playlist management without owning playback state.
+/// Creating, renaming and deleting collections does not select music.
+/// Library-wide deletion uses CollectionService for cross-table changes.
+/// The repository remains responsible for membership and name validation.
+/// Observers refresh only after an accepted repository operation.
 class PlaylistService final : public QObject {
     Q_OBJECT
   public:

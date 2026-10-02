@@ -1,6 +1,11 @@
 #pragma once
 #include "controllers/feature_controller.h"
 #include "models/record_model.h"
+/// Owns queue rows keyed by queue occurrence identity.
+/// Repeated library songs therefore remain separate frontend entries.
+/// Membership snapshots arrive through queue events and command replies.
+/// Adding a path issues inspection/append without selecting a new track.
+/// Play/remove actions target queue IDs rather than library song IDs.
 class QueueController final : public FeatureController {
     Q_OBJECT
     Q_PROPERTY(RecordModel *model READ model CONSTANT)

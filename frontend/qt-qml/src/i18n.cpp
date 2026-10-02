@@ -8,6 +8,11 @@
 #include <QJsonObject>
 #include <QProcessEnvironment>
 
+// Language precedence is explicit environment, saved preference, then system.
+// Both supported catalogs are embedded resources loaded once at startup.
+// Unsupported language variants normalize to English except zh variants.
+// Passing language into text() bindings makes catalog changes observable
+// to QML without recreating every page or controller.
 I18n::I18n(QObject *parent)
     : QObject(parent)
 {
@@ -32,6 +37,10 @@ QString I18n::language() const
     return m_language;
 }
 
+// Apply the user's choice immediately even if persistence fails.
+// The warning describes failure to restore that choice on next startup.
+// Other settings keys remain protected by AppPaths' merged atomic write.
+// Only an actual normalized change emits the language notification.
 void I18n::setLanguage(const QString &language)
 {
     const auto normalized = normalizeLanguage(language);

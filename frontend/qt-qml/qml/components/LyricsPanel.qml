@@ -2,6 +2,12 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
+// Only render a structured lyric snapshot belonging to the current audio hash.
+// Manual search can retain the existing document while showing new candidates.
+// The popup binds its target identity when it opens and closes on track change.
+// Song-version and lyric-candidate stages share one selection interface.
+// Candidate requests carry the published revision to reject stale choices.
+// Cache warnings do not suppress an otherwise usable document.
 Item {
     id: root
     property var controller: null

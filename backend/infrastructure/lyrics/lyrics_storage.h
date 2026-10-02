@@ -2,6 +2,12 @@
 #include "domain/lyrics/lyrics_storage.h"
 #include "infrastructure/lyrics/lyrics_cache.h"
 namespace nekotune {
+/// Combines local-sidecar lookup with the persistent document cache.
+/// Local reads return a failure for authoritative unusable LRC files.
+/// Cache reads instead treat invalid entries as ordinary cache misses.
+/// Managed sidecars are checked before following an audio symlink.
+/// This preserves program-owned selections over original-directory files.
+/// The implementation performs no online lookup during local reads.
 class LyricsStorage final : public ILyricsStorage {
   public:
     explicit LyricsStorage(const QString &directory = {}) : m_cache(directory) {}

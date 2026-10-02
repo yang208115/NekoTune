@@ -36,6 +36,7 @@ PlayerEngine::PlayerEngine(IPlaybackBackend &backend, QueueService &queue,
         emit errorOccurred(result ? message : message + QStringLiteral("; ") + result.error().message);
     });
     m_metadataTimer.setSingleShot(true);
+    // Qt reports duration and tags separately; coalesce them before the online lyric lookup.
     m_metadataTimer.setInterval(100);
     connect(&m_metadataTimer, &QTimer::timeout, this, [this] {
         if (m_backend.source().isEmpty() || m_metadataReady)
@@ -46,6 +47,11 @@ PlayerEngine::PlayerEngine(IPlaybackBackend &backend, QueueService &queue,
         emit lyricsNeeded(true);
     });
 }
+// Merge decoder tags with user-controlled library fields for display.
+// The queue occurrence supplies audio identity and the chosen path.
+// Custom title and artist take precedence when they are available.
+// The original source name is preferable to a numbered managed path.
+// This merge does not write decoder tags back into the library.
 PlaybackSnapshot PlayerEngine::snapshot() const {
     PlaybackSnapshot result{
         m_state, m_backend.position(), m_backend.duration(), m_backend.volume(), {}, m_metadata};
@@ -78,6 +84,7 @@ void PlayerEngine::loadCurrent(bool play) {
     m_metadataTimer.stop();
     m_metadata = {};
     m_metadataReady = false;
+    // Local lyrics can load before decoder tags arrive; online matching waits for the timer.
     emit lyricsNeeded(false);
     m_backend.setSource(QUrl::fromLocalFile(queue.at(queue.currentIndex()).path));
     emit trackChanged();
@@ -87,6 +94,7 @@ void PlayerEngine::loadCurrent(bool play) {
 void PlayerEngine::clearSource() {
     m_metadataTimer.stop();
     m_backend.stop();
+    // stop() alone leaves the old source loaded, allowing play() to revive a removed track.
     m_backend.setSource({});
     m_metadata = {};
     m_metadataReady = false;
@@ -94,6 +102,11 @@ void PlayerEngine::clearSource() {
     emit trackChanged();
     emit lyricsNeeded(false);
 }
+// Restart/resume depends on both queue selection and decoder source.
+// A restored queue can have selection without a loaded media source.
+// An unselected nonempty queue chooses its first item durably first.
+// An already loaded source resumes through the playback adapter.
+// An empty queue fails instead of reviving the last cleared source.
 Result<void> PlayerEngine::play() {
     auto queue = m_queue.queue();
     if (queue.isEmpty())
@@ -143,6 +156,7 @@ Result<void> PlayerEngine::advance(PlaybackAdvance reason) {
     m_navigating = false;
     if (!saved)
         return saved;
+    // Only a durable selection may consume the shuffle proposal and its playback history.
     m_order.confirm(std::move(selection));
     m_backend.stop();
     loadCurrent(true);
@@ -170,6 +184,7 @@ Result<void> PlayerEngine::playItem(int id) {
     return replaceQueue(queue);
 }
 Result<void> PlayerEngine::replaceQueue(PlayerQueue queue, bool play) {
+    // Keep the audible track and navigation state intact if persistence fails.
     auto saved = m_queue.commit(std::move(queue));
     if (!saved)
         return saved;
@@ -188,6 +203,11 @@ Result<void> PlayerEngine::clear() {
     }
     return result;
 }
+// Removing a noncurrent occurrence must not interrupt playback.
+// Removing the current occurrence reloads a surviving successor only
+// after the candidate queue has been persisted successfully.
+// The captured play state decides whether that successor resumes.
+// At the list tail, no successor means clearing the media source.
 Result<void> PlayerEngine::removeItem(int id) {
     auto queue = m_queue.queue();
     int index = queue.indexById(id);
@@ -215,6 +235,10 @@ void PlayerEngine::applyCommittedQueue(PlayerQueue queue, bool currentChanged, b
         loadCurrent(resume);
     }
 }
+// A library edit applies to every queued occurrence of that song.
+// Only editing the current song needs a playback display refresh.
+// Lyrics are reloaded using the decoder's current readiness flag.
+// The edit does not seek, switch occurrence or reset shuffle history.
 void PlayerEngine::metadataUpdated(const SongMetadata &metadata) {
     m_queue.updateMetadata(metadata);
     auto state = snapshot();

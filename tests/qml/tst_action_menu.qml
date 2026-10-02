@@ -53,6 +53,8 @@ Rectangle {
                 grabImage(menu.parent.parent).save(path)
             }
         }
+        // Button menus align with the anchor's trailing edge in overlay coordinates.
+        // Choosing an action emits its stable key once and closes the popup.
         function test_buttonAlignsAndActionWorks() {
             showMenu()
             const bottomRight = anchor.mapToItem(menu.parent, anchor.width, anchor.height)
@@ -64,6 +66,8 @@ Rectangle {
             compare(chosenSpy.signalArguments[0][0], "queue")
             tryCompare(menu, "visible", false)
         }
+        // When space below is insufficient, button anchoring uses the space above.
+        // Escape must close that alternate placement just as it closes the normal placement.
         function test_bottomButtonOpensAbove() {
             anchor.y = scene.height - 68
             showMenu()
@@ -74,12 +78,16 @@ Rectangle {
             keyClick(Qt.Key_Escape)
             tryCompare(menu, "visible", false)
         }
+        // Trailing-edge alignment near the left border can place the popup outside the window.
+        // The safe inset clamps that position while retaining the full menu width.
         function test_leftButtonStaysInWindow() {
             anchor.x = 12
             showMenu()
             compare(menu.x, 8)
             verify(menu.x + menu.width <= menu.parent.width - 8)
         }
+        // Context menus use the supplied pointer position, not the button-anchor geometry.
+        // The point is mapped into the popup overlay before placement.
         function test_pointerUsesClickPosition() {
             menu.openAt(scene, 180, 160)
             tryCompare(menu, "opened", true)
@@ -87,6 +95,8 @@ Rectangle {
             compare(menu.x, point.x)
             compare(menu.y, point.y)
         }
+        // Near both trailing edges, the context menu opens leftward and upward from the pointer.
+        // Its final coordinates must also respect the minimum safe inset.
         function test_bottomRightPointerOpensAwayFromEdges() {
             menu.openAt(scene, scene.width - 20, scene.height - 20)
             tryCompare(menu, "opened", true)

@@ -8,6 +8,10 @@
 namespace nekotune {
 CoverService::CoverService(std::unique_ptr<ILyricsStorage> storage) : m_storage(std::move(storage)) {}
 
+// Cache the absence of artwork too, avoiding repeated disk reads.
+// The key is audio identity so changing display metadata is harmless.
+// Selecting new lyrics or saving sidecars invalidates this memoization.
+// The resolver never chooses a different lyric merely to obtain a cover.
 QString CoverService::cachedCover(const QString &trackId) const {
     if (trackId.isEmpty())
         return {};
@@ -30,6 +34,7 @@ QString CoverService::resolve(const QString &path, const QString &trackId) const
                 bool numbered = false;
                 audio.completeBaseName().toLongLong(&numbered);
                 if (numbered && audio.completeBaseName() == audio.dir().dirName()) {
+                    // Sidecars can be replaced at the same path; vary the URL to invalidate QML's image cache.
                     QUrlQuery version;
                     version.addQueryItem("v", QString("%1-%2-%3")
                                                   .arg(cover.lastModified().toMSecsSinceEpoch())

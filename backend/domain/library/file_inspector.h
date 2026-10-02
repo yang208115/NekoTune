@@ -4,6 +4,13 @@
 #include <QObject>
 #include <functional>
 namespace nekotune {
+/// Inspection validates a path and returns an audio identity snapshot.
+/// It may perform hashing and duration probing asynchronously.
+/// The completion receives either ImportedFile or a typed failure.
+/// The production executor returns callbacks to its owning thread.
+/// Application services can then safely use their repositories.
+/// Shutdown resolves registered inspection callbacks as cancelled.
+/// Discovery has a separate lifecycle from these inspection requests.
 class IFileInspector : public QObject {
     Q_OBJECT
   public:

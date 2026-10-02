@@ -150,6 +150,13 @@ static QByteArray sampleKrc() {
                                   "4AI+cCEzSSFye2p6u+XX0OCkJTVkFeO6zTtiHUiRajK3JZRphRTodSJ3jhjTng0hPUV+Y=");
 }
 
+// Exercise the complete binary-to-word-timing path before source priority.
+// The fixture includes a global offset and per-word relative timing.
+// Truncated/corrupted compression must be rejected as unusable input.
+// Local KRC wins over LRC/custom/cache even with offline enabled.
+// A broken KRC must allow a valid LRC rather than hiding local lyrics.
+// Removing sidecars then exposes custom lyrics before the cached document.
+// Decoded-text KRC sidecars are accepted alongside native binary files.
 void LyricsTest::krcDecodeAndPriority() {
     const auto decoded = KrcParser::decode(sampleKrc());
     QVERIFY(decoded.has_value());
@@ -215,6 +222,12 @@ void LyricsTest::krcDecodeAndPriority() {
              QStringLiteral("krc"));
 }
 
+// Drive the staged song-to-lyric selection through fake HTTP replies.
+// The direct KRC request must preserve its format and word timing.
+// Resolver access data must not appear in the serialized UI snapshot.
+// Successful selection is also available from the persistent lyric cache.
+// Hold the next download open, then clear the current revision.
+// The late network completion must not replace the cleared idle state.
 void LyricsTest::kugouKrcSelectionAndCancellation() {
     MockManager manager;
     manager.bodies.insert(QStringLiteral("/search"), R"({"status":1,"error_code":0,"data":{"lists":[
@@ -256,6 +269,11 @@ void LyricsTest::kugouKrcSelectionAndCancellation() {
     QCOMPARE(state.value(QStringLiteral("state")).toString(), QStringLiteral("idle"));
 }
 
+// Feature retirement must not re-enable ASR through old local artifacts.
+// The test supplies legacy data without deleting or migrating user content.
+// Offline loading should report no active document from those artifacts.
+// A normal LRC subsequently remains an authoritative current local source.
+// Provider request counts verify the fallback does not secretly go online.
 void LyricsTest::ignoresLegacyAsrLyrics() {
     QTemporaryDir temp;
     const auto audio = temp.filePath(QStringLiteral("song.wav"));
@@ -281,6 +299,10 @@ void LyricsTest::ignoresLegacyAsrLyrics() {
              QStringLiteral("local"));
 }
 
+// Repeated timestamp tags represent repeated choruses sharing one text row.
+// CRLF and variable decimal precision must still map to millisecond times.
+// The output order is chronological rather than the source row order.
+// Metadata tags are not selectable timed lyric rows.
 void LyricsTest::timestampsAndMultipleTags() {
     const auto lines =
         LrcParser::parse(QStringLiteral("[ar:Artist]\r\n[01:02.34][02:03.456]Words\r\n[00:03.1]Start"));
@@ -292,6 +314,10 @@ void LyricsTest::timestampsAndMultipleTags() {
     QCOMPARE(lines.at(2).text, QStringLiteral("Words"));
 }
 
+// Empty timestamp markers must not become active scrolling targets.
+// Malformed minutes/seconds/fractions must not create fabricated timing.
+// Plain garbage and metadata-only files are not synchronized lyrics.
+// This protects looksLikeLrc as a usable-content test rather than syntax detection.
 void LyricsTest::invalidAndEmptyLines() {
     const auto lines = LrcParser::parse(QStringLiteral("[00:01]hello\n[00:02.00]\n[00:99.99]bad\n[01:02.1234]"
                                                        "bad\n[00:03\n[ti:title]\nraw"));
@@ -302,6 +328,10 @@ void LyricsTest::invalidAndEmptyLines() {
     QVERIFY(LrcParser::parse(QStringLiteral("garbage\n[xx:yy]\n[12:")).isEmpty());
 }
 
+// A global offset applies equally to every timestamp in the file.
+// Sorting must retain source order for lines at the same adjusted time.
+// That order matters to the frontend's last-eligible-line lookup.
+// Negative offsets must not be interpreted as unsigned wraparound.
 void LyricsTest::stableSortAndOffset() {
     const auto lines = LrcParser::parse(QStringLiteral("[00:02]later\n[00:01]a\n[00:01]b\n[offset:-500]"));
     QCOMPARE(lines.size(), 3);
@@ -311,6 +341,10 @@ void LyricsTest::stableSortAndOffset() {
     QCOMPARE(lines.at(2).timestampMs, 1500);
 }
 
+// Unusable synchronized text can fall back to an available plain document.
+// An instrumental result is valid even after all lyric strings are cleared.
+// Validation must not confuse absent lyric text with a missing instrumental result.
+// Serialization reflects the validated representation consumed by QML.
 void LyricsTest::plainFallbackAndInstrumental() {
     auto document = candidate().document;
     document.syncedLyrics = QStringLiteral("[invalid]");
@@ -326,6 +360,12 @@ void LyricsTest::plainFallbackAndInstrumental() {
     QVERIFY(!document.isEmpty());
 }
 
+// Ranking prefers exact normalized title/artist and compatible duration.
+// Alternative release names and artist mismatches must fail confidence.
+// Two equally plausible results cannot be chosen automatically.
+// The 2000 ms boundary is accepted, but the next millisecond is rejected.
+// Unknown duration also prevents confident automatic selection.
+// An explicitly supplied different album is meaningful disambiguating evidence.
 void LyricsTest::matchingAndDuration() {
     auto q = query();
     q.title = QStringLiteral("  SONG  ");
@@ -356,6 +396,11 @@ void LyricsTest::matchingAndDuration() {
     QVERIFY(!LyricsService::confident(q, {candidate()}));
 }
 
+// Corrected display metadata must not orphan a chosen lyric for the same audio.
+// Different audio identities must still produce different cache entries.
+// Queries lacking audio identity use normalized metadata instead.
+// Case/whitespace normalize together while artist/duration changes distinguish versions.
+// The digest also keeps user-controlled query text out of cache filenames.
 void LyricsTest::cacheIdentity() {
     QTemporaryDir temp;
     LyricsCache cache(temp.path());
@@ -378,6 +423,12 @@ void LyricsTest::cacheIdentity() {
     QVERIFY(QRegularExpression(QStringLiteral("^[a-f0-9]{64}$")).match(cache.keyFor(a)).hasMatch());
 }
 
+// Readers must see the old complete cache while a replacement is unfinished.
+// Saving a new representation replaces one entry rather than accumulating files.
+// Matched metadata and provider identity must survive the round trip.
+// Version-one caches remain readable even though they lack KRC support.
+// Broken JSON behaves as a miss so normal acquisition can recover.
+// Instrumental documents are persistable despite having no lyric lines.
 void LyricsTest::cacheRoundTripAndAtomicWrite() {
     QTemporaryDir temp;
     LyricsCache cache(temp.path());
@@ -417,6 +468,12 @@ void LyricsTest::cacheRoundTripAndAtomicWrite() {
     QVERIFY(cache.read(query())->instrumental);
 }
 
+// Local sidecar ownership must win before decoder metadata is ready.
+// Forced refresh still respects that local source instead of fetching remotely.
+// Non-timed local text remains usable as a plain document.
+// An offline cache hit can display without any provider request.
+// With no local file, forced refresh bypasses custom/cache alternatives.
+// Provider request counts expose accidental changes to this acquisition policy.
 void LyricsTest::localAndCachePriority() {
     QTemporaryDir temp;
     MockProvider provider;
@@ -456,6 +513,12 @@ void LyricsTest::localAndCachePriority() {
              QStringLiteral("lrclib"));
 }
 
+// Identical title/artist metadata does not make two audio identities interchangeable.
+// Late success and late failure from the first token must both be ignored.
+// Returning to the original track still requires a fresh search revision.
+// A candidate index from an earlier revision cannot select new results.
+// Clearing the service invalidates pending work as well as visible state.
+// This covers A-to-B-to-A races that hash-only checks cannot resolve.
 void LyricsTest::staleRepliesAndSelection() {
     QTemporaryDir temp;
     MockProvider provider;
@@ -488,6 +551,12 @@ void LyricsTest::staleRepliesAndSelection() {
     QCOMPARE(state.value(QStringLiteral("state")).toString(), QStringLiteral("idle"));
 }
 
+// An uncertain direct lookup broadens to candidate search once.
+// Weak candidates remain visible for explicit selection rather than auto-application.
+// Manual search also requires selection even when its result is confident.
+// Selecting persists the chosen version instead of the original weak candidate.
+// not_found from direct lookup triggers search, while an empty search settles terminally.
+// The test protects both fallback progression and user ownership of ambiguous choices.
 void LyricsTest::autoMatchAndManualSearch() {
     QTemporaryDir temp;
     MockProvider provider;
@@ -516,6 +585,10 @@ void LyricsTest::autoMatchAndManualSearch() {
     QCOMPARE(state.value(QStringLiteral("state")).toString(), QStringLiteral("not_found"));
 }
 
+// Make the cache destination unwritable by occupying it with a file.
+// The fetched document is still usable and must remain in the ready snapshot.
+// cache_warning reports the persistence problem separately from acquisition state.
+// This prevents optional persistence from turning successful playback lyrics into an error.
 void LyricsTest::cacheFailureStillDisplays() {
     QTemporaryDir temp;
     const auto path = temp.filePath(QStringLiteral("not-a-directory"));
@@ -531,6 +604,10 @@ void LyricsTest::cacheFailureStillDisplays() {
     QVERIFY(!state.value(QStringLiteral("document")).toObject().isEmpty());
 }
 
+// Switch mode while a provider reply is still pending.
+// The old token's completion must not restore online-acquired state afterward.
+// Subsequent manual search must not issue another request while offline.
+// This checks policy at the service boundary rather than only hiding a UI control.
 void LyricsTest::offlineCancelsRequests() {
     QTemporaryDir temp;
     MockProvider provider;
@@ -546,6 +623,10 @@ void LyricsTest::offlineCancelsRequests() {
     QCOMPARE(provider.requests, 1);
 }
 
+// Separate transport failures from absent records and invalid payloads.
+// Include a hanging reply to exercise the explicit total deadline.
+// Use fake HTTP/network statuses so no remote availability affects results.
+// Expected categories are the application-facing recovery/error contract.
 void LyricsTest::networkFailures_data() {
     QTest::addColumn<QByteArray>("body");
     QTest::addColumn<int>("status");
@@ -568,6 +649,10 @@ void LyricsTest::networkFailures_data() {
     QTest::newRow("http404") << QByteArray() << 404 << 0 << false << QStringLiteral("not_found");
 }
 
+// Run every failure shape through the actual provider request lifecycle.
+// Wait for the asynchronous result instead of assuming synchronous fake delivery.
+// The supplied token must survive all failure classifications unchanged.
+// Exactly one failure signal protects consumers from duplicate terminal updates.
 void LyricsTest::networkFailures() {
     QFETCH(QByteArray, body);
     QFETCH(int, status);
@@ -587,6 +672,12 @@ void LyricsTest::networkFailures() {
     QCOMPARE(failed.first().at(1).toString(), expected);
 }
 
+// Direct lookup must send album and seconds-based duration evidence.
+// Search and lookup have different JSON envelope shapes to validate.
+// Empty search results are a valid completion rather than malformed data.
+// Bad synchronized text can preserve a valid plain fallback.
+// Instrumental responses remain usable without synchronized or plain strings.
+// The fixture also checks the application's identifying request header.
 void LyricsTest::providerPayloadsAndRequest() {
     MockManager manager;
     manager.body = response();
@@ -630,6 +721,10 @@ void LyricsTest::providerPayloadsAndRequest() {
     QCOMPARE(failed.first().at(1).toString(), QStringLiteral("invalid_response"));
 }
 
+// Cancelled or destroyed provider objects must not publish stale callbacks.
+// A hanging fake reply makes cancellation deterministic without a real network.
+// This protects ownership/deferred deletion when shutdown interrupts a request.
+// No replacement lyrics should be emitted after the consumer has gone away.
 void LyricsTest::providerCancellationAndDestruction() {
     MockManager manager;
     manager.hang = true;
@@ -647,6 +742,12 @@ void LyricsTest::providerCancellationAndDestruction() {
     QCOMPARE(callbacks, 0);
 }
 
+// The provider first returns song choices, then lyric choices for the selected song.
+// Each stage must keep the user's chosen version rather than auto-picking another.
+// Private access handles remain absent from serialized candidate state.
+// Resolved lyric text can be cached and used independently of later network state.
+// Mock routes let the test verify exact staged request parameters.
+// This is a protocol regression test without requiring account login.
 void LyricsTest::kugouSearchSelectAndCache() {
     MockManager manager;
     manager.bodies.insert(QStringLiteral("/search"), R"({"status":1,"error_code":0,"data":{"lists":[
@@ -718,6 +819,10 @@ void LyricsTest::kugouSearchSelectAndCache() {
     QCOMPARE(lrclib.requests, 1); // Cached lyrics and cover do not repeat the search.
 }
 
+// Grouped search variants may omit their own artwork field.
+// The parent's trusted image can fill that descriptive gap.
+// Version identities still remain separate selectable candidates.
+// Cover propagation must not collapse variants or require lyric download first.
 void LyricsTest::kugouGroupCovers() {
     MockManager manager;
     manager.body = R"({"status":1,"error_code":0,"data":{"lists":[

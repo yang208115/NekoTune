@@ -8,6 +8,7 @@ namespace nekotune {
 Result<std::optional<LyricsDocument>> LyricsStorage::readLocal(const LyricsQuery &query,
                                                                const QString &path) const {
     const QFileInfo audio(path);
+    // Managed sidecars take precedence; consult the original audio directory only when they are absent.
     if (audio.isSymLink() && audio.exists() &&
         !QFileInfo(audio.dir().filePath(audio.completeBaseName() + ".krc")).exists() &&
         !QFileInfo(audio.dir().filePath(audio.completeBaseName() + ".lrc")).exists())
@@ -25,6 +26,7 @@ Result<std::optional<LyricsDocument>> LyricsStorage::readLocal(const LyricsQuery
         }
     }
     if (!localKrcPath.isEmpty()) {
+        // An invalid KRC may fall through to LRC; unusable word timing should not hide valid local lyrics.
         QFile krc(localKrcPath);
         if (krc.open(QIODevice::ReadOnly) && krc.size() <= 4 * 1024 * 1024) {
             const auto decoded = KrcParser::read(krc.readAll());

@@ -4,6 +4,11 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
+// Settings displays account capability flags rather than stored credentials.
+// The password input is write-only and cleared on hiding/submission.
+// Save/clear failures settle their own busy state for explicit retry.
+// Language changes use the shared translator and merged settings persistence.
+// The AI panel uses its own endpoint-scoped key configuration lifecycle.
 Item {
     id: root
     required property var client

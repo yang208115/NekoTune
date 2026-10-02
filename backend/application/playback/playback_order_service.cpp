@@ -19,6 +19,7 @@ PlaybackOrderService::PlaybackOrderService(std::unique_ptr<IShuffleStrategy> str
 Result<void> PlaybackOrderService::setMode(PlaybackMode mode, const PlayerQueue &queue) {
     if (m_mode == mode)
         return {};
+    // A failed settings write must not leave the UI and the next startup in different modes.
     if (m_save && !m_save(mode))
         return failure(QStringLiteral("Unable to save playback mode"), ErrorCode::Storage);
     m_mode = mode;
@@ -34,6 +35,12 @@ void PlaybackOrderService::reset(const PlayerQueue &queue) {
         m_history.append(m_currentId);
     m_cursor = m_history.size() - 1;
 }
+// Queue edits can remove historical occurrences or append new ones.
+// Filter history by occurrence identity while preserving its order.
+// Remap the cursor to the last surviving entry at/before its position.
+// A changed selection becomes a new history branch after that cursor.
+// This distinguishes external selection from confirmed navigation.
+// PlayerEngine suppresses this path while committing a proposal.
 void PlaybackOrderService::syncQueue(const PlayerQueue &queue) {
     const auto queueIds = ids(queue);
     const int selected = currentId(queue);
@@ -82,6 +89,7 @@ PlaybackOrderService::Selection PlaybackOrderService::propose(const PlayerQueue 
                 result.shuffle->confirmSelection(result.queueId);
             }
         } else if (result.cursor + 1 < result.history.size()) {
+            // After Previous, Next retraces actual history rather than drawing another random item.
             result.queueId = result.history.at(++result.cursor);
         } else {
             result.queueId = result.shuffle->proposeNext(current);
@@ -109,6 +117,10 @@ PlaybackOrderService::Selection PlaybackOrderService::propose(const PlayerQueue 
     result.queueId = queue.at(index).id;
     return result;
 }
+// Selection carries a clone, so proposal never consumed live randomness.
+// Replace the clone and cursor only after the queue commit succeeds.
+// Previous/Next navigation can now replay the same recorded history.
+// Nonshuffle selections only need to update the current identity.
 void PlaybackOrderService::confirm(Selection selection) {
     m_currentId = selection.queueId;
     if (selection.shuffle) {

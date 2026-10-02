@@ -2,6 +2,8 @@
 #include "domain/repositories.h"
 #include <QSqlDatabase>
 namespace nekotune {
+/// Owns one SQLite connection and a non-nested transaction; repositories share its owning thread.
+/// All queries and copied QSqlDatabase handles must be destroyed before this session.
 class DatabaseSession final : public ITransaction {
   public:
     explicit DatabaseSession(const QString &path = defaultDatabasePath(), const QString &connectionName = {});

@@ -9,6 +9,11 @@ QJsonObject toJson(const KugouStatus &status) {
             {"download_active", status.downloadActive},
             {"credential_error", status.credentialError}};
 }
+// Event type selects the public shape, avoiding irrelevant internal fields.
+// Progress totals can be unknown, so the UI should use indeterminate state.
+// Stage events describe lyrics/cover work after the audio stage.
+// No event includes cookies, account admission keys or download credentials.
+// Only trusted normalized artwork URLs survive into song records.
 QJsonObject toJson(const KugouEvent &event) {
     QJsonObject data;
     switch (event.type) {

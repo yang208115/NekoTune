@@ -13,6 +13,8 @@ PlaybackController::PlaybackController(IpcClient &client) : FeatureController(cl
     });
 }
 void PlaybackController::apply(const QJsonObject &data) {
+    // Events are partial patches, while status replies are full snapshots; omitted fields retain
+    // their values, and an explicit zero volume must still be applied as mute.
     if (data.contains("playback_mode") && m_playbackMode != data.value("playback_mode").toString()) {
         m_playbackMode = data.value("playback_mode").toString();
         emit playbackModeChanged();

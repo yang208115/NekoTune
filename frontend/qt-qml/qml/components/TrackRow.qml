@@ -2,6 +2,12 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
+// Reusable row interaction is distinct from the collection's action policy.
+// A single click selects; double click/Enter requests activation.
+// The explicit play control can toggle a currently audible occurrence.
+// Download rows keep selection independent from their download button.
+// Unavailable audio disables playback while metadata actions can remain usable.
+// Display all provider/user text as plain text to preserve literal content.
 Rectangle {
     id: row
     required property var song

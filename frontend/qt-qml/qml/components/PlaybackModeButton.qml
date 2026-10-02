@@ -2,6 +2,11 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 
+// The icon/checkmark follows the backend-confirmed playbackMode property.
+// Selecting an option only emits a request, never assumes persistence success.
+// Menu keyboard selection is temporary state separate from confirmed mode.
+// Disable closes the popup when transport availability changes.
+// Closing returns focus to the button for predictable keyboard navigation.
 IconButton {
     id: button
     property string playbackMode: "sequential"

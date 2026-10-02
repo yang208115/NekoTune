@@ -1,4 +1,10 @@
 .pragma library
+// Stable IDs connect navigation state, translation keys and page loaders.
+// group distinguishes primary, collection and utility sidebar placement.
+// The queue page is the reusable playlist browser, not the live drawer.
+// The lyrics page can also be presented over the current browse page.
+// Debug pages require explicit runtime enablement before navigation.
+// Registered QML sources must also appear in the resource manifest.
 var pages = [
     {id: "home", title: "home", source: "pages/HomePage.qml", group: "primary"},
     {id: "library", title: "local_music", source: "pages/LibraryPage.qml", group: "primary"},

@@ -9,6 +9,12 @@
 
 namespace nekotune {
 
+/// Manual resolution has song, lyric-candidate and document stages.
+/// Song search expands grouped provider versions into distinct choices.
+/// Resolver handles retain hashes/access data inside this provider.
+/// Selecting a song searches lyrics for that chosen version.
+/// Selecting a lyric requests KRC first and falls back to LRC.
+/// Cancel releases network work without erasing unrelated local files.
 class KugouProvider final : public LyricsProvider {
     Q_OBJECT
   public:

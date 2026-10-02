@@ -28,6 +28,9 @@ Item {
             seekSpy.clear()
         }
         function cleanup() { panel = null }
+        // The diagnostic timeline uses exact backend timestamps without visual interpolation.
+        // Replacing the document with a loading snapshot must remove the previous track's rows.
+        // No row remains active before the first timestamp or after that identity reset.
         function test_timingAndTrackChange() {
             compare(panel.activeIndex, -1)
             panel.position = 1000
@@ -38,6 +41,8 @@ Item {
             compare(panel.lines.length, 0)
             compare(panel.activeIndex, -1)
         }
+        // Diagnostic rows forward their own millisecond timestamp through one seek signal.
+        // They must not infer a destination from the row index or change playback locally.
         function test_clickSeeksToLine() {
             wait(100)
             const row = findChild(panel, "debugLine0")

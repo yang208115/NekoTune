@@ -3,6 +3,12 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
+// Split only explicit list delimiters while preserving names such as AC/DC.
+// Case-insensitive deduplication keeps the first display spelling/order.
+// Long labels elide within layout bounds rather than expanding a row.
+// Compact layouts show fitted names plus a remaining-person count.
+// Full names stay available through accessibility text and the tooltip.
+// This is presentation normalization, not a metadata write operation.
 RowLayout {
     id: root
     property string artist: ""
@@ -21,6 +27,10 @@ RowLayout {
         })
     }
     spacing: 6
+    // Fit text and the remaining-count suffix as one width budget.
+    // Font changes must participate even if the component width is unchanged.
+    // Retain at least one name for context when every full combination overflows.
+    // Its label can elide while the count and tooltip preserve full information.
     readonly property int visibleNameCount: {
         if (!root.summarizeOverflow) return root.names.length
         // Font changes must recalculate the fit even when width stays the same.

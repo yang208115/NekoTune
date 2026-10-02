@@ -1,5 +1,9 @@
 import QtQuick
 import "../components"
+// Adapter page connects reusable panel signals to feature controllers.
+// Panel confirmation state is settled by operation-specific outcome signals.
+// Playback-skipped and cleanup-leftover notices have different meanings.
+// Navigation/edit dialogs remain owned by the shell rather than this panel.
 Item {
     id: page
     required property var shell

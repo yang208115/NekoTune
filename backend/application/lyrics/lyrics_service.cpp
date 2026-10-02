@@ -33,6 +33,7 @@ QVector<LyricsSource> LyricsService::sources() const {
 }
 
 void LyricsService::cancel() {
+    // Invalidate first: aborting a reply can synchronously emit its completion/failure signals.
     ++m_token;
     for (auto *source : m_providers)
         source->cancel();
@@ -59,6 +60,7 @@ void LyricsService::load(const LyricsQuery &query, const QString &path, const QS
     m_search = false;
     m_snapshot = {};
     publish(QStringLiteral("loading"));
+    // Refresh must not bypass a user's local file, and a local read error must stay visible.
     const auto local = m_storage->readLocal(query, path);
     if (!local) {
         publish(QStringLiteral("error"), local.error().message);
@@ -106,6 +108,11 @@ void LyricsService::load(const LyricsQuery &query, const QString &path, const QS
         publish(QStringLiteral("not_found"));
 }
 
+// Manual search uses editable query fields without changing song identity.
+// Keep the current document when searching another version of this track.
+// Candidates and stages are superseded through a fresh provider token.
+// Offline mode rejects network progression while retaining local state.
+// Manual candidates always remain a user choice rather than auto-apply.
 void LyricsService::search(const LyricsQuery &query, quint64 revision, const QString &source) {
     cancel();
     m_provider = m_providers.value(source);
@@ -133,6 +140,11 @@ void LyricsService::search(const LyricsQuery &query, quint64 revision, const QSt
     m_provider->request(query, m_token, true);
 }
 
+// Copy the selected candidate before cancelling the candidate buffer.
+// Cancellation advances the provider token used by its resolution step.
+// For staged sources, selecting a song first searches its lyric versions.
+// Selecting a lyric then downloads the actual KRC/LRC document.
+// That step is refused when offline mode has been enabled meanwhile.
 void LyricsService::select(int index, quint64 revision) {
     if (revision != m_revision || index < 0 || index >= m_candidates.size())
         return;
@@ -152,6 +164,11 @@ void LyricsService::select(int index, quint64 revision) {
     }
 }
 
+// Entering offline mode cancels active network/candidate progression.
+// A ready local or cached document can remain visible unchanged.
+// Offline is propagated in snapshots so cover consumers also stop
+// using remote artwork even when its URL was cached previously.
+// Re-enabling online mode is reloaded by the coordinating controller.
 void LyricsService::setOffline(bool offline) {
     m_offline = offline;
     const QString state = m_snapshot.state;
@@ -169,6 +186,12 @@ QString LyricsService::normalizeForMatch(const QString &value) {
     return value.normalized(QString::NormalizationForm_C).simplified().toCaseFolded();
 }
 
+// Scores prioritize exact normalized title and artist identity.
+// Album evidence strengthens a match when the query supplies it.
+// Duration proximity distinguishes releases with otherwise equal names.
+// A large mismatch penalizes versions instead of merely ranking ties.
+// The confidence gate additionally demands reliable input and separation.
+// Do not turn this ranking function alone into an auto-selection rule.
 double LyricsService::matchScore(const LyricsQuery &query, const LyricsCandidate &candidate) {
     const auto &match = candidate.document.matched;
     double score = 0;
@@ -203,6 +226,8 @@ QVector<LyricsCandidate> LyricsService::rankCandidates(const LyricsQuery &query,
 }
 
 bool LyricsService::confident(const LyricsQuery &query, const QVector<LyricsCandidate> &ranked) {
+    // Ranking is only a presentation aid; automatic selection also requires exact identity,
+    // compatible duration and a clear margin over the runner-up to avoid choosing another version.
     if (ranked.isEmpty() || query.title.isEmpty() || query.artist.isEmpty() || query.durationMs <= 0)
         return false;
     const auto &best = ranked.first().document;
@@ -220,6 +245,7 @@ void LyricsService::completed(quint64 token, const QVector<LyricsCandidate> &can
         return;
     m_candidates = rankCandidates(m_query, candidates);
     if (m_provider && m_provider->descriptor().staged) {
+        // Staged providers return song versions before lyrics; these are not ready documents to apply.
         if (m_candidates.isEmpty()) {
             publish(QStringLiteral("not_found"));
             return;
@@ -233,6 +259,7 @@ void LyricsService::completed(quint64 token, const QVector<LyricsCandidate> &can
     if (!m_manual && confident(m_query, m_candidates)) {
         apply(m_candidates.first().document, true);
     } else if (!m_search) {
+        // An ambiguous direct lookup broadens to search once, then leaves the choice to the user.
         m_search = true;
         m_provider->request(m_query, ++m_token, true);
     } else if (m_candidates.isEmpty()) {
@@ -266,6 +293,7 @@ void LyricsService::publish(const QString &state, const QString &error) {
 void LyricsService::apply(const LyricsDocument &document, bool cache) {
     m_snapshot.candidates.clear();
     m_snapshot.document = document;
+    // Cache failure is non-fatal: the fetched document can still be shown and saved as a sidecar.
     const bool cacheFailed = cache && !m_storage->writeCache(m_query, document);
     m_snapshot.cacheWarning = cacheFailed;
     publish(document.instrumental ? QStringLiteral("instrumental") : QStringLiteral("ready"));

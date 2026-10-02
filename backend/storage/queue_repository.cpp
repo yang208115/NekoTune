@@ -2,6 +2,11 @@
 #include <QSet>
 #include <QSqlError>
 namespace nekotune {
+// Replace the table within the caller's surrounding transaction.
+// The delete/insert sequence must not be used as separate commits.
+// Each row repeats the selected index for legacy schema compatibility.
+// Persist positional order rather than runtime queue occurrence IDs.
+// The application adopts memory only after its transaction commits.
 bool QueueRepository::saveQueue(const QueueSnapshot &snapshot) {
     if (!m_session.isReady()) {
         return false;
@@ -30,6 +35,10 @@ bool QueueRepository::saveQueue(const QueueSnapshot &snapshot) {
     return true;
 }
 
+// Restore ordered records even when their files are currently unavailable.
+// QueueService later joins song metadata and filters stale references.
+// The selected index is read from the legacy per-row representation.
+// An empty table has no selected item regardless of default row values.
 QueueSnapshot QueueRepository::loadQueue() const {
     QueueSnapshot snapshot;
     if (!m_session.isReady()) {

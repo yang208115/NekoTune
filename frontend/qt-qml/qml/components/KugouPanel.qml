@@ -4,6 +4,12 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
+// Search/selection and account state remain separate UI responsibilities.
+// Anonymous users can browse while account prerequisites gate downloads.
+// Progress and asset stages update the same active download presentation.
+// download_finished includes application import completion, not just saved bytes.
+// A failed import can retain a recovery path to the already saved audio.
+// Starting a row download does not replace the selected search row.
 Item {
     id: root
     required property var client

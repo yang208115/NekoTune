@@ -1,5 +1,10 @@
 import QtQuick
 
+// Preview dragging locally and commit an authoritative seek on release.
+// live=false means value may lag the visible handle while pressed.
+// Pending seek shields the target from already-queued old progress events.
+// A short acknowledgement window releases that shield if playback catches up.
+// Duration changes invalidate pending targets from the previous media source.
 PlayerSlider {
     id: slider
 

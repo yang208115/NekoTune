@@ -16,6 +16,11 @@ const SecretSchema schema = {
     0, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
 
 // Calls run on the backend thread. Bound even a cancelled/locked keyring prompt.
+// The old libsecret API exposes synchronous cancellation support.
+// A helper thread bounds its potentially interactive desktop prompt.
+// Destruction wakes and joins that helper before releasing cancellation.
+// The predicate handles completion without waiting the full deadline.
+// This adapter is needed only while migrating old Linux entries.
 class Deadline {
   public:
     GCancellable *cancel = g_cancellable_new();
@@ -52,6 +57,11 @@ bool missingService(const GError *error) {
     return error && (g_error_matches(error, G_DBUS_ERROR, G_DBUS_ERROR_SERVICE_UNKNOWN) ||
                      g_error_matches(error, G_DBUS_ERROR, G_DBUS_ERROR_NAME_HAS_NO_OWNER));
 }
+// This adapter reads/removes only the retired credential format.
+// Reject writes so no new secrets enter that legacy storage path.
+// Missing Secret Service on KWallet desktops means no legacy entry.
+// Locked or other service failures still remain migration errors.
+// Sanitize provider errors before they cross application/IPC boundaries.
 class SecretServiceStore final : public CredentialStore {
   public:
     Result<std::optional<QByteArray>> read(const QString &id) override {

@@ -39,6 +39,9 @@ QHash<int, QVector<SongTag>> TagRepository::songTags() const {
     return result;
 }
 
+// Catalog creation rejects an existing normalized name instead of silently returning its ID.
+// Assignment replacement below may intentionally reuse that ID under a different workflow.
+// The distinction preserves useful feedback when the user explicitly creates a duplicate tag.
 int TagRepository::createTag(const QString &name) {
     if (!m_session.isReady())
         return 0;
@@ -69,6 +72,10 @@ int TagRepository::createTag(const QString &name) {
     return query.lastInsertId().toInt();
 }
 
+// Case-only renames may reuse this tag's own normalized identity.
+// A collision with another tag ID still rejects the operation.
+// Updating the label retains every song_tags association by ID.
+// Validate lengths and uniqueness before publishing the global change.
 bool TagRepository::renameTag(int id, const QString &name) {
     if (!m_session.isReady() || id <= 0)
         return false;
@@ -122,6 +129,8 @@ bool TagRepository::deleteTag(int id) {
 }
 
 bool TagRepository::replaceSongTags(int songId, const QStringList &names) {
+    // Validate the full batch before deleting associations; the caller owns the surrounding transaction.
+    // Case-folded names reuse one tag identity while preserving its existing display spelling.
     QVector<QString> uniqueNames;
     QSet<QString> seen;
     for (const auto &name : names) {
@@ -136,6 +145,9 @@ bool TagRepository::replaceSongTags(int songId, const QStringList &names) {
         uniqueNames.append(name.trimmed());
     }
 
+    // The names have been validated and deduplicated before changing membership.
+    // This delete-and-rebuild sequence requires the application's surrounding metadata transaction.
+    // A later tag creation or assignment failure must roll back these removed associations too.
     QSqlQuery remove(m_db);
     remove.prepare(QStringLiteral("DELETE FROM song_tags WHERE song_id = :song_id"));
     remove.bindValue(QStringLiteral(":song_id"), songId);

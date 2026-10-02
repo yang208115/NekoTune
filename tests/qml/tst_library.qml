@@ -50,6 +50,10 @@ Rectangle {
 
         function cleanup() { panel = null }
 
+        // Multiple selected tags filter by intersection, including unavailable visible songs.
+        // The playable count and the submitted visible context are therefore different quantities.
+        // Starting a row uses its song identity, not its index in the filtered array.
+        // The backend receives the context needed to skip unavailable entries consistently.
         function test_intersectionAndPlaybackIdentity() {
             compare(panel.filteredSongs.length, 3)
             testLibrary.selectedTagIds = [1, 2]
@@ -68,6 +72,10 @@ Rectangle {
             compare(playSpy.signalArguments[1][1], 1)
         }
 
+        // Selection and playback are separate desktop interactions.
+        // The complete double-click sequence must produce one play command despite its press events.
+        // The selection checkbox must not bubble into the row's playback action.
+        // The wait separates the initial click from the later double-click gesture.
         function test_clickSelectsAndDoubleClickPlaysOnce() {
             waitForRendering(panel)
             const row = findChild(panel, "libraryRow1")
@@ -84,6 +92,10 @@ Rectangle {
             compare(playSpy.count, 1)
         }
 
+        // Toggle and range selection operate on the current visible order.
+        // Changing search or tag filters removes selections that no longer belong to that scope.
+        // Trying to select a hidden song must not reintroduce an invisible selected ID.
+        // Search is case-insensitive and combines with the selected-tag intersection.
         function test_searchAndDesktopSelection() {
             testLibrary.selectRow(1)
             testLibrary.selectRow(2, true)
@@ -107,6 +119,10 @@ Rectangle {
             compare(panel.playableCount, 0)
         }
 
+        // Select-all targets the filtered list, including entries whose files are unavailable.
+        // Opening confirmation must not send the deletion before the user confirms.
+        // A database failure retains selection and the dialog for retry.
+        // Only successful completion clears selection and closes the confirmation.
         function test_selectFilteredAndDeleteConfirmation() {
             testLibrary.selectedTagIds = [1, 2]
             compare(panel.filteredSongs.length, 2)
@@ -137,6 +153,11 @@ Rectangle {
             tryCompare(popup, "opened", false)
         }
 
+        // The file-cleanup choice is frozen while the deletion request is pending.
+        // A committed database deletion may still report an unlink cleanup warning.
+        // That partial success closes confirmation while making the remaining staged path visible.
+        // Opening another deletion resets both the warning and the default cleanup choice.
+        // The database-only option is sent as a Boolean with the selected target snapshot.
         function test_cleanupChoiceAndPartialFailure() {
             const actions = panel.songActions(panel.filteredSongs[0])
             const deletionActions = actions.filter(action => action.destructive)
@@ -182,6 +203,10 @@ Rectangle {
             }
         }
 
+        // Rows display stored durations even when they have never been selected or played.
+        // Only the active song may temporarily use the live backend duration.
+        // Switching active identity restores the previous row's persisted value.
+        // Unknown durations use the placeholder rather than an invented zero-length time.
         function test_persistedDurationDoesNotDependOnSelectionOrPlayback() {
             testFixtures.seedLibrary({tags: [], songs: [
                 {song_id: 1, title: "夜空", artist: "示例歌手", available: true, duration_ms: 192000},
@@ -213,6 +238,10 @@ Rectangle {
             compare(first.text, "3:12")
         }
 
+        // A library row has a song ID and need not have any queue occurrence.
+        // Adding it to a playlist must submit that song identity with the target playlist ID.
+        // A failed save retains the popup and target so the user can retry.
+        // Closing the popup is deferred until the matching successful operation completes.
         function test_addFromLibraryUsesSongId() {
             waitForRendering(panel)
             panel.songAction("playlist", panel.filteredSongs[0])

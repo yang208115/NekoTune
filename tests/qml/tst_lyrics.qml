@@ -32,6 +32,9 @@ Item {
 
         function cleanup() { lyrics = null }
 
+        // No lyric line is active before the first timestamp or after seeking back before it.
+        // Markup-like text must be displayed literally rather than interpreted as rich text.
+        // Exact timestamp boundaries choose the newly active line.
         function test_lineTimingAndPlainText() {
             compare(lyrics.activeIndex, -1)
             lyrics.position = 560
@@ -49,6 +52,8 @@ Item {
             compare(lyrics.activeIndex, -1)
         }
 
+        // The lyric row carries its media timestamp directly.
+        // Clicking the visual row must emit that timestamp once rather than infer time from its index.
         function test_clickSeeksToLine() {
             lyrics.position = 560
             wait(180)
@@ -59,6 +64,10 @@ Item {
             compare(seekSpy.signalArguments[0][0], 560)
         }
 
+        // Word progress uses each word's interval, including gaps between intervals.
+        // Completed words remain revealed even when no word is currently active.
+        // Reveal width changes must not change line height during playback.
+        // KRC text and a later LRC replacement both remain plain text.
         function test_krcWordTimingAndEscaping() {
             lyrics.lines = [{time_ms: 1000, duration_ms: 1000, text: "<a&b> c", words: [
                 {text: "<a&b> ", offset_ms: 0, time_ms: 1000, duration_ms: 300},
@@ -97,6 +106,9 @@ Item {
             compare(findChild(lyrics, "lyricText1").textFormat, Text.PlainText)
         }
 
+        // Independent word measurement can lose kerning and trailing-space width.
+        // Japanese, Latin and mixed-script fixtures expose those differences at two font sizes.
+        // The final spaces are intentional data and must contribute to the measured line.
         function test_krcShortLineStaysTogether_data() {
             return [
                 {tag: "Japanese20px", width: 460, parts: ["正", "直", "に", "言", "っ", "ち", "ゃ", "え", "ば　"]},
@@ -106,6 +118,9 @@ Item {
             ]
         }
 
+        // A line that fits must remain on one centered row even when rendered as word delegates.
+        // The sum of delegate widths is checked against the container's chosen width.
+        // This catches accidental wrapping caused by rounding or text-metric mismatches.
         function test_krcShortLineStaysTogether(data) {
             lyrics.width = data.width
             lyrics.lines = [{time_ms: 1000, text: data.parts.join(""), words: data.parts.map(
@@ -126,6 +141,9 @@ Item {
                     data.parts[data.parts.length - 1])
         }
 
+        // Long word sequences must wrap at narrow widths and reflow when width increases.
+        // Replacing them with a short line must release the previous wide layout.
+        // The same delegates are checked across width changes rather than recreated for each size.
         function test_krcLineWrapsAndReflowsOnResize() {
             const parts = ["正", "直", "に", "言", "っ", "ち", "ゃ", "え", "ば　"]
             lyrics.lines = [{time_ms: 1000, text: parts.join(""), words: parts.map(
@@ -147,6 +165,9 @@ Item {
             verify(findChild(lyrics, "krcLine0").width < 100)
         }
 
+        // Animation extrapolates from backend position only while playback is active.
+        // Pausing returns progress to the authoritative position and stops local advancement.
+        // Forward and backward seeks immediately replace the extrapolated word progress.
         function test_krcProgressFollowsPlaybackAndSeek() {
             lyrics.lines = [{time_ms: 1000, duration_ms: 1000, text: "Hello", words: [
                 {text: "Hello", time_ms: 1000, duration_ms: 1000}
@@ -168,6 +189,9 @@ Item {
             compare(word.progress, 0.02)
         }
 
+        // Moving to an adjacent active line should animate rather than snap to its target.
+        // An intermediate sample proves that scrolling is still in progress.
+        // The final sample checks convergence while preserving the automatic-scroll state.
         function test_adjacentLineScrollsContinuously() {
             const rows = []
             for (let index = 0; index < 14; index += 1)

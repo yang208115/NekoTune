@@ -2,6 +2,11 @@
 #include <QSet>
 #include <QSqlError>
 namespace nekotune {
+// LEFT JOIN preserves empty playlists in the returned collection list.
+// Ordering by playlist then position lets one pass assemble each vector.
+// NULL item identity belongs to the empty join row, not a real song.
+// The service can therefore distinguish an empty existing playlist from
+// a missing playlist before attempting any playback replacement.
 QVector<Playlist> PlaylistRepository::playlists() const {
     QVector<Playlist> result;
     if (!m_session.isReady())
@@ -87,6 +92,11 @@ bool PlaylistRepository::deletePlaylist(int id) {
     return true;
 }
 
+// Append only a newly associated song at the end of this playlist.
+// An existing membership updates its path without moving its position.
+// Position gaps left by removal are acceptable ordering keys.
+// The next append uses the maximum rather than the item count.
+// This avoids collisions after deletions in the middle of a playlist.
 bool PlaylistRepository::addPlaylistSong(int id, const QueueRecord &song) {
     if (!m_session.isReady())
         return false;

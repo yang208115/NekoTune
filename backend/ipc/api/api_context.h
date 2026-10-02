@@ -11,6 +11,13 @@
 #include "ipc/serialization/lyrics_serialization.h"
 #include "ipc/serialization/serialization.h"
 namespace nekotune {
+/// Non-owning service references used by feature route registration.
+/// The composition root must outlive all captured handler references.
+/// Snapshot helpers join domain data with transport-specific presentation.
+/// withCover is the shared artwork enrichment boundary for every list.
+/// Import executors provide values; the API never shares SQL with workers.
+/// Optional runtime capabilities such as scanning are injected callbacks.
+/// This aggregate does not own services or duplicate their business state.
 struct ApiContext {
     PlayerEngine &player;
     QueueService &queue;

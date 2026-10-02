@@ -10,6 +10,11 @@ Popup {
     padding: 6
     focus: true
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+    // Anchor coordinates may come from a button or a right-click position.
+    // Map them into the overlay so page clipping cannot crop the popup.
+    // Lay out repeated actions before measuring the menu's implicit height.
+    // Flip at right/bottom edges, then clamp within the window's safe margin.
+    // The popup blocks shell shortcuts while keyboard focus belongs to it.
     function openAt(anchor, px, py) {
         menuContent.forceLayout()
         const atPointer = px !== undefined || py !== undefined

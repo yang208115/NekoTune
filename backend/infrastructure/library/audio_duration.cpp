@@ -7,6 +7,10 @@ extern "C" {
 
 namespace nekotune {
 namespace {
+// FFmpeg can block inside reads while probing damaged/slow input.
+// Its interrupt callback observes cancellation without an event loop.
+// The elapsed deadline bounds that work even when no user cancels.
+// The context must stay alive until format probing/cleanup finishes.
 struct ProbeContext {
   const std::atomic_bool &cancelled;
   QElapsedTimer elapsed;
@@ -33,6 +37,9 @@ qint64 readAudioDuration(const QString &path,
   av_dict_set(&options, "format_whitelist", "mp3,mov,aac,wav,flac,ogg", 0);
   av_dict_set(&options, "probesize", "1048576", 0);
   av_dict_set(&options, "analyzeduration", "2000000", 0);
+  // Keep the encoded filename alive throughout the synchronous FFmpeg open call.
+  // The probe's cancellation/deadline context likewise outlives all format reads.
+  // The whitelist restricts protocols even if a local container references another resource.
   const auto filename = path.toUtf8();
   const auto opened =
       avformat_open_input(&format, filename.constData(), nullptr, &options);
@@ -40,12 +47,16 @@ qint64 readAudioDuration(const QString &path,
   if (opened < 0)
     return 0; // avformat_open_input frees the context on failure.
   qint64 duration = 0;
+  // Finding a positive duration is useful only if the probe completed within its allowance.
+  // An interrupted probe returns unknown timing rather than a partially obtained value.
+  // Import can still accept the hashed audio; later scans may retry duration recovery.
   if (avformat_find_stream_info(format, nullptr) >= 0 &&
       !ProbeContext::interrupt(&probe)) {
     for (unsigned int index = 0; index < format->nb_streams; ++index) {
       const auto *stream = format->streams[index];
       if (stream->codecpar->codec_type != AVMEDIA_TYPE_AUDIO)
         continue;
+      // Prefer the audio stream over container duration, which may include longer non-audio tracks.
       if (stream->duration != AV_NOPTS_VALUE && stream->duration > 0)
         duration = av_rescale_q(stream->duration, stream->time_base,
                                 AVRational{1, 1000});

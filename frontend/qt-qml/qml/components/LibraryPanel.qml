@@ -2,6 +2,12 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
+// Presentation state complements controller-owned filtering/selection.
+// Rows identify songs by song_id; current playback is a separate marker.
+// Confirmation snapshots selected IDs so refreshes cannot change its target.
+// API file cleanup is sent explicitly from the checkbox choice.
+// Cleanup leftovers remain visible after an otherwise successful deletion.
+// Busy/error state belongs to the particular dialog operation.
 Item {
     id: root
     required property var controller
@@ -35,6 +41,10 @@ Item {
         controller.toggleSelectAll()
     }
 
+    // Copy selection when opening the confirmation rather than reading it later.
+    // Library updates can otherwise change which songs a confirmation removes.
+    // Each new confirmation starts with the UI's managed-cleanup default.
+    // The backend still validates every ID and enforces its transaction rules.
     function openDelete() {
         if (selectedSongIds.length === 0 || deletePending) return
         deletingSongIds = selectedSongIds.slice()
@@ -50,6 +60,10 @@ Item {
         deleteRequested(deletingSongIds, cleanManagedFiles)
     }
 
+    // The library transaction has already committed when this callback arrives.
+    // Residual file cleanup errors are warnings, not grounds to restore selection.
+    // Close the dialog and keep the warning available on the page.
+    // This differs from deleteFailed, which leaves retry context intact.
     function deleteSucceeded(errors) {
         deletePending = false
         cleanupWarning = errors && errors.length ? i18n.text("cleanup_partial_warning", i18n.language)

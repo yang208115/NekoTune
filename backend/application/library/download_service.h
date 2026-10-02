@@ -3,6 +3,12 @@
 #include "application/library/library_service.h"
 #include "domain/library/file_inspector.h"
 namespace nekotune {
+/// Bridges saved provider audio to the local-first library import path.
+/// Downloaded audio still needs inspection and its local SHA-256.
+/// The mutation scheduler orders import against collection changes.
+/// Optional lyric/cover statuses are forwarded as outcome metadata.
+/// An import failure preserves the already saved audio for recovery.
+/// Successful download/import does not mutate the playback queue.
 class DownloadService final : public QObject {
     Q_OBJECT
   public:

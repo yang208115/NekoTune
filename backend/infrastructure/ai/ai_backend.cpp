@@ -27,6 +27,11 @@ QString plainLyrics(const LyricsDocument &document) {
     }
     return lines.isEmpty() ? document.plainLyrics.left(12000) : lines.join('\n').left(12000);
 }
+// Use draft/stored lyrics first, then local sidecars and persistent cache.
+// Strip timing tags through the existing LRC/KRC domain parsers.
+// This path does not invoke lyric providers or upload audio bytes.
+// Cap text before including it as model input for predictable request size.
+// The editor remains the owner of any later metadata decision.
 QString inputLyrics(const AiMetadataInput &input) {
     auto text = input.draft.lyrics.value_or(QString());
     if (text.trimmed().isEmpty())
@@ -82,6 +87,7 @@ QJsonObject prompt(const AiMetadataInput &input, bool test) {
             "每个标签1到64字符。不输出角色前缀、解释、Markdown或其他字段。");
     auto name = input.song.sourceName.isEmpty() ? QFileInfo(input.song.firstPath).completeBaseName()
                                                 : QFileInfo(input.song.sourceName).fileName();
+    // Keep the prompt bounded and text-only; local paths/hash are used for lookup but are not sent.
     QJsonObject data{{"filename", name.left(512)},
                      {"custom_title", input.draft.title.value_or(input.song.customTitle).left(512)},
                      {"artist", input.draft.artist.value_or(input.song.artist).left(512)},
@@ -97,6 +103,12 @@ QJsonObject prompt(const AiMetadataInput &input, bool test) {
             {"stream", false},
             {"response_format", QJsonObject{{"type", "json_object"}}}};
 }
+// Validate the outer completion envelope and its inner JSON content.
+// Refusal and truncated outputs are failures rather than partial guesses.
+// Only known field types and bounded title/artist/tag values are accepted.
+// Canonicalize and deduplicate tags before applying the final count limit.
+// Missing title/artist evidence produces a warning for an advisory result.
+// The frontend preserves those existing fields when the suggestion is empty.
 Result<AiSuggestion> parseSuggestion(const QByteArray &body, const QStringList &knownTags) {
     const auto envelope = QJsonDocument::fromJson(body);
     if (!envelope.isObject())
@@ -111,6 +123,9 @@ Result<AiSuggestion> parseSuggestion(const QByteArray &body, const QStringList &
     if (choice.value("finish_reason") == "length" || !message.value("content").isString())
         return failure("ai_error_response");
     auto content = message.value("content").toString().trimmed();
+    // Some compatible services wrap their JSON object in a single Markdown code fence.
+    // Accept only the two explicitly recognized whole-content wrappers.
+    // Do not extract a guessed object from surrounding prose or partially malformed output.
     if (content.startsWith("```json\n") && content.endsWith("```"))
         content = content.mid(8, content.size() - 11).trimmed();
     else if (content.startsWith("```\n") && content.endsWith("```"))
@@ -126,10 +141,14 @@ Result<AiSuggestion> parseSuggestion(const QByteArray &body, const QStringList &
     if (suggestion.title.size() > 512 || suggestion.artist.size() > 512)
         return failure("ai_error_response");
     QHash<QString, QString> canonical;
+    // Reuse existing tag spelling after case-insensitive matching to avoid duplicate categories.
     for (const auto &tag : knownTags)
         canonical.insert(tag.trimmed().toCaseFolded(), tag.trimmed());
     QSet<QString> seen;
     const auto tags = object.value("tags").toArray();
+    // Bound the raw array separately from the final unique-tag count.
+    // Repeated tags may collapse below five, but an arbitrarily large repeated array is still invalid.
+    // Both limits protect the response contract before it reaches the editor.
     if (tags.size() > 20)
         return failure("ai_error_response");
     for (const auto &value : tags) {
@@ -150,6 +169,9 @@ Result<AiSuggestion> parseSuggestion(const QByteArray &body, const QStringList &
         suggestion.warning = "ai_partial_result";
     return suggestion;
 }
+// Compatibility retry requires an explicit response-format rejection from the service.
+// Authentication, rate limits and generic request errors must not trigger another request.
+// The request object separately limits this fallback to one attempt under the original deadline.
 bool unsupportedJsonMode(int status, const QByteArray &body) {
     if (status != 400 && status != 422)
         return false;
@@ -162,6 +184,10 @@ bool unsupportedJsonMode(int status, const QByteArray &body) {
                       message.contains("not support") || message.contains("unsupported") ||
                       message.contains("not allowed") || message.contains("unrecognized"));
 }
+// Each object owns one generation's reply, timeout and eventual completion callback.
+// Its network lifetime remains on the AI worker thread.
+// The owner-thread backend may already have timed out its public callback.
+// That separate completion map prevents a late network result from completing it twice.
 class AiRequest final : public QObject {
   public:
     AiRequest(QNetworkAccessManager &network, const AiConfig &config, QByteArray secret, QJsonObject body,
@@ -185,6 +211,10 @@ class AiRequest final : public QObject {
     void cancel() { finish(failure("ai_error_cancelled", ErrorCode::Cancelled)); }
 
   private:
+    // Timeout, shutdown and reply completion converge on this single finish path.
+    // Move the callback before invoking it so reentrant completion cannot reuse it.
+    // Disconnect before abort because an abort may immediately emit finished.
+    // The request is deleted later to allow the current Qt signal delivery to unwind.
     void finish(Result<AiSuggestion> result) {
         if (!m_done)
             return;
@@ -202,10 +232,15 @@ class AiRequest final : public QObject {
     }
     void send() {
         m_body.insert("model", m_config.model);
+        // Append instead of resolving an absolute path, preserving service prefixes such as /api/v1.
         QNetworkRequest request(QUrl(m_config.baseUrl + "/chat/completions"));
+        // Do not forward a bearer credential to an endpoint supplied by an HTTP redirect.
         request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::ManualRedirectPolicy);
         request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
         request.setRawHeader("Accept", "application/json");
+        // Keyless local or compatible endpoints deliberately omit Authorization.
+        // A saved-key lookup failure never reaches this point as an empty fallback secret.
+        // Configuration distinguishes those two states before constructing the request.
         if (!m_secret.isEmpty())
             request.setRawHeader("Authorization", "Bearer " + m_secret);
         m_response.clear();
@@ -227,6 +262,7 @@ class AiRequest final : public QObject {
             } else if (m_response.size() > maxResponseBytes) {
                 finish(failure("ai_error_response"));
             } else if (!m_fallback && unsupportedJsonMode(status, m_response)) {
+                // Retry once only for explicit JSON-mode incompatibility, within the original deadline.
                 m_fallback = true;
                 m_body.remove("response_format");
                 send();
@@ -304,6 +340,10 @@ AiBackend::AiBackend(std::shared_ptr<CredentialStore> store, int timeoutMs)
     m_thread.start();
 }
 AiBackend::~AiBackend() { shutdown(); }
+// Native credential operations may block, so even configuration lookup runs on the worker.
+// Only the owner thread inserts or consumes the public completion map.
+// Copied results cross the thread boundary through queued invocation.
+// Shutdown drains the same map if a result was produced but has not yet been delivered.
 void AiBackend::configOperation(std::function<Result<AiConfig>(AiWorker &)> operation,
                                 ConfigCompletion done) {
     if (m_stopped) {
@@ -340,6 +380,9 @@ void AiBackend::generate(const AiMetadataInput &input, bool test, SuggestionComp
         done(failure("ai_error_cancelled", ErrorCode::Cancelled));
         return;
     }
+    // Limit caller-visible generations rather than allowing unbounded pending callback state.
+    // The count includes requests still waiting for the worker or native keyring.
+    // Busy rejection occurs before an ID or network request is allocated.
     if (m_suggestionPending.size() >= 4) {
         done(failure("ai_error_busy"));
         return;
@@ -347,6 +390,9 @@ void AiBackend::generate(const AiMetadataInput &input, bool test, SuggestionComp
     const auto id = ++m_nextId;
     m_suggestionPending.insert(id, std::move(done));
     QPointer<AiBackend> guard(this);
+    // Create the deadline at public admission, before worker queuing or credential lookup.
+    // Copy that absolute deadline into the request so retries cannot restart the allowance.
+    // The owner timer still releases UI busy state if the worker is blocked in a native call.
     const QDeadlineTimer deadline(m_timeoutMs);
     // Keep the user-visible deadline even if the native keyring is temporarily
     // blocking the worker. Late worker callbacks still complete at most once.
@@ -372,6 +418,11 @@ void AiBackend::suggest(const AiMetadataInput &input, SuggestionCompletion done)
     generate(input, false, std::move(done));
 }
 void AiBackend::test(SuggestionCompletion done) { generate({}, true, std::move(done)); }
+// Ask the worker to cancel requests while its event loop still exists.
+// Queued result delivery may already be waiting on the caller thread.
+// Drain pending maps after joining so those late deliveries do nothing.
+// Every remaining caller receives cancellation instead of staying busy.
+// The stopped flag makes repeated destructor/shutdown calls harmless.
 void AiBackend::shutdown() {
     if (m_stopped)
         return;

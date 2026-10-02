@@ -1,6 +1,11 @@
 import QtQuick
 import QtQuick.Controls
 
+// This visual control is shared by continuous volume and deferred seeking.
+// Keep hit geometry fixed even when the visible handle animates.
+// That prevents the cursor-to-value mapping from shifting during interaction.
+// Its consumer decides whether to submit continuously or on release.
+// Keyboard focus remains visible independently of hover state.
 Slider {
     id: slider
 

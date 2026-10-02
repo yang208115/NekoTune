@@ -60,6 +60,11 @@ QJsonObject toJson(const LyricsCandidate &candidate) {
             {QStringLiteral("instrumental"), candidate.document.instrumental}};
 }
 
+// Encode revisions as text because JavaScript numbers lose large integers.
+// Candidate ordering and revision form one frontend selection contract.
+// Only publish optional document/candidate fields when they exist.
+// cache_warning describes persistence, not whether display is usable.
+// Provider resolver handles are intentionally absent from serialized candidates.
 QJsonObject toJson(const LyricsSnapshot &state) {
     QJsonObject value{{"track_id", state.trackId},
                       {"revision", QString::number(state.revision)},

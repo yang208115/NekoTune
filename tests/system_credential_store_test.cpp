@@ -11,12 +11,21 @@ using namespace nekotune;
 class SystemCredentialStoreTest : public QObject {
     Q_OBJECT
   private slots:
+    // Payload sizes span small keys and larger serialized account sessions.
+    // The byte pattern includes non-text values so encoding loss cannot hide behind ASCII input.
+    // Each size uses the same native round-trip contract.
     void roundTripAndIsolation_data() {
         QTest::addColumn<int>("size");
         QTest::newRow("small") << 32;
         QTest::newRow("key-limit") << 4096;
         QTest::newRow("session-limit") << 16384;
     }
+    // Identifiers are unique to this test and cleanup is guarded against early assertion returns.
+    // The path-shaped identifier is a credential namespace, not a file to create.
+    // Reading through a fresh store object checks native persistence rather than local caching.
+    // Other identifiers must remain absent even when their payload sizes match.
+    // Overwrite and repeated removal cover the lifecycle required by settings dialogs.
+    // On Linux the test wrapper supplies an isolated session keyring for these operations.
     void roundTripAndIsolation() {
         QFETCH(int, size);
         QTemporaryDir directory;
@@ -49,6 +58,11 @@ class SystemCredentialStoreTest : public QObject {
         QVERIFY(store->remove(id));
     }
 #ifdef NEKOTUNE_LEGACY_SECRET_SERVICE
+    // This Linux-only fixture creates the previous Secret Service schema explicitly.
+    // The modern store must recognize it, verify the new entry and remove the old one.
+    // Removing the migrated credential must not expose a surviving legacy entry on the next read.
+    // The scoped cleanup also covers assertion failures after the legacy item was created.
+    // No real application credential is used as migration input.
     void migratesPreviousSecretServiceEntry() {
         QTemporaryDir directory;
         const auto id = directory.filePath("legacy");

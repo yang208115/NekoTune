@@ -27,6 +27,11 @@ class StoreFixtureTest final : public QObject {
     void rejectsInvalidFolderMigration();
 };
 
+// A fresh schema must not recreate retired ASR feature tables.
+// An existing schema can still contain historical ASR records.
+// Reopening must leave those records untouched rather than treating
+// feature retirement as permission to delete user data.
+// Explicit fixtures distinguish absence-by-default from preservation-on-upgrade.
 void StoreFixtureTest::preservesLegacyAsrTables() {
     QTemporaryDir directory;
     const auto path = directory.filePath(QStringLiteral("songs.sqlite3"));
@@ -57,11 +62,18 @@ void StoreFixtureTest::preservesLegacyAsrTables() {
     }
 }
 
+// The storage fixture must follow the same path policy as the application.
+// This prevents tests from legitimizing a second database-directory convention.
+// The comparison deliberately uses AppPaths rather than a host-specific literal.
 void StoreFixtureTest::usesManagedDatabasePath() {
     QCOMPARE(nekotune::StoreFixture::defaultDatabasePath(),
              nekotune::AppPaths::databasePath());
 }
 
+// The same song can occupy two queue positions with distinct chosen paths.
+// Persisting must preserve both entries and the selected occurrence index.
+// Deduplicating queue records by song ID would destroy this contract.
+// Selection is restored from durable order rather than decoder state.
 void StoreFixtureTest::storesAndRestoresQueue() {
     QTemporaryDir tempDir;
     QVERIFY(tempDir.isValid());
@@ -81,6 +93,11 @@ void StoreFixtureTest::storesAndRestoresQueue() {
     QCOMPARE(snapshot.currentIndex, 1);
 }
 
+// Repeated audio content must resolve to the original library song ID.
+// Its original first path is historical metadata rather than a moving locator.
+// User title/artist/lyrics edits must survive direct lookup and list snapshots.
+// A second import path cannot create another song for the same hash.
+// The result also validates the repository/service metadata write boundary.
 void StoreFixtureTest::storesAndUpdatesSongMetadata() {
     QTemporaryDir tempDir;
     QVERIFY(tempDir.isValid());
@@ -120,6 +137,11 @@ void StoreFixtureTest::storesAndUpdatesSongMetadata() {
     QCOMPARE(songs.at(0).customTitle, QStringLiteral("My Title"));
 }
 
+// Reimporting from a new path must preserve manually entered metadata.
+// Remember that alternate location so it remains usable after reopening storage.
+// Library-only import must not create playback queue occurrences.
+// Both single-song and bulk path APIs must see the remembered location.
+// The two scopes force a real close/reopen instead of testing only memory state.
 void StoreFixtureTest::remembersImportedPathsAcrossRestart() {
     QTemporaryDir dir;
     const auto database = dir.filePath(QStringLiteral("paths.sqlite3"));
@@ -152,6 +174,10 @@ void StoreFixtureTest::remembersImportedPathsAcrossRestart() {
     }
 }
 
+// Supply the old queue schema directly instead of generating a current schema.
+// Migration must retain its record order and selected index.
+// An old live queue does not implicitly become a saved playlist.
+// This guards the compatibility boundary between queue state and collections.
 void StoreFixtureTest::migratesLegacyQueue() {
     QTemporaryDir dir;
     const auto path = dir.filePath("old.sqlite3");
@@ -172,6 +198,11 @@ void StoreFixtureTest::migratesLegacyQueue() {
     QVERIFY(store.playlists().isEmpty());
 }
 
+// Legacy nested folders become named independent playlists.
+// The path of ancestor names is flattened while empty folders are retained.
+// Repeated songs collapse only within playlist membership, not the live queue.
+// Original queue selection and occurrence count must remain unchanged.
+// Reopen twice to ensure migration is idempotent and does not duplicate playlists.
 void StoreFixtureTest::migratesFoldersToPlaylists() {
     QTemporaryDir dir;
     const auto path = dir.filePath("folders.sqlite3");
@@ -211,6 +242,12 @@ void StoreFixtureTest::migratesFoldersToPlaylists() {
     }
 }
 
+// One library song can belong to several independently ordered playlists.
+// Adding it again updates its path without appending another membership.
+// Queue replacement/clear must leave those saved collections untouched.
+// Removing from one playlist must not affect another or erase the library song.
+// Renames and deletion persist through a real storage reopen.
+// The test protects collection identity from the retired queue-folder model.
 void StoreFixtureTest::storesIndependentPlaylists() {
     QTemporaryDir dir;
     const auto path = dir.filePath("playlists.sqlite3");
@@ -259,6 +296,12 @@ void StoreFixtureTest::storesIndependentPlaylists() {
     }
 }
 
+// Tag assignments use shared case-normalized identities across songs.
+// Omitted tag updates preserve assignments while an explicit set replaces them.
+// Reimporting the audio must keep its classification and user edits.
+// Invalid tag input must roll back the title change in the same metadata save.
+// Global rename/delete updates associations without changing playlist/queue membership.
+// Reopening verifies the classification lives in storage rather than UI memory.
 void StoreFixtureTest::storesMultipleTagsWithoutChangingCollections() {
     QTemporaryDir dir;
     const auto path = dir.filePath(QStringLiteral("tags.sqlite3"));
@@ -325,6 +368,12 @@ void StoreFixtureTest::storesMultipleTagsWithoutChangingCollections() {
     }
 }
 
+// Library deletion removes every selected song's playlist and queue references.
+// Invalid batches must reject before a partial change becomes durable.
+// An injected write failure exercises transaction rollback after work begins.
+// The saved replacement queue must match the intended survivors exactly.
+// The test isolates logical deletion from optional managed filesystem cleanup.
+// Persistence is verified by opening the database again after the operation.
 void StoreFixtureTest::deletesSongsAtomicallyAcrossCollections() {
     QTemporaryDir dir;
     QVERIFY(dir.isValid());
@@ -391,6 +440,10 @@ void StoreFixtureTest::deletesSongsAtomicallyAcrossCollections() {
     }
 }
 
+// Broken parent references or cycles cannot be flattened safely.
+// Reject the migration instead of silently inventing a playlist hierarchy.
+// The failure must retain legacy source data under the migration rollback.
+// This protects recoverability when an old database contains malformed folder state.
 void StoreFixtureTest::rejectsInvalidFolderMigration() {
     QTemporaryDir dir;
     const auto path = dir.filePath("invalid.sqlite3");

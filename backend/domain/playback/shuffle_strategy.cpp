@@ -19,6 +19,7 @@ void ShuffleBagStrategy::syncQueue(const QList<int> &queueIds, int currentId) {
     const QSet<int> available(queueIds.cbegin(), queueIds.cend());
     const QSet<int> previous(m_ids.cbegin(), m_ids.cend());
     m_pending.removeIf([&](int id) { return !available.contains(id); });
+    // Preserve the unplayed bag; rebuilding it on every edit would replay already drawn entries.
     for (int id : queueIds) {
         if (!previous.contains(id) && id != currentId) {
             const auto offset = std::uniform_int_distribution<int>(0, m_pending.size())(m_random);
@@ -33,6 +34,7 @@ int ShuffleBagStrategy::proposeNext(int currentId) {
     if (m_pending.isEmpty()) {
         m_pending = m_ids;
         std::shuffle(m_pending.begin(), m_pending.end(), m_random);
+        // Avoid repeating the last item across bag boundaries, except for a one-item queue.
         if (m_pending.size() > 1 && m_pending.first() == currentId) {
             const auto offset = std::uniform_int_distribution<int>(1, m_pending.size() - 1)(m_random);
             m_pending.swapItemsAt(0, offset);

@@ -123,6 +123,11 @@ void KugouMusicService::finishOperation(KugouEventType event, const QString &mes
     emit eventReady({.type = event, .message = message});
 }
 
+// SMS requires both a configured Worker key and valid mobile syntax.
+// Register a device identity first when the session lacks usable dfid.
+// Only after registration has been persisted may the SMS call proceed.
+// The busy flag spans both network stages as one logical operation.
+// User-visible admission errors happen before any request is issued.
 QString KugouMusicService::startCodeRequest(const QString &mobile) {
     if (!m_configurationError.isEmpty())
         return m_configurationError;
@@ -165,6 +170,10 @@ QString KugouMusicService::startCodeRequest(const QString &mobile) {
     return {};
 }
 
+// Login success requires more than a nominal provider success code.
+// Returned token/user identity must agree with the persisted cookies.
+// Otherwise the UI would claim a session that download cannot use.
+// Extra-verification responses remain operation failures for user action.
 QString KugouMusicService::startLogin(const QString &mobile, const QString &code) {
     if (m_account->key.isEmpty() || !m_configurationError.isEmpty())
         return QStringLiteral("Kugou account Worker is not configured");
@@ -262,6 +271,13 @@ QString KugouMusicService::startSearch(const QString &keywords, int page) {
     return {};
 }
 
+// Require the current search result so provider IDs and metadata agree.
+// Reserve a destination before asking for the temporary audio URL.
+// A previous completed audio file can be reused without overwriting it.
+// Optional assets can still be attempted on that reusable file.
+// The URL response supports several provider envelope shapes.
+// Every extracted URL still passes the same trusted-audio validation.
+// Entitlement/verification errors are surfaced before transfer starts.
 QString KugouMusicService::startDownload(const QString &hash) {
     if (!m_configurationError.isEmpty() || m_account->key.isEmpty())
         return QStringLiteral("Kugou account Worker is not configured");

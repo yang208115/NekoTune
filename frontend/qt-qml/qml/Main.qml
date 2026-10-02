@@ -7,6 +7,13 @@ import "dialogs"
 import "shell"
 import "shell/PageRegistry.js" as PageRegistry
 
+// The shell coordinates navigation and persistent application controllers.
+// Browsing, now-playing and the queue drawer have separate state.
+// Opening playback detail must not erase the previously browsed collection.
+// Pages are registered in PageRegistry and remain controller consumers.
+// Dialogs emit feature actions rather than touching storage or playback.
+// Import destination is chosen before the file picker opens.
+// Keyboard shortcuts follow active text editing and popup ownership.
 ApplicationWindow {
     id: root
     width: 1360
@@ -53,6 +60,11 @@ ApplicationWindow {
     readonly property color rose: "#E8A9C3"          // accent.secondary
 
 
+    // The same chooser serves three explicit collection destinations.
+    // Library import only registers songs; playlist import also adds membership.
+    // Queue import appends occurrences without automatically switching tracks.
+    // Freeze the target/playlist before opening rather than reading whichever
+    // page happens to be visible when an asynchronous selection is accepted.
     FileDialog {
         id: files
         property int playlistId: 0
@@ -86,6 +98,10 @@ ApplicationWindow {
         const loader = pageRepeater.itemAt(index) as Loader
         return loader ? loader.item : null
     }
+    // Navigation closes temporary playback surfaces before changing browse state.
+    // The queue page also represents saved playlists, keyed by currentPlaylist.
+    // Playlist identity is set before selecting that page so bindings agree.
+    // No navigation action itself starts or replaces playback.
     function navigate(id, playlistId) {
         nowPlayingOpen = false
         queueOpen = false
@@ -100,6 +116,10 @@ ApplicationWindow {
     }
     function openImport(target, playlistId) { files.targetCollection = target; files.playlistId = Number(playlistId || 0); files.open() }
     function currentPage() { return pageItem(viewMode) }
+    // Walk focus ancestors because a composite editor may own the focused item.
+    // Transport shortcuts must not consume a Space typed into those editors.
+    // Popup backgrounds opt into shortcut blocking by a shared object name.
+    // This includes menus whose overlay parents are outside the page tree.
     readonly property bool editingText: {
         let item = activeFocusItem
         while (item) {

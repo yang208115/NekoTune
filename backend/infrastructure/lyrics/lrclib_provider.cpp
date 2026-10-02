@@ -54,6 +54,7 @@ void LrclibProvider::request(const LyricsQuery &query, quint64 token, bool searc
     QNetworkRequest request(url);
     request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("NekoTune/0.1.0 (desktop music player)"));
     request.setRawHeader("Accept", "application/json");
+    // Transfer timeout detects stalled traffic; the separate timer bounds total request time too.
     request.setTransferTimeout(5000);
     const QString stage = search ? QStringLiteral("search") : QStringLiteral("get");
     QElapsedTimer elapsed;
@@ -74,6 +75,11 @@ void LrclibProvider::request(const LyricsQuery &query, quint64 token, bool searc
             reply->abort();
         }
     });
+    // The request token is echoed regardless of completion ordering.
+    // Check the active reply too, since a cancelled reply may finish late.
+    // Classify timeout, throttling and missing records before parsing data.
+    // Validate finite provider durations before converting seconds to ms.
+    // Invalid response rows must not become apparently confident matches.
     connect(reply, &QNetworkReply::finished, this, [this, reply, deadline, token, search, stage, elapsed]() {
         deadline->stop();
         reply->deleteLater();

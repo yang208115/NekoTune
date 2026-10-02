@@ -60,6 +60,9 @@ Rectangle {
             verify(combo !== null);
         }
         function cleanup() { editor.close(); editor = null; combo = null; }
+        // The catalog omits tags already present in the draft.
+        // Selecting another tag updates the draft and available choices without writing metadata yet.
+        // The save button submits the complete selected tag names explicitly.
         function test_selectExistingAndSave() {
             compare(combo.count, 3);
             compare(combo.editText, "");
@@ -82,6 +85,9 @@ Rectangle {
             compare(library.savedPatch.tags, ["收藏", "中文"]);
         }
         function typeText(text) { for (const character of text) keyClick(character); }
+        // New tag names may be entered without a matching catalog record.
+        // Case-insensitive duplicate detection preserves the first spelling.
+        // Button and Enter submission share the same add-and-clear behavior.
         function test_typeNewAndPreventDuplicates() {
             combo.contentItem.forceActiveFocus();
             typeText("Jazz");
@@ -96,6 +102,9 @@ Rectangle {
             keyClick(Qt.Key_Return);
             compare(editor.tagNames, ["收藏", "Jazz", "Live"]);
         }
+        // Keyboard selection must work through the popup's focused item.
+        // An empty catalog must still permit creating a new tag in the draft.
+        // Reopening for another song resets the previous input and selected-tag additions.
         function test_keyboardSelectionEmptyCatalogAndReopen() {
             combo.forceActiveFocus();
             mouseClick(combo, combo.width - 15, combo.height / 2);

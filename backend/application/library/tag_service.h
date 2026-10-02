@@ -3,6 +3,11 @@
 #include "domain/result.h"
 #include <QObject>
 namespace nekotune {
+/// Coordinates global reusable tag management and notifications.
+/// Renaming a tag changes its label while retaining assignments by ID.
+/// Deleting a tag removes associations through repository constraints.
+/// Replacing a song's tag set belongs to the metadata transaction.
+/// This service does not apply frontend filtering or playback rules.
 class TagService final : public QObject {
     Q_OBJECT
   public:

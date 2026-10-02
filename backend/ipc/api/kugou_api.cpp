@@ -1,5 +1,10 @@
 #include "ipc/api/api_context.h"
 namespace nekotune {
+// Provider start operations return their immediate admission outcome.
+// Completion/progress is delivered by separate kugou events.
+// Status serialization contains account flags rather than secret values.
+// Account keys enter only the explicit save operation's input field.
+// Cookies remain inside the provider/session adapters throughout.
 void registerKugouApi(IpcRouter &router, ApiContext &api) {
     router.registerMethod("kugou.status", [&api](const auto &, auto done) {
         done(success({{"kugou", toJson(api.kugou.status())}}));

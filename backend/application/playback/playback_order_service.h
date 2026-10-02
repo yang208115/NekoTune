@@ -6,10 +6,13 @@
 #include <functional>
 
 namespace nekotune {
+// Repeat-one applies to natural completion; explicit navigation still changes tracks.
 enum class PlaybackAdvance { Ended, Next, Previous };
+/// Computes navigation independently of the decoder and confirms it after queue persistence.
 class PlaybackOrderService final {
   public:
     using ModeSaver = std::function<bool(PlaybackMode)>;
+    /// Owns tentative shuffle/history state so a rejected save leaves navigation unchanged.
     struct Selection {
         int queueId = 0; // Zero means stop; queue IDs are positive.
         std::unique_ptr<IShuffleStrategy> shuffle;
@@ -23,6 +26,7 @@ class PlaybackOrderService final {
     Result<void> setMode(PlaybackMode mode, const PlayerQueue &queue);
     void reset(const PlayerQueue &queue);
     void syncQueue(const PlayerQueue &queue);
+    /// Does not mutate live history or random-generator state; confirm only after a successful save.
     Selection propose(const PlayerQueue &queue, PlaybackAdvance advance) const;
     void confirm(Selection selection);
 

@@ -3,6 +3,9 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import "../components"
 
+// Persistent shell controls consume the same confirmed playback state as the full player page.
+// Opening artwork or metadata navigates to now-playing without issuing a play command.
+// Queue visibility is independent of collection navigation and current track selection.
 Rectangle {
     id: bar
     required property var shell
@@ -18,6 +21,9 @@ Rectangle {
     Layout.preferredHeight: 96
     color: shell.bgSidebar
     function t(key) { return translator.text(key, translator.language) }
+    // An unknown duration needs a placeholder, while a current position of zero is a valid time.
+    // Both values arrive in milliseconds and are displayed at whole-second precision.
+    // Clamping negative position avoids showing a transient decoder value as a negative clock.
     function formatTime(ms, isDuration) {
         if (isDuration && Number(ms) <= 0) return "--:--"
         const seconds = Math.max(0, Math.floor(Number(ms || 0) / 1000))
@@ -79,6 +85,9 @@ Rectangle {
         objectName: "transportControls"
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.verticalCenter: parent.verticalCenter
+        // Reserve the larger side-column width on both sides to keep transport controls centered.
+        // Using separate left/right subtraction would shift the visual center as metadata width changes.
+        // The maximum central width keeps the timeline bounded on large windows.
         width: Math.min(640, bar.width - 2 * (Math.max(bar.leftWidth, bar.rightWidth) + 32))
         spacing: 4
         RowLayout {
@@ -101,6 +110,9 @@ Rectangle {
             Layout.fillWidth: true
             spacing: 8
             Label { Layout.preferredWidth: 40; text: bar.formatTime(timeline.pressed ? timeline.valueAt(timeline.position) : timeline.value, false); color: "#AAA0B8"; font.pixelSize: 12; horizontalAlignment: Text.AlignRight }
+            // The time label above follows the handle's preview while pressed, not stale backend position.
+            // SeekSlider keeps that preview stable until release and eventual backend acknowledgment.
+            // Only its committed signal sends the millisecond seek request to the controller.
             SeekSlider {
                 id: timeline; objectName: "playbackSeekSlider"
                 Layout.fillWidth: true
@@ -116,6 +128,9 @@ Rectangle {
         width: bar.rightWidth
         spacing: 4
         IconButton { kind: bar.shell.volume > 0 ? "volume" : "mute"; tooltipText: bar.t("volume"); enabled: bar.shell.transport.connected; implicitWidth: 32; onClicked: bar.controller.toggleMute() }
+        // Volume intentionally follows every moved event for continuous audible feedback.
+        // This uses the normalized volume range rather than SeekSlider's release-only media timing.
+        // Backend events remain the source of the control's confirmed value binding.
         PlayerSlider {
             Layout.fillWidth: true; Layout.minimumWidth: 60; Layout.maximumWidth: 90
             from: 0; to: 1; value: bar.shell.volume
@@ -150,6 +165,9 @@ Rectangle {
         }
     }
     Popup {
+        // Playlist insertion uses the current song's library ID, not its queue occurrence ID.
+        // Pending completion keeps the target operation visible and disables duplicate submissions.
+        // A failed add retains the picker and shows its error so another attempt can be made.
         id: picker
         parent: Overlay.overlay; anchors.centerIn: parent
         width: 360; height: Math.min(400, parent.height - 40); padding: 20

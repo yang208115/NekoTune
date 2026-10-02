@@ -20,6 +20,11 @@ Rectangle {
         baseField.text = String(config.base_url || "");
         modelField.text = String(config.model || "");
     }
+    // An empty password field means preserve this endpoint's saved key.
+    // Only include api_key when the user has entered a replacement.
+    // Clear input immediately after submission and when the panel is hidden.
+    // Replies contain configuration flags and never repopulate secret text.
+    // Endpoint/model dirty state is checked against confirmed configuration.
     function save() {
         const data = {
             base_url: baseField.text.trim(),

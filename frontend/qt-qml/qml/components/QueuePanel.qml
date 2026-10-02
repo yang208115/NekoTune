@@ -2,6 +2,12 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
+// One panel displays either live queue occurrences or a saved playlist.
+// Source selection changes the identity used by play/remove actions.
+// The live drawer uses queue IDs; playlists use their library song IDs.
+// Text search filters presentation without mutating either collection.
+// Playlist playback sends the visible sequence as the requested order.
+// Pending method state keeps dialog outcomes tied to admitted operations.
 Item {
     id: root
     property var queue: []
@@ -40,6 +46,10 @@ Item {
     signal libraryRequested()
     signal closeRequested()
     function fileName(path) { return String(path || "").split("/").pop() }
+    // Song IDs cannot distinguish repeated entries in the live queue.
+    // Queue IDs do not exist as durable membership identities in a playlist.
+    // Resolve this distinction once so row selection and action handlers agree.
+    // The backend validates those identities again before changing state.
     function identity(song) { return Number(currentPlaylist ? song.song_id : (song.queue_id || song.id)) }
     function focusSearch() { search.forceActiveFocus(); search.selectAll() }
     function newPlaylist() { editingPlaylist = 0; playlistName.text = ""; operationError = ""; namePopup.open() }

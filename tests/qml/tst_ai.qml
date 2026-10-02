@@ -181,6 +181,11 @@ Rectangle {
                 grabImage(item).save(path);
             }
         }
+        // Generation uses the current unsaved draft rather than only the stored metadata.
+        // While pending, editing and saving are disabled to keep that request's input coherent.
+        // The suggestion merges tags and preserves fields for which no replacement was suggested.
+        // Applying the preview still requires an explicit save, and untouched lyrics stay absent from the patch.
+        // A save failure keeps the generated draft available for correction or retry.
         function test_previewMergesTagsAndSavesOnlyOnClick() {
             openEditor();
             const title = findChild(editor, "metadataTitleField");
@@ -213,6 +218,9 @@ Rectangle {
             compare(editor.visible, true);
             compare(title.text, "夜空");
         }
+        // Generation failure must preserve the current draft and re-enable retry.
+        // Closing the editor discards the active suggestion context before another song opens.
+        // An unconfigured service guides the user to settings rather than sending an unusable request.
         function test_failureRetryAndUnconfiguredSettings() {
             openEditor();
             const title = findChild(editor, "metadataTitleField");
@@ -236,6 +244,10 @@ Rectangle {
             mouseClick(findChild(editor, "aiOpenSettingsButton"));
             compare(fakeShell.page, "settings");
         }
+        // Public configuration initializes endpoint and model but never fills the secret input.
+        // The temporary password is trimmed and cleared as soon as it is submitted.
+        // Connection testing waits for the backend to confirm the configuration save.
+        // The compact English layout exercises the longer labels without exposing the password.
         function test_settingsKeyAndTestFlow() {
             const panel = createTemporaryObject(settingsComponent, scene);
             verify(panel !== null);

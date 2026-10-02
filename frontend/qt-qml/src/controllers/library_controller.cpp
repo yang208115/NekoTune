@@ -13,6 +13,7 @@ LibraryController::LibraryController(IpcClient &client) : FeatureController(clie
 }
 void LibraryController::refreshLibrary() {
     if (m_loading) {
+        // Coalesce event bursts but request one fresh snapshot after the in-flight response.
         m_reload = true;
         return;
     }
@@ -47,6 +48,7 @@ void LibraryController::apply(const QJsonObject &data) {
         emit filterChanged();
     }
     auto selected = m_songIds;
+    // Prune deleted song IDs without discarding the rest of the current selection.
     selected.removeIf([&](const QVariant &id) { return !songs.contains(id.toInt()); });
     if (selected != m_songIds) {
         m_songIds = selected;
@@ -54,6 +56,11 @@ void LibraryController::apply(const QJsonObject &data) {
     }
     filter();
 }
+// Apply tag intersection and text search to the same source snapshot.
+// Keep the underlying library model independent of these view filters.
+// Remove selection IDs that are no longer visible after reconciliation.
+// Playback later sends this resulting order rather than recreating search
+// rules independently in the backend or selecting only highlighted rows.
 void LibraryController::filter() {
     QVariantList items;
     for (const auto &value : m_songs.items()) {
@@ -125,6 +132,11 @@ void LibraryController::toggleSelection(int id) {
         m_songIds.append(id);
     emit selectionChanged();
 }
+// Selection anchors are song identities, not transient model indices.
+// Resolve both the clicked row and anchor in the current filtered model.
+// Shift ranges therefore follow visible order after search/tag filtering.
+// Ctrl preserves existing selections while toggling the clicked identity.
+// A plain click replaces selection without requesting playback.
 void LibraryController::selectRow(int id, bool extend, bool range) {
     const auto items = m_filtered.items();
     int row = -1, anchor = -1;
@@ -172,6 +184,7 @@ void LibraryController::clearSelection() {
 void LibraryController::playLibrary(const QVariantList &tagIds, int songId) {
     QJsonObject params{{"tag_ids", QJsonArray::fromVariantList(tagIds)}};
     if (tagIds == m_tagIds) {
+        // Pass the visible search/filter order so subsequent tracks match the list the user played.
         QJsonArray ids;
         for (const auto &item : m_filtered.items()) ids.append(item.toMap().value("song_id").toInt());
         params.insert("song_ids", ids);
@@ -206,6 +219,7 @@ void LibraryController::deleteLibrarySongs(const QVariantList &ids, bool cleanFi
          });
 }
 void LibraryController::loadMetadata(int id) {
+    // List rows omit full lyrics; fetch authoritative metadata before allowing an edit/save.
     m_editingId = id;
     m_metadataReady = false;
     m_editing.clear();
@@ -213,6 +227,7 @@ void LibraryController::loadMetadata(int id) {
     auto generation = ++m_generation;
     send("song.metadata", {{"song_id", id}},
          [this, id, generation](const QJsonObject &data, const QString &error) {
+             // Reopening even the same song starts a new editing session; reject its earlier response.
              if (generation != m_generation || id != m_editingId)
                  return;
              if (error.isEmpty()) {

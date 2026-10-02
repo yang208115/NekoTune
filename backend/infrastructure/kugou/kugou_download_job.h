@@ -4,11 +4,16 @@
 #include <QSaveFile>
 #include <memory>
 namespace nekotune {
+/// Downloads audio atomically, then attempts optional lyrics/artwork; asset failures still permit import.
 class KugouDownloadJob final : public QObject {
     Q_OBJECT
   public:
     KugouDownloadJob(QNetworkAccessManager &manager, KugouApiClient &api, QString directory)
         : m_manager(&manager), m_api(api), m_musicDirectory(std::move(directory)) {}
+    /// Capture one selected provider result and reset this operation's cancellation/progress state.
+    /// @param base Optional reserved managed basename supplied by the application resource mapper.
+    /// An absent base uses the job's configured download directory and safe-name rules.
+    /// Preparation does not itself resolve an authenticated audio URL.
     void prepare(const KugouSong &song, const QString &base = {}) {
         m_destinationBase = base;
         m_selected = song;
@@ -17,8 +22,17 @@ class KugouDownloadJob final : public QObject {
         m_audioPath.clear();
         m_audioError.clear();
     }
+    /// Try the existing destination before requesting audio bytes again.
+    /// A true result continues the completion/enrichment pipeline using that local file.
+    /// It does not imply that library database import has already succeeded.
     bool reuseExisting();
+    /// Validate the resolved audio URL and stream into an atomic temporary destination.
+    /// Redirect admission is checked again for every hop rather than trusting the initial host.
+    /// The optional redirect count carries the bounded traversal budget across continuations.
     void beginAudio(const QUrl &url, int redirects = 0);
+    /// Before audio commit, cancel removes the partial destination and reports cancellation.
+    /// During optional enrichment, already completed audio remains eligible for import.
+    /// Return text describes immediate admission/error state, while events report the operation outcome.
     QString cancelDownload();
     void shutdown();
     static bool trustedAudioUrl(const QUrl &url);

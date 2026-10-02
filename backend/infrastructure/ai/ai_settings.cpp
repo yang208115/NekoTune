@@ -19,6 +19,7 @@ QString AiSettings::endpointId(const QString &baseUrl) {
         QCryptographicHash::hash(baseUrl.toUtf8(), QCryptographicHash::Sha256).toHex());
 }
 QString AiSettings::credentialId(const QString &baseUrl) {
+    // Namespace keys by profile and endpoint so changing services cannot reuse another service's secret.
     return AppPaths::configFile("ai-key-" + endpointId(baseUrl));
 }
 Result<QByteArray> AiSettings::key(const AiConfig &config) const {
@@ -78,6 +79,7 @@ Result<AiConfig> AiSettings::configure(const AiConfigUpdate &update) {
     object.insert("model", model);
     object.insert("key_endpoints", endpoints);
     if (!AppPaths::saveSetting("ai", object)) {
+        // Settings and the native keyring cannot share a transaction; restore the previous secret on failure.
         if (update.apiKey) {
             const auto restored = previous ? m_store->write(id, *previous) : m_store->remove(id);
             if (!restored)

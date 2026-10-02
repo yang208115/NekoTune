@@ -20,6 +20,11 @@
 #include <QQuickStyle>
 #include <QStandardPaths>
 
+// The QML engine owns its image network manager separately from backend HTTP.
+// Prefer disk cache only for the trusted provider image host.
+// This reduces repeat artwork requests when list delegates are recreated.
+// Offline selection still comes from backend-resolved empty/local cover URLs.
+// The manager does not decide song identity or cover precedence.
 class CoverNetworkManager final : public QNetworkAccessManager {
   public:
     using QNetworkAccessManager::QNetworkAccessManager;
@@ -49,6 +54,12 @@ class CoverNetworkManagerFactory final : public QQmlNetworkAccessManagerFactory 
     }
 };
 
+// One entry point builds standalone client and embedded desktop variants.
+// The embedded define starts BackendRuntime before frontend connection.
+// Both variants still communicate through the same local socket protocol.
+// Construct controllers before loading QML so context properties are ready.
+// Declaration order keeps the engine's referenced controllers alive through
+// QML teardown and lets the runtime stop on application exit.
 int main(int argc, char *argv[]) {
     QGuiApplication app(argc, argv);
     QGuiApplication::setApplicationName(QStringLiteral("NekoTune"));

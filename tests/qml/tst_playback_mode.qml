@@ -47,6 +47,9 @@ Rectangle {
             tryCompare(menu(fullPanel), "visible", false)
             tryCompare(menu(drawer), "visible", false)
         }
+        // An empty queue can still choose the mode for future playback.
+        // Selecting a menu item submits a request without optimistically changing the icon.
+        // Both panel and drawer must follow the same confirmed backend mode.
         function test_menuAndAuthoritativeSelection() {
             const anchor = button(fullPanel)
             const popup = menu(fullPanel)
@@ -73,6 +76,9 @@ Rectangle {
             tryCompare(menu(drawer), "opened", true)
             verify(findChild(menu(drawer).contentItem, "playbackMode_shuffle").selected)
         }
+        // The popup owns directional keys and Enter while it is open.
+        // Escape cancels navigation without submitting the currently highlighted item.
+        // Opening again must restore usable keyboard focus and wrapped item navigation.
         function test_keyboardAndEscape() {
             const anchor = button(fullPanel)
             const popup = menu(fullPanel)
@@ -92,6 +98,9 @@ Rectangle {
             tryCompare(popup, "visible", false)
             compare(controller.requestedMode, "repeat_one")
         }
+        // Disconnect closes the popup and disables further mode requests.
+        // A persistence error must retain the previous authoritative mode.
+        // Only the matching successful operation clears the displayed failure.
         function test_disconnectAndFailure() {
             const anchor = button(drawer)
             const popup = menu(drawer)
@@ -106,6 +115,9 @@ Rectangle {
             controller.requestSucceeded("player.set_playback_mode")
             compare(drawer.operationError, "")
         }
+        // The drawer's smaller geometry must still contain the entire mode popup.
+        // Each backend mode updates the button icon before its menu is opened.
+        // The bounds include the popup's safe inset from the window edges.
         function test_menuFitsDrawerAndIconsUpdate() {
             for (const mode of ["sequential", "repeat_one", "shuffle", "repeat_all"]) {
                 controller.playbackMode = mode

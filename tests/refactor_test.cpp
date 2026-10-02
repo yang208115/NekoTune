@@ -150,6 +150,12 @@ class RefactorTest final : public QObject {
         qunsetenv("KUGOU_ACCOUNT_API_KEY_FILE");
         writeAudio(m_audio, 0);
     }
+    // Inject queue persistence failure while a fake decoder is actively playing.
+    // Clear/remove must preserve the live source and durable queue on failure.
+    // Successful final removal must release the source so Play cannot revive it.
+    // Volume zero must survive as mute rather than falling back to a default.
+    // A title-only metadata patch must preserve previously stored full lyrics.
+    // This combines rollback and sparse-update invariants across service boundaries.
     void playbackAndStorageFailuresAreAtomic() {
         StoreFixture store(m_directory.filePath("transactions.sqlite3"));
         auto song = store.getOrCreateSong("test", m_audio);
@@ -185,6 +191,12 @@ class RefactorTest final : public QObject {
         QVERIFY(store.library.update(song->id, patch));
         QCOMPARE(store.songById(song->id)->lyrics, QString("saved lyrics"));
     }
+    // A serialized slow route occupies the mutation queue until its completion.
+    // An immediate query must run while the later mutation is still waiting.
+    // The request ID is correlated by the router rather than individual handlers.
+    // Duplicate completion must not run the waiting command twice.
+    // Duplicate method registration is rejected without replacing the existing route.
+    // The test proves extension routing does not require a growing central switch.
     void registeredMethodsAndAsyncOrdering() {
         IpcRouter router;
         IpcRouter::Completion pending;
@@ -221,6 +233,11 @@ class RefactorTest final : public QObject {
         QCOMPARE(order.size(), 3);
         router.shutdown();
     }
+    // Register an extra provider through the existing typed extension seam.
+    // It must appear in source descriptors and receive explicit-source search.
+    // Candidate selection resolves through the same service state machine.
+    // No provider-specific logic should be needed in PlayerEngine or IPC dispatch.
+    // This guards the intended extension point with a minimal injected provider.
     void registeredLyricsSource() {
         ExtraProvider provider;
         LyricsService service({&provider}, std::make_unique<LyricsStorage>(m_directory.filePath("lyrics")));
@@ -233,6 +250,11 @@ class RefactorTest final : public QObject {
         QCOMPARE(result.state, QString("ready"));
         QCOMPARE(result.document->source, QString("extra"));
     }
+    // Exercise public methods against the composed backend over a real local socket.
+    // Removing the final item makes later Play fail rather than reviving stale media.
+    // Source enumeration remains compatible with registered default providers.
+    // Stop the runtime while a client is still connected to exercise buffer ownership.
+    // Starting again must provide a usable new socket session without old callbacks.
     void socketCompatibilityAndConnectedShutdown() {
         BackendRuntime runtime;
         QVERIFY2(runtime.start(), qPrintable(runtime.errorString()));
@@ -257,6 +279,11 @@ class RefactorTest final : public QObject {
         QCOMPARE(reconnected.call("player.status").value("status").toString(), QString("ok"));
         runtime.stop();
     }
+    // Shutdown can happen before accepted file inspections finish normally.
+    // Each accepted callback must settle as Cancelled exactly once.
+    // Processing queued events afterward must not deliver an old successful result.
+    // Repeated shutdown is safe and new requests are immediately cancelled.
+    // This protects scheduler release and dialog busy state during application exit.
     void importShutdownCompletesAcceptedTasksOnce() {
         ImportExecutor executor;
         int completed = 0;
@@ -275,6 +302,12 @@ class RefactorTest final : public QObject {
         executor.inspect(m_audio, cancelled);
         QCOMPARE(completed, 3);
     }
+    // Send several appends before waiting for their inspection callbacks.
+    // Serialized commands must preserve request order, including repeated audio entries.
+    // An immediate status query remains usable while imports are pending.
+    // Disconnecting the sender does not cancel already admitted mutations.
+    // A second client observes their eventual committed queue without resending them.
+    // Runtime shutdown then exercises cancellation of a deliberately large pending import.
     void orderedImportsAndDisconnect() {
         BackendRuntime runtime;
         QVERIFY(runtime.start());
@@ -325,6 +358,13 @@ class RefactorTest final : public QObject {
         QTest::qWait(5);
         runtime.stop();
     }
+    // Explicit song_ids defines order and may be a subset of the collection.
+    // Invalid/duplicate/empty identities must not replace the audible queue.
+    // An injected queue-save failure must preserve song and playing state too.
+    // Calls omitting song_ids retain the complete collection's old API behavior.
+    // Playlist playback rejects unavailable members; library playback reports skipped files.
+    // Import-only remains independent even when a visible sequence is playing.
+    // Reopening verifies the accepted survivor sequence was durably persisted.
     void orderedVisiblePlaybackPreservesQueueOnFailure() {
         BackendRuntime runtime;
         QVERIFY(runtime.start());
@@ -428,6 +468,11 @@ class RefactorTest final : public QObject {
         QCOMPARE(restoredQueue[0].toObject().value("state").toString(), QString("current"));
         restored.stop();
     }
+    // One audio identity is shown through library, queue, playlist and current playback.
+    // All routes must expose the same backend-resolved cover URL.
+    // Cached artwork changes and local sidecars exercise resolver invalidation.
+    // Offline mode must prevent remote cover use across every view, not just the player.
+    // The test catches missing enrichment on otherwise correct serialization paths.
     void artworkMatchesAcrossIpcCollections() {
         QVERIFY(AppPaths::saveSetting("lyrics_offline", false));
         const auto path = m_directory.filePath("covers.wav");
@@ -535,6 +580,11 @@ class RefactorTest final : public QObject {
         QCOMPARE(status.value("song").toObject().value("cover_url").toString(), document.coverUrl);
         runtime.stop();
     }
+    // Home owns its recent/all-library playback context independently of another page.
+    // Existing library text/tag filters must not narrow the home-requested sequence.
+    // Single-click selection does not replace queue state before explicit activation.
+    // Playing current media can toggle rather than rebuild the recent sequence.
+    // The real QML/controller path ensures wrappers preserve this ownership rule.
     void homePlaybackIgnoresLibraryFilters() {
         BackendRuntime runtime;
         QVERIFY(runtime.start());
@@ -607,6 +657,11 @@ class RefactorTest final : public QObject {
         QVERIFY(library->loaded());
         runtime.stop();
     }
+    // Playback detail, bottom controls and the queue drawer share one confirmed mode.
+    // Opening different surfaces must not reset the current occurrence or progress.
+    // Mode request failure/disconnection must leave the previous authoritative selection.
+    // Menu behavior is exercised through actual QML bindings and backend state.
+    // This complements domain navigation tests with frontend integration coverage.
     void playbackModePageAndDrawer() {
         BackendRuntime runtime;
         QVERIFY(runtime.start());
@@ -692,6 +747,12 @@ class RefactorTest final : public QObject {
         QCOMPARE(peer.call("player.status").value("data").toObject().value("playback_mode").toString(), QString("shuffle"));
         runtime.stop();
     }
+    // Use loaded QML to verify controller/model separation under real events.
+    // Metadata editing must request full fields before saving sparse changes.
+    // Library selection should survive playback progress and metadata reconciliation.
+    // Muting is explicit zero and unmuting restores the remembered positive level.
+    // The test also exercises dialog lifecycle and current-row action identity.
+    // It does not substitute for a separate screenshot-based visual acceptance.
     void realQmlMetadataSelectionAndMute() {
         QImage coverImage(40, 40, QImage::Format_RGB32);
         coverImage.fill(QColor("#E8A9C3"));

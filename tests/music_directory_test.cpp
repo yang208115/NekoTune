@@ -148,6 +148,12 @@ class MusicDirectoryTest final : public QObject {
         qunsetenv("KUGOU_ACCOUNT_API_KEY");
         qunsetenv("KUGOU_ACCOUNT_API_KEY_FILE");
     }
+    // External audio remains the user's source of truth; importing creates a managed link.
+    // The same content must reuse its existing song number even through another source path.
+    // Canonical targets and original source names must survive this indirection.
+    // Downloaded files reserve numbers through the same persistent allocator.
+    // Reopening the directory checks that numbering is database state, not a process counter.
+    // These assertions distinguish deduplication by content from deduplication by filename.
     void linksAudioAndReusesPersistentNumbers() {
         const auto source = m_profile.filePath("original.flac");
         write(source, "one");
@@ -189,6 +195,12 @@ class MusicDirectoryTest final : public QObject {
         QCOMPARE(QFileInfo(path).symLinkTarget(), replacement);
         QVERIFY(music.reserveDownload("another-provider", "Other").value().endsWith("000003/000003"));
     }
+    // Only validated lyric and image content should become app-owned sidecars.
+    // Delayed replies simulate a request whose track revision is no longer current.
+    // Changing identity while a reply is pending must prevent an obsolete file write.
+    // KRC and LRC persistence are checked separately because their representations differ.
+    // An existing symlink must not turn a sidecar save into a write outside the managed root.
+    // The fake transport controls timing without requiring an online lyrics account.
     void savesRealLyricsAndArtworkAndRejectsStaleRequests() {
         const auto original = m_profile.filePath("external.wav");
         write(original, "audio");
@@ -263,6 +275,12 @@ class MusicDirectoryTest final : public QObject {
         assets.save(hash("audio"), 7, base, document);
         QVERIFY(QFileInfo(base + ".png").isFile());
     }
+    // File cleanup owns numbered managed assets, not the external sources behind audio links.
+    // The fixture includes external lyrics, unrelated notes and an image link to expose this boundary.
+    // Deleting a managed link must leave its target and source-side metadata intact.
+    // Collection removal still updates the queue and song database together.
+    // The subsequent scan must respect the deletion marker rather than resurrecting the song.
+    // Explicit reimport is the operation allowed to make that content visible again.
     void removesManagedFilesAndPreservesExternalOriginals() {
         const auto root = AppPaths::musicDirectory();
         const auto source = m_profile.filePath("cleanup-original/song.mp3");
@@ -318,6 +336,12 @@ class MusicDirectoryTest final : public QObject {
         QCOMPARE(restored.call("library.import", {{"path", source}}).value("status").toString(), QString("ok"));
         runtime.stop();
     }
+    // The rejecting SQL trigger fails after filesystem staging has already occurred.
+    // Both staged audio and lyrics must be restored when the database transaction fails.
+    // Replacing a numbered directory with a symlink tests traversal beyond the owned tree.
+    // Cleanup must reject that directory instead of trusting its apparently managed name.
+    // The IPC flag is also validated by type; a string must not enable destructive cleanup.
+    // Together these checks cover rollback and ownership rather than only successful deletion.
     void cleanupRollsBackOnDatabaseFailureAndRejectsDirectorySymlinks() {
         const auto source = m_profile.filePath("cleanup-rollback/song.mp3");
         write(source, "rollback original");
@@ -356,6 +380,12 @@ class MusicDirectoryTest final : public QObject {
         QCOMPARE(peer.call("library.delete", {{"song_ids", QJsonArray{id}}, {"clean_files", "yes"}}).value("status").toString(), QString("error"));
         runtime.stop();
     }
+    // Scanning discovers supported audio recursively without making a playback queue.
+    // Partial downloads, configuration files and linked directories are outside the scan input.
+    // A database-only deletion intentionally leaves bytes on disk but records scan suppression.
+    // Restarting the store ensures that suppression is durable rather than an in-memory filter.
+    // Manual import clears the relevant suppression and restores the known content identity.
+    // Scan status must report the configured roots consistently with the discovered records.
     void scansAndKeepsDeletionAcrossRestart() {
         const auto root = AppPaths::musicDirectory();
         write(root + "/nested/song.mp3", "scanned song");
@@ -407,6 +437,10 @@ class MusicDirectoryTest final : public QObject {
         QCOMPARE(status.value("config_directory").toString(), root + "/config");
         runtime.stop();
     }
+    // Saving one preference must preserve settings owned by another feature.
+    // An explicit environment language overrides a saved preference at startup.
+    // The persisted configuration remains private to its owner after replacement.
+    // This fixture checks both merged contents and the precedence used on restore.
     void settingsMergeAndLanguageRestores() {
         QVERIFY(AppPaths::saveSetting("lyrics_offline", true));
         I18n first;
@@ -422,6 +456,12 @@ class MusicDirectoryTest final : public QObject {
                      (QFileDevice::ReadGroup | QFileDevice::ReadOther),
                  QFileDevice::Permissions{});
     }
+    // The isolated home reproduces the old storage layout without touching user data.
+    // Migration copies the legacy database rather than consuming or rewriting its original bytes.
+    // Tags, playlists and queue records must survive along with the audio identities.
+    // Lyrics assets move to the new profile layout independently of credential migration.
+    // Secrets become usable only after the credential store accepts and verifies them.
+    // Once cleared, stale legacy plaintext must not restore the key on another startup.
     void migratesLegacyDatabaseAndSecuresCredentials() {
         QTemporaryDir directory;
         const auto project = directory.filePath("project");

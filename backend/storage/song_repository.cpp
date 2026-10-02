@@ -9,6 +9,7 @@ std::optional<SongMetadata> SongRepository::getOrCreateSong(const QString &hash,
         return std::nullopt;
     }
 
+    // Explicit import can restore a deleted hash; the scanner checks scan_ignored before calling here.
     QSqlQuery restore(m_db);
     restore.prepare("DELETE FROM scan_ignored WHERE hash=:hash");
     restore.bindValue(":hash", hash);
@@ -17,6 +18,7 @@ std::optional<SongMetadata> SongRepository::getOrCreateSong(const QString &hash,
         return std::nullopt;
     }
     if (auto existing = songByHash(hash)) {
+        // A second path is still the same song; retain custom title, artist, lyrics and tag identity.
         if (!rememberSongPath(existing->id, path))
             return std::nullopt;
         if (existing->sourceName.isEmpty() && !sourceName.isEmpty()) {
@@ -126,6 +128,11 @@ std::optional<SongMetadata> SongRepository::updateMetadata(int songId, const QSt
     return songById(songId);
 }
 
+// Prefer paths already chosen by the active queue and saved playlists.
+// Then consider recently imported alternatives and the original first path.
+// These are lookup candidates; filesystem availability is checked by services.
+// Remembering alternate paths keeps reimports useful across restarts.
+// Do not replace song identity simply because one candidate disappears.
 QVector<QString> SongRepository::pathsForSong(int songId) const {
     QVector<QString> paths;
     if (!m_session.isReady() || songId <= 0)
@@ -217,6 +224,10 @@ std::optional<SongMetadata> SongRepository::readSongFromQuery(QSqlQuery &query) 
         query.value(6).toString(), query.value(7).toLongLong(),
     };
 }
+// Only positive probe results can replace a stored duration.
+// Zero is unknown and must not erase useful duration from a prior import.
+// Require an affected song row so a late probe cannot claim a deleted save.
+// The service additionally checks hash identity and newer duration evidence.
 bool SongRepository::updateDuration(int songId, qint64 durationMs) {
     if (!m_session.isReady() || songId <= 0 || durationMs <= 0)
         return false;
@@ -232,6 +243,7 @@ bool SongRepository::updateDuration(int songId, qint64 durationMs) {
 }
 bool SongRepository::erase(int songId) {
     QSqlQuery query(m_db);
+    // Record the hash before deletion so retained audio is not re-imported by the next startup scan.
     query.prepare("INSERT OR IGNORE INTO scan_ignored SELECT hash FROM songs WHERE id=:id");
     query.bindValue(":id", songId);
     if (!query.exec()) {

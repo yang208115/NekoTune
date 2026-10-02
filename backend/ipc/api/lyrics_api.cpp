@@ -1,6 +1,11 @@
 #include "ipc/api/api_context.h"
 #include "app_paths.h"
 namespace nekotune {
+// Lyrics commands acknowledge admission rather than waiting for network work.
+// The changed event later supplies the new revision's document/candidates.
+// Track identity guards refresh and search against stale UI selections.
+// Candidate selection includes revision as well as candidate index.
+// Offline preference is persisted before updating the running controller.
 void registerLyricsApi(IpcRouter &router, ApiContext &api) {
     router.registerMethod("lyrics.sources", [&api](const auto &, auto done) {
         QJsonArray result;
@@ -45,6 +50,10 @@ void registerLyricsApi(IpcRouter &router, ApiContext &api) {
                               params.contains("album") ? params.value("album").toString() : QString(),
                               params.value("source").toString("lrclib"))));
     });
+    // Candidate indices must be integral and nonnegative at the wire boundary.
+    // Revision is encoded as decimal text to preserve full 64-bit identity.
+    // The controller additionally checks track/revision and vector bounds.
+    // This protects old result-list clicks without exposing provider credentials.
     router.registerMethod("lyrics.select", [&api](const QJsonObject &params, auto done) {
         auto value = params.value("index");
         if (!value.isDouble() || value.toInt(-1) < 0 || value.toDouble() != value.toInt(-1)) {

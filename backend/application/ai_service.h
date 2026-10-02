@@ -3,6 +3,11 @@
 #include "domain/ai_backend.h"
 
 namespace nekotune {
+/// Builds an AI input snapshot from a validated library song and draft.
+/// Draft values are not persisted by suggestion generation.
+/// Existing tag names supply canonical categories for model output.
+/// Only the backend adapter accesses credentials and network endpoints.
+/// The caller receives an advisory result for an explicit editor save.
 class AiService final {
   public:
     AiService(IAiBackend &backend, LibraryService &library, ITagRepository &tags)

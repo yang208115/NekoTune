@@ -33,6 +33,7 @@ bool copyMissing(const QString &source, const QString &target) {
         return true;
     }
     if (QFileInfo::exists(target))
+        // Migration is additive: destination settings/assets win, and legacy files stay recoverable.
         return true;
     QFile input(source);
     QSaveFile output(target);
@@ -92,6 +93,7 @@ QJsonValue setting(const QString &key) {
 bool saveSetting(const QString &key, const QJsonValue &value) {
     if (!prepare())
         return false;
+    // Serialize the entire read-modify-write, not just the atomic rename, to preserve unrelated keys.
     QLockFile lock(configFile("settings.lock"));
     if (!lock.tryLock(1000))
         return false;

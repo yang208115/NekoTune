@@ -3,12 +3,18 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
+// Search results are remote provider records, not local playback queue entries.
+// The row offers selection and an explicit download action but no implicit playback.
+// The containing panel supplies account/download admission through downloadEnabled.
 Rectangle {
     id: row
     required property var song
     required property var translator
     property int rowIndex: 0
     property bool selected: false
+    // Wide artist/album widths are supplied consistently with the panel's column header.
+    // Compact layout hides those columns and shows artist metadata below the title instead.
+    // The title remains flexible so long provider text cannot displace the download button.
     property bool compact: width < 900
     property real artistWidth: Math.min(280, width * 0.21)
     property real albumWidth: Math.min(320, width * 0.24)
@@ -31,6 +37,9 @@ Rectangle {
     ToolTip.text: String(song.title || "") + "\n" + String(song.artist || "")
                  + (song.album ? "\n" + song.album : "")
     ToolTip.delay: 800
+    // The row body only selects and focuses this result.
+    // The later child button owns its click, so downloading does not also change row selection.
+    // Enter is not bound to an automatic download or playback command here.
     MouseArea {
         anchors.fill: parent
         acceptedButtons: Qt.LeftButton | Qt.RightButton
@@ -60,6 +69,9 @@ Rectangle {
             border.color: palette.borderSubtle
             Image { anchors.fill: parent; anchors.margins: 3; source: "qrc:/artwork/default-cover.png"; fillMode: Image.PreserveAspectCrop; mipmap: true }
             Image {
+                // Keep the default artwork underneath throughout asynchronous loading or failure.
+                // Only a successfully decoded image becomes visible above that fallback.
+                // A nonempty remote URL alone is not evidence that its artwork is usable.
                 objectName: "trackCover"
                 anchors.fill: parent; anchors.margins: 3
                 source: String(row.song.cover_url || "")
@@ -69,6 +81,9 @@ Rectangle {
             }
         }
         ColumnLayout {
+            // Allow this flexible column to shrink below its text's implicit width.
+            // Without a zero minimum, RowLayout can let a long title push fixed action columns outside.
+            // Elision then describes the available space rather than changing the row's width contract.
             Layout.fillWidth: true; Layout.minimumWidth: 0
             spacing: 5
             Label {

@@ -168,6 +168,11 @@ class KugouMusicTest final : public QObject {
     void rejectsInvalidCoverWithoutLosingAudio();
 };
 
+// Provider artwork is accepted only from the configured trusted image hosts.
+// HTTP image hints are normalized to HTTPS and the size placeholder is resolved.
+// An unsafe result cover may fall back to trusted group artwork.
+// The fallback must not preserve an arbitrary URL from the rejected candidate.
+// This uses fake search responses and makes no claim about live account access.
 void KugouMusicTest::searchResultsCarryTrustedCovers() {
     qputenv("KUGOU_ACCOUNT_API_KEY", "test-key");
     QTemporaryDir dir;
@@ -206,6 +211,10 @@ void KugouMusicTest::searchResultsCarryTrustedCovers() {
     QCOMPARE(manager.calls.size(), 1); // Searching does not download artwork in the backend.
 }
 
+// Remote account requests carry credentials and require an HTTPS worker endpoint.
+// Loopback HTTP is a deliberate local-development exception.
+// The fixture exercises configuration validation before any request can be sent.
+// An invalid endpoint must report an error rather than silently downgrade transport.
 void KugouMusicTest::rejectsInsecureWorkerUrl() {
     qputenv("KUGOU_ACCOUNT_API_KEY", "test-key");
     QTemporaryDir dir;
@@ -222,6 +231,11 @@ void KugouMusicTest::rejectsInsecureWorkerUrl() {
     QVERIFY(nekotune::toJson(local.status()).value(QStringLiteral("configured")).toBool());
 }
 
+// The saved key lives behind the credential-store interface, outside public status JSON.
+// Key availability and the key bytes themselves are different API responsibilities.
+// Saving and clearing must update status without disclosing the secret over IPC.
+// The injected paths and store keep this lifecycle independent of user credentials.
+// Clearing a saved key may reveal the configured fallback, not erase that fallback source.
 void KugouMusicTest::storesAndClearsPrivateKey() {
     qputenv("KUGOU_ACCOUNT_API_KEY", "environment-key");
     QTemporaryDir dir;
@@ -272,6 +286,12 @@ void KugouMusicTest::storesAndClearsPrivateKey() {
     }
 }
 
+// The fake service drives SMS registration, login and audio resolution as separate steps.
+// Restoring the session avoids requiring another login after the service is recreated.
+// A completed audio file can be reused rather than downloaded repeatedly.
+// Lyrics enrichment follows audio completion and reports its own outcome.
+// The requested quality is checked at the URL resolution boundary.
+// These assertions cover protocol handling, not real paid-account entitlement.
 void KugouMusicTest::loginDownloadAndReuseSession() {
     qputenv("KUGOU_ACCOUNT_API_KEY", "test-key");
     QTemporaryDir dir;
@@ -375,6 +395,12 @@ void KugouMusicTest::loginDownloadAndReuseSession() {
     QVERIFY(nekotune::toJson(resumed.status()).value(QStringLiteral("logged_in")).toBool());
 }
 
+// Audio resolution must stop when account entitlement denies the requested resource.
+// Redirects outside the trusted audio hosts cannot receive a follow-up request.
+// An HTML error page is not a completed audio download even with a successful status.
+// Oversized content must be rejected before publishing the destination file.
+// Each failure leaves no usable audio result or misleading completion signal.
+// The test covers independent trust, content and size checks in the download pipeline.
 void KugouMusicTest::rejectsPermissionRedirectAndNonAudio() {
     qputenv("KUGOU_ACCOUNT_API_KEY", "test-key");
     QTemporaryDir dir;
@@ -429,6 +455,10 @@ void KugouMusicTest::rejectsPermissionRedirectAndNonAudio() {
     QVERIFY(QDir(dir.filePath(QStringLiteral("Music"))).entryList(QDir::Files).isEmpty());
 }
 
+// An HTTP success can still contain a provider-level authentication failure.
+// SMS and login errors must retain their specific business error information.
+// A failed login cannot change the session into an authenticated state.
+// The fake responses isolate this distinction from network transport failures.
 void KugouMusicTest::reportsSmsAndLoginFailure() {
     qputenv("KUGOU_ACCOUNT_API_KEY", "test-key");
     QTemporaryDir dir;
@@ -453,6 +483,10 @@ void KugouMusicTest::reportsSmsAndLoginFailure() {
     QVERIFY(!nekotune::toJson(service.status()).value(QStringLiteral("logged_in")).toBool());
 }
 
+// A redirect inside the allowed HTTPS audio host family may continue the download.
+// The final validated audio file should be published exactly once.
+// Missing optional lyrics must not roll back that completed audio file.
+// This distinguishes an allowed redirect from the hostile redirects in the rejection fixture.
 void KugouMusicTest::followsTrustedRedirect() {
     qputenv("KUGOU_ACCOUNT_API_KEY", "test-key");
     QTemporaryDir dir;
@@ -490,6 +524,12 @@ void KugouMusicTest::followsTrustedRedirect() {
     QCOMPARE(manager.calls.value(QStringLiteral("/final.mp3")), 1);
 }
 
+// Cancellation before audio completes must remove partial output and suppress audioReady.
+// Equally plausible lyric candidates remain uncertain rather than being chosen arbitrarily.
+// Cancellation during later lyric enrichment must retain the already completed audio.
+// A cancelled KRC request must not publish KRC bytes or start an unintended LRC retry.
+// The completion status therefore depends on which pipeline phase owned the cancellation.
+// Controlled hanging replies make these timing boundaries deterministic.
 void KugouMusicTest::cancelsAndSkipsAmbiguousLyrics() {
     qputenv("KUGOU_ACCOUNT_API_KEY", "test-key");
     QTemporaryDir dir;
@@ -555,6 +595,11 @@ void KugouMusicTest::cancelsAndSkipsAmbiguousLyrics() {
                                QStringLiteral(".krc")));
 }
 
+// Trusted artwork is decoded before it is installed beside the completed audio.
+// The size placeholder is normalized before the image request is made.
+// Reusing an existing local cover avoids both replacement and another network fetch.
+// The image assertions check actual content handling rather than only a filename suffix.
+// Audio completion remains independent of whether artwork was newly downloaded.
 void KugouMusicTest::downloadsCoverAndPreservesExistingFile() {
     qputenv("KUGOU_ACCOUNT_API_KEY", "test-key");
     QTemporaryDir dir;
@@ -611,6 +656,11 @@ void KugouMusicTest::downloadsCoverAndPreservesExistingFile() {
     QCOMPARE(existing.readAll(), QByteArray("user-cover"));
 }
 
+// Artwork is optional enrichment after the audio has already been committed.
+// Unsafe redirects, invalid image bytes and excessive sizes report cover failure separately.
+// None of these outcomes may erase a valid completed audio file.
+// audioReady must still be emitted so the download can enter the local library.
+// This protects useful partial success while rejecting untrusted sidecar content.
 void KugouMusicTest::rejectsInvalidCoverWithoutLosingAudio() {
     qputenv("KUGOU_ACCOUNT_API_KEY", "test-key");
     QTemporaryDir dir;

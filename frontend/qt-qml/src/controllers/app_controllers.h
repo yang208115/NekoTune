@@ -7,6 +7,12 @@
 #include "controllers/playlist_controller.h"
 #include "controllers/queue_controller.h"
 #include "controllers/tag_controller.h"
+/// Owns stable feature controller objects for the QML engine lifetime.
+/// Each feature subscribes only to relevant events and response fields.
+/// This separates frequent playback updates from library selection state.
+/// Constant object properties let pages bind once to feature identities.
+/// Reconnection supplies fresh backend state through the shared transport.
+/// Database location is descriptive backend state rather than a local handle.
 class AppControllers final : public QObject {
     Q_OBJECT
     Q_PROPERTY(PlaybackController *playback MEMBER playback CONSTANT)

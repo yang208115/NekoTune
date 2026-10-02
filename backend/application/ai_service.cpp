@@ -6,6 +6,7 @@ void AiService::suggest(int songId, const MetadataPatch &draft, IAiBackend::Sugg
         done(song.error());
         return;
     }
+    // Capture repository data on the backend thread; the AI worker receives values, never SQL handles.
     AiMetadataInput input;
     input.song = song.value();
     input.path = m_library.availablePath(songId);

@@ -35,6 +35,7 @@ bool IpcServer::listen() {
     }
 
     QLocalSocket probe;
+    // Address-in-use may be a stale socket file; probe before unlinking a live backend's endpoint.
     probe.connectToServer(m_serverName);
     if (!probe.waitForConnected(150)) {
         QLocalServer::removeServer(m_serverName);
@@ -62,6 +63,7 @@ void IpcServer::acceptConnection() {
 }
 
 void IpcServer::readClient(QLocalSocket *client) {
+    // Local sockets are byte streams: preserve partial JSON and split coalesced requests by newline.
     auto &buffer = m_buffers[client];
     buffer.append(client->readAll());
     if (buffer.size() > 32 * 1024 * 1024) {
@@ -87,6 +89,7 @@ void IpcServer::readClient(QLocalSocket *client) {
             continue;
         }
 
+        // The command may finish after disconnect; it still runs, but its reply must not touch a dead socket.
         QPointer<QLocalSocket> guard(client);
         m_router.dispatch(document.object(), [this, guard](QJsonObject response) {
             if (guard)

@@ -124,6 +124,12 @@ class PlaybackOrderTest final : public QObject {
         QTest::newRow("repeat-one") << int(PlaybackMode::RepeatOne);
         QTest::newRow("repeat-all") << int(PlaybackMode::RepeatAll);
     }
+    // Mode changes must preserve the current source load and playback clock.
+    // Natural completion is distinct from explicit Next/Previous navigation.
+    // Repeat-one repeats only the natural end of the selected occurrence.
+    // Repeat-all wraps both ends while sequential stops at the tail.
+    // Previous always navigates; it does not become a restart-after-three-seconds action.
+    // The fake decoder records loads so an accidental reload is observable.
     void sequentialAndRepeatControls() {
         QFETCH(int, mode);
         const auto playbackMode = PlaybackMode(mode);
@@ -159,6 +165,12 @@ class PlaybackOrderTest final : public QObject {
         QVERIFY(player.next());
         QCOMPARE(selected(player), 2); // Manual Next never repeats in repeat-one.
     }
+    // Each occurrence must be drawn once per shuffle bag, including repeated songs.
+    // A cycle boundary must not immediately repeat its last entry when alternatives exist.
+    // Previous walks actual history and Next retraces that branch before drawing again.
+    // Metadata synchronization during history navigation must not consume randomness.
+    // Repeated unconfirmed proposals must remain identical, including a new bag refill.
+    // The persisted queue order stays unchanged even while playback order is random.
     void shuffleRoundsAndHistory() {
         auto list = queue();
         const auto original = list.records();
@@ -195,6 +207,12 @@ class PlaybackOrderTest final : public QObject {
         for (int i = 0; i < 10; ++i) QCOMPARE(order.propose(list, PlaybackAdvance::Next).queueId, proposed);
         QCOMPARE(advance(order, list), proposed);
     }
+    // Removing a pending occurrence must take it out of future bag draws.
+    // Appending an occurrence joins the remaining cycle without replaying already heard items.
+    // Metadata-only edits must leave the next proposal unchanged.
+    // Explicit selection resets history around the newly chosen occurrence.
+    // Empty and single-item queues exercise the no-alternative boundaries.
+    // Use a fixed seed to verify policy rather than random luck.
     void editsAndReset() {
         auto list = queue();
         PlaybackOrderService order(std::make_unique<ShuffleBagStrategy>(7), PlaybackMode::Shuffle);
@@ -223,6 +241,12 @@ class PlaybackOrderTest final : public QObject {
         QCOMPARE(advance(order, list), 1);
         QCOMPARE(advance(order, list, PlaybackAdvance::Previous), 1);
     }
+    // Inject failure at queue replacement after a shuffle proposal is computed.
+    // Repeated failed Next calls must leave source, progress and history unchanged.
+    // Natural completion failure also emits one application error without confirming a draw.
+    // After removing the trigger, the first success must choose the original proposal.
+    // Pause/resume must keep its identity while Previous/Next retrace confirmed history.
+    // An empty natural-end notification is harmless, but manual navigation remains invalid.
     void storageFailureDoesNotAdvanceShuffle() {
         QTemporaryDir dir;
         StoreFixture store(dir.filePath("songs.sqlite3"));
@@ -269,6 +293,12 @@ class PlaybackOrderTest final : public QObject {
         QVERIFY(!player.next());
         QVERIFY(!player.previous());
     }
+    // Delete an occurrence that lies inside the recorded shuffle history.
+    // Previous must skip the removed identity rather than addressing an old queue index.
+    // Deleting the current entry selects a survivor and branches history consistently.
+    // Replacing the queue starts a new navigation context with fresh occurrence identity.
+    // A one-item replacement cannot draw a nonexistent alternative.
+    // Switching modes resets order policy without reviving removed history entries.
     void historySurvivesDeletionAndQueueReplacement() {
         QTemporaryDir dir;
         StoreFixture store(dir.filePath("songs.sqlite3"));
@@ -310,6 +340,11 @@ class PlaybackOrderTest final : public QObject {
         QVERIFY(player.previous());
         QCOMPARE(selected(player), id);
     }
+    // Failed preference persistence must leave both the mode and pending shuffle draw intact.
+    // Single-item behavior differs for natural repeat versus explicit navigation.
+    // Every mode must produce the stop sentinel on an empty queue.
+    // The mode saver is injected so failure is deterministic without permissions tricks.
+    // These boundaries protect changes that otherwise only affect normal multi-item lists.
     void modeSaveFailureAndEmptyQueue() {
         auto list = queue();
         PlaybackOrderService order(std::make_unique<ShuffleBagStrategy>(42), PlaybackMode::Shuffle,
@@ -330,6 +365,12 @@ class PlaybackOrderTest final : public QObject {
             QCOMPARE(empty.propose(none, PlaybackAdvance::Ended).queueId, 0);
         }
     }
+    // An unknown saved mode falls back safely at backend startup.
+    // An accepted mode change reaches the initiating response and another client's event stream.
+    // The frontend controller must reconcile the same confirmed mode.
+    // Reopening verifies the setting survives beyond the active session.
+    // Invalid wire mode strings must be rejected rather than normalized silently.
+    // This links domain policy, persistence, socket events and frontend state.
     void ipcPersistenceAndClientSync() {
         QVERIFY(AppPaths::saveSetting("playback_mode", "unknown_mode"));
         BackendRuntime runtime;

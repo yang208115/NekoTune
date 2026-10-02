@@ -112,6 +112,10 @@ Rectangle {
         function cleanup() { page = null }
         function button(name) { const result = findChild(page, name); verify(result !== null, name); return result }
 
+        // Creating the page must not start playback as a side effect of choosing a primary action.
+        // The action changes with current song, queue and playback state.
+        // Playing the library uses the full home scope while preserving the library page's filters.
+        // Opening lyrics is navigation and must remain separate from starting playback.
         function test_primaryActionsNeverAutoplay() {
             compare(libraryObject.playCount, 0)
             compare(playbackController.toggles + playbackController.plays, 0)
@@ -136,6 +140,10 @@ Rectangle {
             mouseClick(button("homeLyricsButton"))
             verify(fakeShell.nowPlayingOpen)
         }
+        // The recent list supplies its own ordering, independent of library search and tags.
+        // A single click selects; double click or Enter starts that visible list at the chosen song.
+        // An unavailable entry remains in the submitted context for backend skip reporting.
+        // The current-song button can toggle playback without rebuilding the recent queue.
         function test_recentOrderSelectionAndPlaybackScope() {
             compare(page.recentSongs.map(song => song.song_id), [6, 5, 4, 3, 2])
             const row = button("homeRecentSong5")
@@ -162,6 +170,10 @@ Rectangle {
             compare(libraryObject.playCount, 3)
             compare(playbackController.toggles, 1)
         }
+        // Missing audio can still be displayed and selected but cannot start playback.
+        // Disconnect disables commands without discarding the visible home snapshot.
+        // The direct play helper is checked too, because disabled buttons alone are insufficient.
+        // Reconnection restores command availability from the same state.
         function test_unavailableAndDisconnectedCannotPlay() {
             const missing = button("homeRecentSong4")
             mouseClick(missing, 180, 30)
@@ -181,6 +193,10 @@ Rectangle {
             fakeTransport.connected = true
             verify(button("homePrimaryButton").enabled)
         }
+        // The play button inside a playlist card must consume its own interaction.
+        // It should play that collection without triggering the card's navigation action.
+        // Clicking the card body instead selects the playlist page.
+        // Empty collections expose navigation while disabling their play action.
         function test_playlistActionsDoNotBubble() {
             verify(findChild(page, "homePlaylist11") === null)
             mouseClick(button("homePlayPlaylist7"))
@@ -194,6 +210,9 @@ Rectangle {
             mouseClick(button("homeNewPlaylistButton"))
             compare(playlistPageStub.created, 1)
         }
+        // View-all deliberately clears library filters before navigating to the full collection.
+        // Import is emitted with the home target rather than a currently hidden playlist target.
+        // These navigation actions must preserve their distinct scopes.
         function test_viewAllAndImport() {
             mouseClick(button("homeViewAllButton"))
             compare(fakeShell.viewMode, "library")
@@ -203,6 +222,10 @@ Rectangle {
             compare(importSpy.count, 1)
             compare(importSpy.signalArguments[0][0], 0)
         }
+        // An empty model alone cannot distinguish pending load, failed load and an empty library.
+        // The loaded/loading flags and connection state determine the message and available action.
+        // Retry belongs to load failure; import belongs to a successfully loaded empty library.
+        // Offline state must not masquerade as a successful empty result.
         function test_loadingFailureEmptyAndOffline() {
             songModel.items = []; playlistModel.items = []
             libraryObject.loaded = false; libraryObject.loading = true
@@ -223,6 +246,10 @@ Rectangle {
             const path = testFixtures.screenshotPath("home-empty-offline")
             if (path) { waitForRendering(page); grabImage(scene).save(path) }
         }
+        // The current song's cover URL must be replaced when song identity changes.
+        // Missing or failed images should reveal the fallback instead of retaining old artwork.
+        // The fixture includes both an absent URL and an asynchronously failing image.
+        // Assertions use Image status so assigning a source is not mistaken for successful loading.
         function test_coverIdentityAndFallback() {
             const cover = button("homeCurrentCover")
             fakeShell.song = {song_id: 1, title: "Song", cover_url: "qrc:/artwork/default-cover.png"}
@@ -241,6 +268,9 @@ Rectangle {
             compare(page.playlistCover(playlistModel.items[0]), "qrc:/artwork/default-cover.png")
             compare(page.playlistCover(playlistModel.items[1]), "")
         }
+        // Responsive layout changes must retain the user's position in the home scroll area.
+        // The compact arrangement still keeps the primary controls within their available width.
+        // This guards layout recomputation from becoming an implicit navigation reset.
         function test_compactLayoutAndScrollRetained() {
             fakeShell.width = 1000; scene.width = 820; scene.height = 544
             waitForRendering(page)

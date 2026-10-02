@@ -1,5 +1,10 @@
 #pragma once
 #include "controllers/feature_controller.h"
+/// Maintains the frontend's authoritative playback snapshot from backend events and replies.
+/// Events may omit fields, so absence preserves state while an explicit zero still updates it.
+/// Commands send intent; they do not optimistically rewrite the confirmed mode or song.
+/// Position and duration use milliseconds, while volume uses the normalized [0, 1] range.
+/// The remembered positive volume provides mute restoration without another settings store.
 class PlaybackController final : public FeatureController {
     Q_OBJECT
     Q_PROPERTY(QString playbackMode READ playbackMode NOTIFY playbackModeChanged)
@@ -16,6 +21,9 @@ class PlaybackController final : public FeatureController {
     double duration() const { return m_duration; }
     double volume() const { return m_volume; }
     QVariantMap song() const { return m_song; }
+    /// Merge a partial event or complete status reply on the frontend thread.
+    /// An explicit empty song object clears selection; an omitted song retains it.
+    /// Each changed field emits its own notification without resetting unrelated models.
     void apply(const QJsonObject &data);
     Q_INVOKABLE void setPlaybackMode(const QString &mode) { send("player.set_playback_mode", {{"mode", mode}}); }
     Q_INVOKABLE void playPath(const QString &path) {
@@ -29,6 +37,9 @@ class PlaybackController final : public FeatureController {
     Q_INVOKABLE void previous() { send("player.previous"); }
     Q_INVOKABLE void seek(double value) { send("player.seek", {{"position", value}}); }
     Q_INVOKABLE void setVolume(double value) { send("player.set_volume", {{"volume", value}}); }
+    /// Mute is a normal zero-volume request, not a separate backend playback state.
+    /// Unmuting restores the last observed positive value, with the default as a fallback.
+    /// Confirmation still arrives through the ordinary volume event path.
     Q_INVOKABLE void toggleMute() { setVolume(m_volume > 0 ? 0 : (m_lastVolume > 0 ? m_lastVolume : .8)); }
   signals:
     void playbackModeChanged();

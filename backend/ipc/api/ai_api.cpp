@@ -1,6 +1,10 @@
 #include "ipc/api/api_context.h"
 namespace nekotune {
 namespace {
+// Build the public configuration shape explicitly instead of serializing
+// the credential store or an internal request object.
+// key_saved and credential_error are sufficient for settings feedback.
+// Neither configuration reads nor save replies can return API key bytes.
 QJsonObject configJson(const AiConfig &config) {
     return {{"base_url", config.baseUrl},
             {"model", config.model},
@@ -8,6 +12,11 @@ QJsonObject configJson(const AiConfig &config) {
             {"key_saved", config.keySaved},
             {"credential_error", config.credentialError}};
 }
+// The preview endpoint accepts draft values without writing the library.
+// Validate every present field before dispatching model work.
+// Keep fields optional so absence can use the stored song snapshot.
+// Input bounds prevent oversized IPC drafts from expanding worker state.
+// The generation adapter applies its narrower prompt/output limits later.
 Result<MetadataPatch> readDraft(const QJsonValue &value) {
     if (!value.isUndefined() && !value.isObject())
         return failure("draft must be an object");

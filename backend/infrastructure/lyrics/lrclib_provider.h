@@ -7,6 +7,12 @@
 
 namespace nekotune {
 
+/// Implements direct lookup and broader search against LRCLIB.
+/// Direct lookup includes album/duration evidence when available.
+/// Broader search omits those restrictions to expose alternate releases.
+/// The application ranks and checks confidence before auto-application.
+/// One active reply is cancelled when a newer attempt starts.
+/// Injected network managers and deadlines support deterministic tests.
 class LrclibProvider final : public LyricsProvider {
     Q_OBJECT
   public:

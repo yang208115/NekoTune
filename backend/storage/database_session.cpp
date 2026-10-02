@@ -29,6 +29,9 @@ DatabaseSession::~DatabaseSession() {
     const QString connectionName = m_connectionName;
     m_db.close();
     m_db = QSqlDatabase();
+    // Release this session's QSqlDatabase handle before removing the named Qt connection.
+    // Repositories using that handle must have been destroyed by the owning session first.
+    // Removing a live connection would invalidate outstanding query objects.
     QSqlDatabase::removeDatabase(connectionName);
 }
 
@@ -56,6 +59,9 @@ QString legacyDatabasePath() {
             return QFileInfo(path).absoluteFilePath();
     return {};
 }
+// Migration reads the legacy database through a separate read-only connection.
+// Build a temporary SQLite snapshot and validate it before publishing the new path.
+// The original database remains available if snapshot, validation or rename fails.
 bool snapshotDatabase(const QString &source, const QString &target, QString &error) {
     const auto connection = "nekotune-migration-" + QUuid::createUuid().toString();
     const auto temporary = target + ".migration-" + QUuid::createUuid().toString(QUuid::WithoutBraces);
@@ -68,6 +74,7 @@ bool snapshotDatabase(const QString &source, const QString &target, QString &err
             QSqlQuery query(db);
             auto escaped = temporary;
             escaped.replace("'", "''");
+            // SQLite snapshots include committed WAL data; copying only the main file could lose it.
             ok = query.exec("VACUUM INTO '" + escaped + "'");
             if (!ok)
                 error = query.lastError().text();
@@ -82,6 +89,9 @@ bool snapshotDatabase(const QString &source, const QString &target, QString &err
             db.setConnectOptions("QSQLITE_OPEN_READONLY");
             if (db.open()) {
                 QSqlQuery query(db);
+                // Reopen the snapshot independently to check the bytes that would actually be published.
+                // Successful VACUUM execution alone does not substitute for this integrity check.
+                // Validation failure keeps the new default database from becoming authoritative.
                 ok = query.exec("PRAGMA quick_check") && query.next() && query.value(0).toString() == "ok";
             } else
                 ok = false;
@@ -101,6 +111,11 @@ bool snapshotDatabase(const QString &source, const QString &target, QString &err
 }
 } // namespace
 
+// An explicit database override is a caller-controlled profile choice.
+// Default-path startup can migrate a legacy database only when absent.
+// The migration lock prevents concurrent processes publishing two snapshots.
+// Open the SQLite connection on the thread that will use its repositories.
+// Schema preparation must succeed before isReady() can become true.
 bool DatabaseSession::initialize(const QString &databasePath) {
     m_databasePath = databasePath;
     if (databasePath == AppPaths::databasePath()) {
@@ -136,6 +151,12 @@ bool DatabaseSession::initialize(const QString &databasePath) {
     return migrate();
 }
 
+// Inspect existing columns instead of assuming one legacy schema version.
+// Add new resource, tag and playlist tables in a migration transaction.
+// Legacy folder conversion shares that transaction's rollback boundary.
+// Retired ASR tables are left intact because feature retirement is not
+// authorization to remove a user's historical database contents.
+// Enable foreign-key enforcement after migration statements complete.
 bool DatabaseSession::migrate() {
     QSqlQuery query(m_db);
     if (!query.exec(QStringLiteral("CREATE TABLE IF NOT EXISTS songs ("
@@ -171,6 +192,9 @@ bool DatabaseSession::migrate() {
         hasSourceName |= query.value(1).toString() == "source_name";
         hasDuration |= query.value(1).toString() == "duration_ms";
     }
+    // Finish the schema-inspection cursor before issuing an ALTER on the same connection.
+    // Existing databases can have either optional column independently.
+    // Column presence, rather than one assumed version number, controls compatibility repair.
     query.finish();
     if (!hasSourceName && !query.exec("ALTER TABLE songs ADD COLUMN source_name TEXT NOT NULL DEFAULT ''")) {
         setError(query.lastError().text());
@@ -253,6 +277,9 @@ bool DatabaseSession::migrateFolders() {
             folders = document.array();
         }
         query.finish();
+        // Index every legacy folder before walking ancestry, so input order cannot hide a parent.
+        // Duplicate/nonpositive IDs and empty names reject the migration before hierarchy conversion.
+        // The original table survives if any later folder cannot be converted safely.
         QHash<int, QJsonObject> byId;
         for (const auto &value : folders) {
             const auto folder = value.toObject();
@@ -265,6 +292,8 @@ bool DatabaseSession::migrateFolders() {
         }
         for (const auto &value : folders) {
             const auto folder = value.toObject();
+            // Flatten legacy hierarchy into playlist names, but reject cycles/missing parents
+            // before dropping the old table so the migration transaction can preserve the source.
             QStringList names;
             QSet<int> visited;
             int ancestor = folder.value("id").toInt();
@@ -309,6 +338,9 @@ bool DatabaseSession::migrateFolders() {
     return true;
 }
 bool DatabaseSession::begin() {
+    // One application use case owns the outer transaction across all participating repositories.
+    // Reject nesting instead of letting an inner commit publish only part of that use case.
+    // The transaction guard can still roll back the active outer operation on failure.
     if (m_transactionActive) {
         setError(QStringLiteral("Nested transactions are not supported"));
         return false;
@@ -324,6 +356,9 @@ bool DatabaseSession::begin() {
 bool DatabaseSession::commit() {
     if (!m_transactionActive)
         return false;
+    // A failed commit leaves the application transaction marked active for its guard to roll back.
+    // Do not publish in-memory collection state just because all individual statements succeeded.
+    // Only a successful database commit closes this ownership boundary.
     if (!m_db.commit()) {
         setError(m_db.lastError().text());
         return false;

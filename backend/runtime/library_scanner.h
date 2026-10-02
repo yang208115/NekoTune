@@ -7,11 +7,21 @@
 #include <QSet>
 
 namespace nekotune {
+/// Coordinates discovery and duration recovery without owning playback.
+/// One file is inspected at a time to limit work and callback state.
+/// Inspection happens off-thread; repository updates return to this thread.
+/// Deleted hashes are skipped before invoking the restoring import path.
+/// Legacy paths missing durations are backfilled after managed discovery.
+/// finished aggregates counts/errors instead of aborting on one bad file.
 class LibraryScanner final : public QObject {
     Q_OBJECT
   public:
     LibraryScanner(ImportExecutor &imports, MusicDirectory &music, LibraryService &library,
                    CommandScheduler &commands);
+    /// Admit one scan at a time; return false while active or shutting down.
+    /// A true return means discovery was admitted, not that every file was imported.
+    /// Observe finished for aggregate imports, skips and per-file errors.
+    /// The scan does not select a song or rewrite the playback queue.
     bool start();
     void shutdown() { m_stopping = true; }
   signals:

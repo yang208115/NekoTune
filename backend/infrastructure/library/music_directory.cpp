@@ -11,6 +11,12 @@
 
 namespace nekotune {
 namespace {
+// Renames keep deleted assets recoverable until the database commits.
+// Each pair records original and temporary path for reverse restoration.
+// The destructor attempts recovery when the handle was never committed.
+// Final commit removes entries and only attempts empty-directory cleanup.
+// Unrelated files in a numbered directory therefore remain intact.
+// Restore failures are logged because the destructor cannot return errors.
 class ManagedFileRemoval final : public IManagedFileRemoval {
   public:
     QVector<QPair<QString, QString>> files;
@@ -43,6 +49,12 @@ QString MusicDirectory::base(qint64 id) const {
     const auto number = QString::number(id).rightJustified(6, '0');
     return QDir(m_directory).filePath(number + '/' + number);
 }
+// Numbered resources may outlive a replaced or restored database.
+// Allocate above both SQLite's sequence and existing numbered folders.
+// This avoids overwriting audio/sidecars whose registration was lost.
+// The number identifies a resource, not a song's human-readable title.
+// sourceName preserves that title hint separately for later display.
+// Filesystem creation errors remain distinct from SQL allocation errors.
 Result<qint64> MusicDirectory::allocate(const QString &sourceName) {
     if (!QDir().mkpath(m_directory))
         return failure("Cannot create music directory", ErrorCode::Io);
@@ -69,6 +81,11 @@ Result<qint64> MusicDirectory::allocate(const QString &sourceName) {
         return failure("Cannot create numbered music directory", ErrorCode::Io);
     return id;
 }
+// Provider download identity is available before local bytes exist.
+// Reserve a numbered basename using that provider hash now.
+// After import, the audio's SHA-256 can merge identical downloads.
+// Repeated provider requests reuse their existing reservation.
+// No filename derived from remote title becomes the managed basename.
 Result<QString> MusicDirectory::reserveDownload(const QString &providerHash, const QString &title) {
     QSqlQuery query(m_database.database());
     query.prepare("SELECT resource_id FROM resource_sources WHERE provider_hash=:hash");
@@ -88,6 +105,13 @@ Result<QString> MusicDirectory::reserveDownload(const QString &providerHash, con
         return failure(query.lastError().text(), ErrorCode::Storage);
     return base(id.value());
 }
+// Reuse a valid registered path for the same local audio hash first.
+// A missing path can be repaired using the incoming inspected source.
+// Reserved download folders can be adopted without moving their audio.
+// An ordinary external file is represented by an absolute symlink.
+// The mapping stores the source name before numbered naming hides it.
+// SQL failure after linking removes only the link made by this operation.
+// Resources and library records remain separate registrations by design.
 Result<ImportedFile> MusicDirectory::manage(const ImportedFile &file) {
     if (!m_database.isReady())
         return failure(m_database.errorString(), ErrorCode::Storage);
@@ -103,6 +127,8 @@ Result<ImportedFile> MusicDirectory::manage(const ImportedFile &file) {
         path = query.value(1).toString();
         name = query.value(2).toString();
         if (QFileInfo(path).isFile()) {
+            // A provider may download identical audio into another reservation; reuse the audio identity
+            // and retarget that provider's reservation without replacing the existing managed file.
             const QFileInfo incoming(file.path);
             const auto parent = incoming.dir().dirName();
             bool numbered = false;
@@ -125,6 +151,9 @@ Result<ImportedFile> MusicDirectory::manage(const ImportedFile &file) {
     if (name.isEmpty())
         name = file.sourceName.isEmpty() ? input.completeBaseName() : file.sourceName;
     const auto parent = input.dir().dirName();
+    // A numeric-looking filename alone does not prove that a file is app-owned.
+    // Adoption also requires the expected basename, exact root location and an unlinked directory.
+    // Otherwise import creates a new managed audio link using the normal ownership boundary.
     const bool numbered = !QFileInfo(input.absolutePath()).isSymLink() &&
                           QRegularExpression("^[0-9]{6,}$").match(parent).hasMatch() &&
                           input.completeBaseName() == parent &&
@@ -135,6 +164,9 @@ Result<ImportedFile> MusicDirectory::manage(const ImportedFile &file) {
         if (!query.exec())
             return failure(query.lastError().text(), ErrorCode::Storage);
         if (query.next()) {
+            // An unfilled download reservation may acquire its first audio identity here.
+            // An already filled reservation can be reused only for identical inspected bytes.
+            // Different content must not inherit another song's numbered resource and sidecars.
             if (query.value(1).isNull() || query.value(1).toString() == file.hash) {
                 id = query.value(0).toLongLong();
                 if (!query.value(2).toString().isEmpty())
@@ -159,7 +191,11 @@ Result<ImportedFile> MusicDirectory::manage(const ImportedFile &file) {
     const bool alreadyManaged = input.absoluteFilePath() == path;
     bool linked = false;
     if (!alreadyManaged) {
+        // Link the canonical source so importing an existing symlink does not create a fragile chain.
         const QFileInfo target(path);
+        // A dangling managed link is repairable because its target no longer exists.
+        // Remove only that broken entry before linking the newly inspected source.
+        // An existing usable file still blocks creation rather than being overwritten.
         if (target.isSymLink() && !target.exists())
             QFile::remove(path);
         if (QFileInfo::exists(path) || !QFile::link(input.canonicalFilePath(), path))
@@ -228,6 +264,8 @@ Result<std::unique_ptr<IManagedFileRemoval>> MusicDirectory::stageRemoval(const 
         const auto folder = QFileInfo(expected).absolutePath();
         const QFileInfo folderInfo(folder);
         const QFileInfo audio(query.value(1).toString());
+        // Stored paths alone are not authority to delete: verify the numbered layout and root,
+        // rejecting directory symlinks that could redirect cleanup outside the managed tree.
         if (root.isEmpty() || id <= 0 || folderInfo.isSymLink() ||
             audio.absoluteFilePath() != expected + '.' + audio.suffix() ||
             (folderInfo.exists() && folderInfo.canonicalFilePath() !=
@@ -242,12 +280,19 @@ Result<std::unique_ptr<IManagedFileRemoval>> MusicDirectory::stageRemoval(const 
                 continue;
             if (!info.isFile() && !info.isSymLink())
                 return failure("Managed song asset is not a file: " + path, ErrorCode::Io);
+            // Rename the entry itself, including dangling audio links; never remove its external target.
+            // Staging renames within the same numbered folder, keeping rollback on the same filesystem.
+            // The per-operation token prevents another staged deletion from sharing temporary names.
+            // The removal handle records an entry only after its rename succeeded.
             const auto staged = QDir(folder).filePath('.' + info.fileName() + ".removing-" + token);
             if (!QDir().rename(path, staged))
                 return failure("Cannot clean managed song file: " + path, ErrorCode::Io);
             removal->files.append({path, staged});
         }
         removal->folders.append(folder);
+        // Provider reservations must no longer point to a resource whose assets are being removed.
+        // These SQL changes participate in the caller's surrounding deletion transaction.
+        // Rollback restores registration while the handle restores names in reverse staging order.
         query.prepare("DELETE FROM resource_sources WHERE resource_id=:id");
         query.bindValue(":id", id);
         if (!query.exec())

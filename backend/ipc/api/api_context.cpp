@@ -42,6 +42,11 @@ QJsonObject ApiContext::status() const {
 QJsonObject ApiContext::queueStatus() const {
     return {{"current_index", queue.queue().currentIndex()}, {"items", queueItems()}};
 }
+// Playlist rows reuse library metadata while retaining their chosen path.
+// Skip references whose library song is no longer available in storage.
+// Omit full lyrics to keep collection snapshots compact.
+// Prefer human source names when managed filenames are only numbers.
+// Resolve covers here so playlist artwork matches library/player artwork.
 QJsonArray ApiContext::playlistList() const {
     QJsonArray result;
     for (const auto &playlist : playlists.list()) {
@@ -64,6 +69,10 @@ QJsonArray ApiContext::playlistList() const {
     }
     return result;
 }
+// JSON numeric values are doubles even when the protocol expects IDs.
+// Require exact integer equality and a positive representable int.
+// Fractional values must not be truncated into another valid record ID.
+// This validator is shared by queue, playlist, song and tag commands.
 bool positiveId(const QJsonValue &value) {
     return value.isDouble() && value.toInt(-1) > 0 && value.toDouble() == value.toInt(-1);
 }

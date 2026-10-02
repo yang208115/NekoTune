@@ -3,11 +3,23 @@
 #include <QObject>
 #include <QUrl>
 namespace nekotune {
+/// These are decoder tags, which can be missing or arrive late.
+/// They supplement library metadata for the current playback source.
+/// User-edited title/artist override decoder values in the snapshot.
+/// Album remains available for disambiguating online lyric versions.
 struct AudioMetadata {
     QString title;
     QString artist;
     QString album;
 };
+/// Decoder-facing operations use milliseconds and normalized volume.
+/// Signals report asynchronous state changes of the current source.
+/// The backend owns decoding, not queue identity or navigation rules.
+/// An empty URL releases the source after queue removal/shutdown.
+/// stop() and clearing a source are intentionally separate actions.
+/// Metadata and duration can arrive after loading has already begun.
+/// The application coalesces them before automatic lyrics matching.
+/// Fake implementations exercise navigation without audio hardware.
 class IPlaybackBackend : public QObject {
     Q_OBJECT
   public:

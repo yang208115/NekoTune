@@ -11,6 +11,8 @@ bool BackendRuntime::start() {
     connect(&m_thread, &QThread::finished, m_context, &QObject::deleteLater);
     m_thread.start();
     bool ok = false;
+    // Construct the session here so SQL, socket and network objects acquire backend-thread affinity.
+    // Blocking also keeps the captured startup result alive until initialization finishes.
     QMetaObject::invokeMethod(
         m_context,
         [this, &ok] {
@@ -31,6 +33,7 @@ bool BackendRuntime::start() {
 void BackendRuntime::stop() {
     if (!m_thread.isRunning())
         return;
+    // Destroy services while their event loop still runs, so shutdown can complete worker callbacks.
     QMetaObject::invokeMethod(
         m_context,
         [this] {

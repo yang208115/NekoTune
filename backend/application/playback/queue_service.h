@@ -4,6 +4,12 @@
 #include "domain/result.h"
 #include <QObject>
 namespace nekotune {
+/// Owns the authoritative in-memory queue alongside its persistence seam.
+/// commit() writes a candidate before replacing the live value.
+/// adoptCommitted() is for larger transactions that already saved it.
+/// Using the latter outside such a commit would bypass durability.
+/// Metadata refresh updates occurrences without altering membership.
+/// changed() means consumers should reconcile their queue snapshot.
 class QueueService final : public QObject {
     Q_OBJECT
   public:

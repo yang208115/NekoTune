@@ -37,6 +37,11 @@ Popup {
         tagInput.currentIndex = -1;
         tagInput.editText = "";
     }
+    // Start a fresh editing session instead of copying lightweight list metadata.
+    // Wait for full song.metadata so absent list lyrics cannot become an empty save.
+    // Discard AI generation from the previous editor before loading another song.
+    // Reset original/draft state to avoid displaying stale fields during lookup.
+    // Saving remains disabled until the matching full metadata has arrived.
     function openForSong(value) {
         if (ai) {
             ai.discardSuggestion();
@@ -60,6 +65,7 @@ Popup {
     function save() {
         if (!editable)
             return;
+        // Send only changed fields; omission preserves values, while a changed empty field clears it.
         const patch = {};
         if (titleField.text !== String(original.custom_title || ""))
             patch.custom_title = titleField.text;
@@ -74,6 +80,10 @@ Popup {
         saveError = "";
         metadataEditor.controller.saveMetadata(patch);
     }
+    // Include unsaved title/artist/lyrics/tag edits as the generation draft.
+    // Commit any typed tag into that draft before collecting its snapshot.
+    // The suggestion modifies controls only and still requires explicit Save.
+    // Disable concurrent draft editing while a generation result is being prepared.
     function generate() {
         if (!editable || !ai)
             return;
@@ -376,10 +386,12 @@ Popup {
         function onSuggestionReady(result) {
             if (!metadataEditor.visible || Number(result.song_id) !== metadataEditor.songId)
                 return;
+            // Suggestions update the draft only; empty guesses preserve edits until the user saves.
             if (result.custom_title)
                 titleField.text = result.custom_title;
             if (result.artist)
                 artistField.text = result.artist;
+            // Keep personal tags while adding suggested categories without case-only duplicates.
             const merged = metadataEditor.tagNames.slice();
             for (const name of result.tags || []) {
                 if (!merged.some(tag => tag.toLocaleLowerCase() === String(name).toLocaleLowerCase()))

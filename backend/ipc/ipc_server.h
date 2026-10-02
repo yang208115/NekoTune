@@ -4,6 +4,12 @@
 #include <QLocalServer>
 #include <QLocalSocket>
 namespace nekotune {
+/// Local socket transport for newline-delimited JSON objects.
+/// Each connected client has its own partial-frame byte buffer.
+/// The initial event supplies a snapshot before incremental events.
+/// Asynchronous replies retain a guarded client rather than owning it.
+/// Disconnect does not roll back already admitted backend operations.
+/// stopAccepting closes admission while shutdown also disposes clients.
 class IpcServer final : public QObject {
     Q_OBJECT
   public:

@@ -2,6 +2,7 @@
 namespace nekotune {
 namespace {
 Result<std::optional<QVector<int>>> requestedSongs(const QJsonObject &params) {
+    // Omitted means use the collection order; an explicit empty list must not accidentally play everything.
     if (!params.contains("song_ids"))
         return std::optional<QVector<int>>{};
     const auto values = params.value("song_ids");
@@ -16,6 +17,12 @@ Result<std::optional<QVector<int>>> requestedSongs(const QJsonObject &params) {
     return std::optional<QVector<int>>{ids};
 }
 }
+// Library, playlists and tags share validation helpers and typed services.
+// Collection writes are serialized across asynchronous file inspection.
+// Queries do not acquire the mutation queue's execution slot.
+// Sparse metadata patches preserve omitted fields, including full lyrics.
+// Visible playback order is validated before replacing the old queue.
+// File cleanup is an explicit option distinct from logical library deletion.
 void registerLibraryApi(IpcRouter &router, ApiContext &api) {
     router.registerMethod("library.scan", [&api](const auto &, auto done) {
         done(success({{"started", api.scan && api.scan()}}));
@@ -65,6 +72,11 @@ void registerLibraryApi(IpcRouter &router, ApiContext &api) {
                 done(error(id.error()));
                 return;
             }
+            // Compatibility aliases are resolved before constructing the domain patch.
+            // Presence checks preserve the distinction between omitted and empty values.
+            // Passing an empty title/artist/lyrics string requests an explicit clear.
+            // Passing an empty tags array requests removal of all assignments.
+            // Type validation happens before any repository mutation is attempted.
             MetadataPatch patch;
             const QString titleKey = params.contains("custom_title") ? "custom_title" : "title",
                           artistKey = params.contains("artist") ? "artist" : "author";
@@ -111,7 +123,12 @@ void registerLibraryApi(IpcRouter &router, ApiContext &api) {
                 done(error(failure("clean_files must be a boolean")));
                 return;
             }
+            // File removal is opt-in at the API boundary; the UI must send its checkbox choice explicitly.
             const bool cleanFiles = params.value("clean_files").toBool();
+            // A saved-audio download may still be writing its optional sidecars.
+            // Cleanup must not remove that managed reservation during active work.
+            // Logical deletion without file cleanup can use its existing transaction.
+            // The UI is told to retry cleanup once the active download settles.
             if (cleanFiles && api.kugou.status().downloadActive) {
                 done(error(failure("Wait for the active music download before cleaning files")));
                 return;
@@ -229,6 +246,10 @@ void registerLibraryApi(IpcRouter &router, ApiContext &api) {
                                : api.collections.addSongToPlaylist(id.value(), songId.value()));
                     return;
                 }
+                // Playlist insertion accepts either library song or queue occurrence identity.
+                // Queue identity preserves the exact occurrence's selected source path.
+                // It must never be interpreted as a library song ID.
+                // If neither identity is supplied, the path-based import branch follows.
                 if (params.contains("queue_id")) {
                     auto queueId = requiredId(params, "queue_id");
                     if (!queueId) {

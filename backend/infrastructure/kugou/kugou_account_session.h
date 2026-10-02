@@ -4,6 +4,12 @@
 #include <QString>
 #include <QStringList>
 namespace nekotune {
+/// Owns backend-private account key and cookie state.
+/// Path-like IDs namespace secure-store entries by application profile.
+/// Legacy plaintext is a migration input, never a new write destination.
+/// Migration validates and verifies the secure copy before removing input.
+/// Launch environment keys remain caller-owned overrides after clearing.
+/// Status consumers expose saved/configured flags rather than secret text.
 class KugouAccountSession final {
   public:
     KugouAccountSession(QString keyPath, QString sessionPath,

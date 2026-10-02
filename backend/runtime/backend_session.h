@@ -15,6 +15,10 @@
 #include "storage/song_repository.h"
 #include "storage/tag_repository.h"
 namespace nekotune {
+/// Composition and lifetime owner for one embedded or standalone backend instance.
+/// Construction, service access and shutdown all occur on its backend thread.
+/// Worker services own separate threads but return value snapshots to this session.
+/// Member declaration order preserves dependency lifetimes during reverse destruction.
 class BackendSession final : public QObject {
     Q_OBJECT
   public:
@@ -26,6 +30,7 @@ class BackendSession final : public QObject {
     void shutdown();
 
   private:
+    // Declaration order is dependency order; reverse destruction keeps repositories' database alive.
     DatabaseSession m_database;
     MusicDirectory m_music;
     SongRepository m_songs;

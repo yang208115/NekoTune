@@ -10,8 +10,15 @@ bool IpcRouter::registerMethod(const QString &method, Handler handler, bool seri
     m_routes.insert(method, {std::move(handler), serialized});
     return true;
 }
+// The completion wrapper owns response correlation for every route.
+// Only supplied request IDs are echoed, including validation failures.
+// Parameter shape is checked before handing control to a feature API.
+// Serialized routes release their scheduler slot after the response.
+// Immediate routes can finish while another mutation awaits inspection.
+// Handlers still use the same owning event-loop thread for state access.
 void IpcRouter::dispatch(const QJsonObject &request, Completion completion) {
     auto id = request.value("id");
+    // Timeout/cancellation and normal completion may race through queued callbacks; reply only once.
     auto once = std::make_shared<bool>(false);
     auto done = [completion = std::move(completion), id, once](QJsonObject result) {
         if (*once)

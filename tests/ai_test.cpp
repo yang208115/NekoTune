@@ -160,6 +160,12 @@ class AiTest final : public QObject {
         qputenv("NEKOTUNE_SOCKET", m_directory.filePath(QString::number(m_profile) + ".sock").toUtf8());
         QVERIFY(AppPaths::prepare());
     }
+    // Normalize the endpoint while retaining its path prefix.
+    // Keep key bytes in the injected secure store, never in settings.json.
+    // Changing service must not reuse the previous endpoint's credential.
+    // Returning to that endpoint can recover its own saved key.
+    // Copying configuration into another profile must not copy secret access.
+    // Explicit clear removes credential presence and its stored bytes together.
     void configIsPersistentAndKeysAreIsolated() {
         auto store = std::make_shared<MemoryCredentials>();
         AiSettings settings(store);
@@ -189,6 +195,11 @@ class AiTest final : public QObject {
         QVERIFY(store->values.isEmpty());
         QVERIFY(!reloaded.configuration().keySaved);
     }
+    // Reject non-HTTP URLs and URLs embedding credentials or query secrets.
+    // Reject empty models and invalid replacement-key characters before writing.
+    // A keyless endpoint remains usable even with a locked keyring.
+    // Saving/clearing a real key must report locked-store failure explicitly.
+    // Public credential_error distinguishes that failure from unconfigured service state.
     void configValidationAndLockedKeyring() {
         auto store = std::make_shared<MemoryCredentials>();
         AiSettings settings(store);
@@ -208,6 +219,11 @@ class AiTest final : public QObject {
         QCOMPARE(settings.configuration().credentialError, QString("ai_error_keyring"));
         QVERIFY(!settings.clearKey());
     }
+    // The native keyring and settings file cannot share a database transaction.
+    // Simulate an acknowledged-but-lost key write and verify the old value remains.
+    // Then corrupt settings to fail after a successful replacement-key write.
+    // The previous key must be restored instead of leaving mismatched configuration.
+    // This guards recovery across both halves of the configuration save.
     void failedSettingsWriteRestoresPreviousKey() {
         auto store = std::make_shared<MemoryCredentials>();
         AiSettings settings(store);
@@ -226,6 +242,12 @@ class AiTest final : public QObject {
         QCOMPARE(saved.error().message, QString("ai_error_settings"));
         QCOMPARE(store->values, before);
     }
+    // Unsaved editor values must take precedence over persisted title/lyrics.
+    // Timing tags are removed before lyrics become textual model evidence.
+    // The request preserves an endpoint prefix and uses its configured model.
+    // Keys belong in the Authorization header, not the prompt evidence.
+    // Absolute paths and audio hashes must not enter the user message.
+    // Suggested tag spelling is canonicalized against existing library names.
     void usesDraftTextAndCanonicalTagsWithoutPaths() {
         HttpFixture server;
         auto store = std::make_shared<MemoryCredentials>();
@@ -263,6 +285,11 @@ class AiTest final : public QObject {
         QCOMPARE(evidence.value("custom_title").toString(), QString("draft title"));
         QCOMPARE(evidence.value("lyrics").toString(), QString("我们仰望夜空\n星光闪烁"));
     }
+    // With no draft/stored lyrics, use local sidecar evidence before persistent cache.
+    // Deleting the sidecar exposes the cached document rather than a network lyric fetch.
+    // The inspected prompt must contain only the chosen plain text.
+    // An oversized draft is bounded before model submission.
+    // This tests actual request content rather than only a helper's return string.
     void localLyricsThenCacheAndInputLimits() {
         HttpFixture server;
         auto store = std::make_shared<MemoryCredentials>();
@@ -304,6 +331,10 @@ class AiTest final : public QObject {
         QVERIFY(generate(backend, input));
         QCOMPARE(evidence().value("lyrics").toString().size(), 12000);
     }
+    // Model-facing input validation is insufficient: returned content is untrusted too.
+    // Exercise refusal, malformed envelopes, wrong field types and output bounds.
+    // HTTP admission/auth/service failures also need stable user-visible categories.
+    // Fake responses keep the matrix independent of a real model or account.
     void invalidResponses_data() {
         QTest::addColumn<QByteArray>("body");
         QTest::addColumn<int>("status");
@@ -327,6 +358,10 @@ class AiTest final : public QObject {
                                             << 400 << QString("ai_error_request");
         QTest::newRow("huge") << QByteArray(300000, 'x') << 200 << QString("ai_error_response");
     }
+    // Every supplied response must settle the asynchronous suggestion as a failure.
+    // The expected application error must survive transport and parsing layers.
+    // Exactly one network request proves generic failures do not enter compatibility retries.
+    // This keeps malformed output from becoming an apparently valid editor suggestion.
     void invalidResponses() {
         QFETCH(QByteArray, body);
         QFETCH(int, status);
@@ -341,6 +376,11 @@ class AiTest final : public QObject {
         QCOMPARE(result.error().message, error);
         QCOMPARE(server.requests.size(), 1);
     }
+    // Only explicit response_format incompatibility enables the compatibility retry.
+    // The first request uses JSON mode; the second removes just that parameter.
+    // Empty title/artist evidence remains an advisory partial result with a warning.
+    // Another incompatibility response must stop rather than creating a retry loop.
+    // The request count makes the one-retry budget part of the contract.
     void jsonModeFallbackIsBoundedAndUnknownNamesAreEmpty() {
         HttpFixture server;
         const QByteArray unsupported =
@@ -362,6 +402,11 @@ class AiTest final : public QObject {
         QVERIFY(!generate(backend));
         QCOMPARE(server.requests.size(), 4);
     }
+    // Hold the fake server response so the frontend-visible deadline expires first.
+    // A late response must not call the already-consumed completion again.
+    // Repeat with explicit shutdown while another suggestion is pending.
+    // Cancellation must release the caller once rather than leaving it busy.
+    // These paths share completion ownership despite different terminal causes.
     void timeoutAndShutdownFinishExactlyOnce() {
         HttpFixture server;
         server.responses.append({200, {}, -1});
@@ -387,6 +432,11 @@ class AiTest final : public QObject {
         QTest::qWait(50);
         QCOMPARE(calls, 1);
     }
+    // The user-visible deadline starts before worker-side credential retrieval.
+    // A slow keyring must not extend generation time indefinitely.
+    // Compatibility retry shares the original deadline rather than restarting it.
+    // The test exposes delays before HTTP as well as delays between HTTP attempts.
+    // Late work cannot reclaim a completion already finished by the calling thread.
     void deadlineIncludesSlowKeyringAndCompatibilityRetry() {
         HttpFixture server;
         auto store = std::make_shared<MemoryCredentials>();
@@ -411,6 +461,12 @@ class AiTest final : public QObject {
         QCOMPARE(result.error().message, QString("ai_error_timeout"));
         QCOMPARE(server.requests.size(), 2);
     }
+    // Discard an editor generation while its matching backend response is pending.
+    // Opening a later generation must not accept the old result for the same song.
+    // Failure/disconnect must reset generating/config busy presentation state.
+    // Only the current local generation may emit a suggestion-ready event.
+    // The transport reconnects without replaying the previous mutation or preview.
+    // This protects frontend editor ownership independently of backend request success.
     void frontendDiscardsStaleRepliesAndRecoversAfterDisconnect() {
         QLocalServer server;
         QVERIFY(server.listen(qEnvironmentVariable("NEKOTUNE_SOCKET")));
@@ -474,6 +530,12 @@ class AiTest final : public QObject {
         controller.discardSuggestion();
         QVERIFY(controller.suggestionError().isEmpty());
     }
+    // Generate through the real socket route while the model response is delayed.
+    // Playback controls/status must remain responsive during that preview.
+    // Inspecting stored metadata verifies generation did not silently save its advice.
+    // Explicit user metadata save is a separate operation after suggestion completion.
+    // Public configuration and preview responses must not expose key bytes.
+    // This is integration evidence for the nonserialized AI route boundary.
     void ipcPreviewDoesNotSaveAndPlaybackRemainsResponsive() {
         HttpFixture server;
         server.responses.append({200, completion(validSuggestion), 250});

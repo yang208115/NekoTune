@@ -2,6 +2,11 @@
 #include "controllers/feature_controller.h"
 #include "models/record_model.h"
 #include <QJsonArray>
+/// Owns playlist collection snapshots independently of queue state.
+/// Management requests use playlist ID plus song/queue/path parameters.
+/// Playing a playlist is an explicit backend queue-replacement operation.
+/// Ordinary membership edits and list refreshes do not start playback.
+/// The created signal lets the shell navigate to a confirmed new collection.
 class PlaylistController final : public FeatureController {
     Q_OBJECT
     Q_PROPERTY(RecordModel *model READ model CONSTANT)

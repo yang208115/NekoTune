@@ -1,5 +1,9 @@
 import QtQuick
 import "../components"
+// This browser page binds a saved playlist or live queue into one panel.
+// currentPlaylist synchronizes collection identity with shell navigation.
+// The live queue drawer is a separate instance with its own view state.
+// Editing a playlist therefore does not make it the active playback queue.
 Item {
     id: page
     required property var shell

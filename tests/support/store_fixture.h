@@ -8,6 +8,12 @@
 #include "storage/tag_repository.h"
 #include <QSet>
 namespace nekotune {
+/// Test composition root for real SQLite repositories and library services.
+/// It supplies temporary paths rather than a parallel fake storage implementation.
+/// Thin helpers preserve production transaction semantics for multi-write operations.
+/// Declaration order keeps the shared database alive until repositories are destroyed.
+/// Collection tests can inject SQL failures while inspecting persisted state directly.
+/// Its deletion helper intentionally excludes filesystem/audio adapter responsibilities.
 class StoreFixture final {
   public:
     StoreFixture(const QString &path = DatabaseSession::defaultDatabasePath(), const QString &name = {})

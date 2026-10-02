@@ -4,6 +4,12 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import "../components"
 
+// Home consumes library and playlist state without inheriting library filters.
+// Recent rows are sorted from a copied array, preserving the source model order.
+// Its primary action prioritizes current track, existing queue, then library.
+// Loading/failure is distinct from a successfully loaded empty library.
+// Playing recent songs sends exactly that displayed recent sequence.
+// One pending play guard prevents repeated requests before completion.
 Item {
     id: page
     required property var shell
@@ -54,6 +60,10 @@ Item {
         if (toggleCurrent && Number(song.song_id) === Number(shell.song.song_id)) controllers.playback.togglePlayPause()
         else playSongs(recentSongs, Number(song.song_id))
     }
+    // Resolve representative artwork from items already in this collection.
+    // Prefer the current library snapshot's URL for the same song identity.
+    // Fallback to the playlist snapshot's enriched URL while updates settle.
+    // Return empty when no item has artwork so the normal placeholder appears.
     function playlistCover(playlist) {
         for (const item of playlist.items || []) {
             const record = songs.find(song => Number(song.song_id) === Number(item.song_id))

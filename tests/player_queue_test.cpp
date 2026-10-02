@@ -12,6 +12,12 @@ class PlayerQueueTest final : public QObject {
     void addAndRemoveQueueItems();
 };
 
+// A song may occur more than once in the playback queue.
+// Each occurrence needs its own stable ID while sharing the same song metadata.
+// The serialized title must prefer the stored custom value over the source filename.
+// Updating lyrics and metadata must reach every occurrence of that song.
+// Removing an earlier row shifts the index without changing the active occurrence identity.
+// This is why queue commands cannot substitute a library song ID for a queue ID.
 void PlayerQueueTest::addAndRemoveQueueItems() {
     nekotune::PlayerQueue queue;
 

@@ -48,6 +48,9 @@ Item {
             movedSpy.clear()
         }
 
+        // Volume uses the base slider's live updates rather than the seek control's release-only behavior.
+        // At least one moved signal must occur while the pointer is still pressed.
+        // Release retains the last visible volume instead of restoring the pre-drag value.
         function test_volumeChangesContinuouslyWhileDragging() {
             const startX = slider.leftPadding + slider.handle.width / 2
                     + 0.2 * (slider.availableWidth - slider.handle.width)
@@ -61,6 +64,9 @@ Item {
             verify(slider.value > 0.7)
         }
 
+        // Hover and pressed styling may change color without changing the handle's hit geometry.
+        // Resizing the handle would alter the pointer-to-value mapping during an interaction.
+        // The test checks width and position across both states to prevent that discontinuity.
         function test_handleGeometryStaysStableWhileHoveringAndPressed() {
             const originalWidth = slider.handle.width
             const originalX = slider.handle.x
