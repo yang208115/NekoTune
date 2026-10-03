@@ -22,6 +22,7 @@ add_library(nekotune_storage STATIC
 target_link_libraries(nekotune_storage PUBLIC nekotune_domain nekotune_paths Qt6::Sql)
 
 add_library(nekotune_providers STATIC
+    infrastructure/kugou/kugou_endpoints.h
     infrastructure/lyrics/kugou_provider.cpp
     infrastructure/lyrics/lrclib_provider.cpp
     infrastructure/lyrics/network_diagnostics.cpp

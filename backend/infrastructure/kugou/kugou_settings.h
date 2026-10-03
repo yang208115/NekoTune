@@ -8,10 +8,17 @@ struct KugouSettings {
     bool enabled = false;
     QUrl workerUrl;
 
+    static QUrl migrateWorkerUrl(QUrl url) {
+        if (url == QUrl(QStringLiteral("https://kugou-lyrics-api.lyuy.workers.dev")) ||
+            url == QUrl(QStringLiteral("https://kugou-lyrics-api.lyuy.workers.dev/")))
+            url.setHost(QStringLiteral("luy-music-api.lyuy.workers.dev"));
+        return url;
+    }
+
     static KugouSettings load() {
         const auto object = AppPaths::setting("kugou").toObject();
         return {object.value("enabled").toBool(false),
-                QUrl(object.value("worker_url").toString(), QUrl::StrictMode)};
+                migrateWorkerUrl(QUrl(object.value("worker_url").toString(), QUrl::StrictMode))};
     }
 
     QString validationError() const {

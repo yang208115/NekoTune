@@ -125,6 +125,8 @@ KUGOU_ACCOUNT_API_KEY_FILE=/path/to/private-account-key ./build/nekotune
 
 密钥文件应仅自己可读。登录会话同样保存在系统密钥库，不读取其他项目的 Cookie。Worker 地址仅从设置页配置，远程地址要求 HTTPS，仅本机回环地址允许 HTTP；地址不能包含路径、账号信息、查询参数或片段。
 
+酷狗接口使用 `/api/music/kugou/v1` 前缀，由客户端统一追加。使用已迁移的服务时，Worker 地址填写 `https://luy-music-api.lyuy.workers.dev`，不要填写接口前缀。已保存的 `https://kugou-lyrics-api.lyuy.workers.dev` 在读取时自动映射到新域名，下次保存配置时写入新地址；自定义域名保持不变，也须提供此前缀下的接口。请求参数、`X-Account-Key` 和请求体中的 `cookies` 约定不变；KRC 仍直连酷狗，失败后通过 Worker 获取 LRC。
+
 下载使用服务端返回的临时 HTTPS 地址和固定 `128` 音质。可靠匹配时保存 KRC、LRC 和封面，已有下载文件不覆盖；配套资源失败不阻止音频入库。账号、歌曲或设备限制可能导致下载失败，具体原因由界面提示。当前没有 VIP 领取或升级操作。
 
 ### AI 歌曲信息

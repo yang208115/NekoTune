@@ -255,7 +255,7 @@
   "ai_error_busy": "已有多个 AI 请求正在处理，请稍后重试。",
   "kugou_enable": "启用酷狗音乐",
   "kugou_worker_url": "Worker 地址",
-  "kugou_worker_help": "默认关闭。填写自己的 Worker 地址并启用后保存，即可使用酷狗搜索、下载和歌词搜索。远程地址必须使用 HTTPS。",
+  "kugou_worker_help": "默认关闭。填写 Worker 根地址并启用后保存，即可使用酷狗搜索、下载和歌词搜索。远程地址必须使用 HTTPS，无需填写接口路径。",
   "kugou_config_save": "保存酷狗配置",
   "kugou_config_saved": "酷狗配置已保存",
   "lyrics_error_kugou_unavailable": "请在设置中启用酷狗音乐并配置 Worker 地址；修改地址后请重新搜索。"

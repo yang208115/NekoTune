@@ -37,7 +37,7 @@ KugouMusicService::KugouMusicService(
     qRegisterMetaType<KugouEvent>();
     auto settings = KugouSettings::load();
     if (!baseUrl.isEmpty())
-        settings.workerUrl = baseUrl;
+        settings.workerUrl = KugouSettings::migrateWorkerUrl(baseUrl);
     m_enabled = settings.enabled;
     m_baseUrl = settings.workerUrl;
     m_configurationError = settings.unavailableReason();
@@ -80,7 +80,7 @@ void KugouMusicService::shutdown() {
 QString KugouMusicService::saveConfiguration(bool enabled, const QString &workerUrl) {
     if (m_busy)
         return QStringLiteral("Kugou operation already in progress");
-    KugouSettings settings{enabled, QUrl(workerUrl.trimmed(), QUrl::StrictMode)};
+    KugouSettings settings{enabled, KugouSettings::migrateWorkerUrl(QUrl(workerUrl.trimmed(), QUrl::StrictMode))};
     const auto error = settings.validationError();
     if (!error.isEmpty())
         return error;

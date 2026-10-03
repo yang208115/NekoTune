@@ -1,4 +1,5 @@
 #include "infrastructure/kugou/krc_response.h"
+#include "infrastructure/kugou/kugou_endpoints.h"
 #include "infrastructure/kugou/kugou_settings.h"
 #include "infrastructure/lyrics/kugou_provider.h"
 #include "domain/lyrics/krc_parser.h"
@@ -90,7 +91,7 @@ void KugouProvider::get(const QString &path, const QUrlQuery &params, quint64 to
         emit failed(token, QStringLiteral("kugou_unavailable"));
         return;
     }
-    QUrl url = m_baseUrl.resolved(QUrl(path));
+    QUrl url = kugouRequestUrl(m_baseUrl, path);
     url.setQuery(params);
     QNetworkRequest request(url);
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::ManualRedirectPolicy);

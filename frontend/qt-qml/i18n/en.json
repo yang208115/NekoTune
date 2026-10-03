@@ -255,7 +255,7 @@
   "ai_error_busy": "Several AI requests are still running. Please retry shortly.",
   "kugou_enable": "Enable Kugou music",
   "kugou_worker_url": "Worker URL",
-  "kugou_worker_help": "Off by default. Enter your Worker URL, enable Kugou and save to use music search, downloads and lyrics search. Remote URLs must use HTTPS.",
+  "kugou_worker_help": "Off by default. Enter your Worker root URL, enable Kugou and save to use music search, downloads and lyrics search. Remote URLs must use HTTPS; omit the API path.",
   "kugou_config_save": "Save Kugou settings",
   "kugou_config_saved": "Kugou settings saved",
   "lyrics_error_kugou_unavailable": "Enable Kugou music and set the Worker URL in Settings. Search again after changing the URL."

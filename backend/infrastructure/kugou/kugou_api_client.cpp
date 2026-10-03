@@ -1,4 +1,5 @@
 #include "infrastructure/kugou/kugou_api_client.h"
+#include "infrastructure/kugou/kugou_endpoints.h"
 #include <memory>
 
 #include "domain/lyrics/krc_parser.h"
@@ -24,7 +25,7 @@ namespace nekotune {
 constexpr qint64 kMaxJsonBytes = 4LL * 1024 * 1024;
 void KugouApiClient::requestJson(const QString &route, const QJsonObject &body, JsonCallback callback) {
     m_cancelled = false;
-    QNetworkRequest request(m_baseUrl.resolved(QUrl(route)));
+    QNetworkRequest request(kugouRequestUrl(m_baseUrl, route));
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::ManualRedirectPolicy);
     request.setTransferTimeout(30000);
     request.setRawHeader("Accept", "application/json");

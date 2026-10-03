@@ -16,6 +16,7 @@
 #include <QNetworkReply>
 #include <QTemporaryDir>
 #include <QTimer>
+#include <QUrlQuery>
 #include <QtTest/QtTest>
 
 #include <cstring>
@@ -97,13 +98,17 @@ class FakeManager final : public QNetworkAccessManager {
     QHash<QString, int> calls;
     QHash<QString, QUrl> requestedUrls;
     QHash<QString, QByteArray> accountHeaders;
+    QHash<QString, Operation> operations;
+    QHash<QString, QJsonObject> requestBodies;
 
   protected:
-    QNetworkReply *createRequest(Operation, const QNetworkRequest &request, QIODevice *) override {
+    QNetworkReply *createRequest(Operation operation, const QNetworkRequest &request, QIODevice *body) override {
         const auto route = request.url().path();
         ++calls[route];
         requestedUrls.insert(route, request.url());
         accountHeaders.insert(route, request.rawHeader("X-Account-Key"));
+        operations.insert(route, operation);
+        requestBodies.insert(route, body ? QJsonDocument::fromJson(body->readAll()).object() : QJsonObject{});
         return new FakeReply(request, routes.value(route, Response{R"({"status":404})", 404}), this);
     }
 };
@@ -123,7 +128,7 @@ QJsonObject searchBody() {
 }
 
 void configureSearch(FakeManager &manager) {
-    manager.routes.insert(QStringLiteral("/search"), {json(searchBody())});
+    manager.routes.insert(QStringLiteral("/api/music/kugou/v1/search"), {json(searchBody())});
 }
 
 void configureSearchWithCover(FakeManager &manager, const QString &coverUrl) {
@@ -135,7 +140,7 @@ void configureSearchWithCover(FakeManager &manager, const QString &coverUrl) {
     rows[0] = song;
     data.insert(QStringLiteral("lists"), rows);
     body.insert(QStringLiteral("data"), data);
-    manager.routes.insert(QStringLiteral("/search"), {json(body)});
+    manager.routes.insert(QStringLiteral("/api/music/kugou/v1/search"), {json(body)});
 }
 
 bool hasEvent(const QSignalSpy &spy, const QString &name) {
@@ -163,6 +168,8 @@ class KugouMusicTest final : public QObject {
         QVERIFY(AppPaths::saveSetting("kugou", QJsonObject{{"enabled", true}, {"worker_url", "https://worker.example"}}));
     }
     void configurationDefaultsPersistenceAndRequestGating();
+    void migratesLegacyWorkerOrigin_data();
+    void migratesLegacyWorkerOrigin();
     void rejectsInsecureWorkerUrl();
     void storesAndClearsPrivateKey();
     void searchResultsCarryTrustedCovers();
@@ -182,7 +189,7 @@ void KugouMusicTest::configurationDefaultsPersistenceAndRequestGating() {
     qputenv("KUGOU_MUSIC_API_URL", "https://ignored.example");
     QTemporaryDir dir;
     FakeManager manager;
-    manager.routes.insert("/search", {json(searchBody())});
+    manager.routes.insert("/api/music/kugou/v1/search", {json(searchBody())});
     KugouMusicService service(nullptr, &manager, {}, dir.filePath("session"),
                               dir.filePath("music"), dir.filePath("key"));
     qunsetenv("KUGOU_MUSIC_API_URL");
@@ -202,6 +209,7 @@ void KugouMusicTest::configurationDefaultsPersistenceAndRequestGating() {
     QCOMPARE(failures.count(), 1);
     QVERIFY(manager.calls.isEmpty());
     for (const QString url : {"", "http://worker.example", "https://worker.example/api",
+                              "https://luy-music-api.lyuy.workers.dev/api/music/kugou/v1",
                               "https://user:pass@worker.example", "https://worker.example?key=value",
                               "https://worker.example#fragment", "not a URL"}) {
         QVERIFY(!service.saveConfiguration(true, url).isEmpty());
@@ -216,7 +224,7 @@ void KugouMusicTest::configurationDefaultsPersistenceAndRequestGating() {
     QCOMPARE(service.startSearch("Song", 1), QString());
     QVERIFY(!service.saveConfiguration(false, "https://first.example").isEmpty());
     QTRY_VERIFY(hasEvent(events, "kugou.search_results"));
-    QCOMPARE(manager.requestedUrls.value("/search").host(), QString("first.example"));
+    QCOMPARE(manager.requestedUrls.value("/api/music/kugou/v1/search").host(), QString("first.example"));
     lyrics.request(query, 2, true);
     QTRY_COMPARE(candidates.count(), 1);
     const auto oldCandidates = candidates.first().at(1).value<QVector<LyricsCandidate>>();
@@ -226,10 +234,10 @@ void KugouMusicTest::configurationDefaultsPersistenceAndRequestGating() {
     QCOMPARE(failures.count(), 2);
     QCOMPARE(service.startSearch("Song", 1), QString());
     QTRY_VERIFY(!service.status().busy);
-    QCOMPARE(manager.requestedUrls.value("/search").host(), QString("second.example"));
+    QCOMPARE(manager.requestedUrls.value("/api/music/kugou/v1/search").host(), QString("second.example"));
     lyrics.request(query, 4, true);
     QTRY_COMPARE(candidates.count(), 2);
-    QCOMPARE(manager.requestedUrls.value("/search").host(), QString("second.example"));
+    QCOMPARE(manager.requestedUrls.value("/api/music/kugou/v1/search").host(), QString("second.example"));
     QCOMPARE(service.saveConfiguration(false, "https://second.example"), QString());
     const auto calls = manager.calls;
     QVERIFY(!service.startSearch("Song", 1).isEmpty());
@@ -252,6 +260,69 @@ void KugouMusicTest::configurationDefaultsPersistenceAndRequestGating() {
              QString("https://second.example"));
     QCOMPARE(service.saveConfiguration(false, ""), QString());
     QVERIFY(service.status().workerUrl.isEmpty());
+}
+
+void KugouMusicTest::migratesLegacyWorkerOrigin_data() {
+    QTest::addColumn<QString>("origin");
+    QTest::addColumn<QString>("expectedOrigin");
+    QTest::addColumn<bool>("enabled");
+    QTest::newRow("legacy") << QStringLiteral("https://kugou-lyrics-api.lyuy.workers.dev")
+                            << QStringLiteral("https://luy-music-api.lyuy.workers.dev") << true;
+    QTest::newRow("legacy-trailing-slash") << QStringLiteral("https://kugou-lyrics-api.lyuy.workers.dev/")
+                                           << QStringLiteral("https://luy-music-api.lyuy.workers.dev") << true;
+    QTest::newRow("legacy-disabled") << QStringLiteral("https://kugou-lyrics-api.lyuy.workers.dev")
+                                     << QStringLiteral("https://luy-music-api.lyuy.workers.dev") << false;
+    QTest::newRow("new-trailing-slash") << QStringLiteral("https://luy-music-api.lyuy.workers.dev/")
+                                        << QStringLiteral("https://luy-music-api.lyuy.workers.dev") << true;
+    QTest::newRow("custom") << QStringLiteral("https://custom.example:8443/") << QStringLiteral("https://custom.example:8443") << true;
+    QTest::newRow("loopback") << QStringLiteral("http://127.0.0.1:8787/") << QStringLiteral("http://127.0.0.1:8787") << true;
+}
+
+void KugouMusicTest::migratesLegacyWorkerOrigin() {
+    QFETCH(QString, origin);
+    QFETCH(QString, expectedOrigin);
+    QFETCH(bool, enabled);
+    const QJsonObject stored{{"enabled", enabled}, {"worker_url", origin}};
+    QVERIFY(AppPaths::saveSetting("kugou", stored));
+    QTemporaryDir dir;
+    FakeManager manager;
+    configureSearch(manager);
+    KugouMusicService service(nullptr, &manager, {}, dir.filePath("session"),
+                              dir.filePath("music"), dir.filePath("key"));
+    QCOMPARE(service.status().workerUrl, expectedOrigin);
+    QCOMPARE(service.status().enabled, enabled);
+    QCOMPARE(AppPaths::setting("kugou").toObject(), stored);
+
+    KugouProvider lyrics(nullptr, &manager);
+    QSignalSpy candidates(&lyrics, &KugouProvider::completed);
+    QSignalSpy failures(&lyrics, &KugouProvider::failed);
+    LyricsQuery query;
+    query.title = QStringLiteral("晴天 & +");
+    if (enabled) {
+        QSignalSpy events(&service, &KugouMusicService::eventReady);
+        QCOMPARE(service.startSearch(query.title, 2), QString());
+        QTRY_VERIFY(hasEvent(events, "kugou.search_results"));
+        const auto musicUrl = manager.requestedUrls.value("/api/music/kugou/v1/search");
+        QCOMPARE(musicUrl.adjusted(QUrl::RemoveQuery), QUrl(expectedOrigin + "/api/music/kugou/v1/search"));
+        QCOMPARE(QUrlQuery(musicUrl).queryItemValue("keywords", QUrl::FullyDecoded), query.title);
+        QCOMPARE(QUrlQuery(musicUrl).queryItemValue("page"), QString("2"));
+        lyrics.request(query, 1, true);
+        QTRY_COMPARE(candidates.count(), 1);
+        const auto lyricsUrl = manager.requestedUrls.value("/api/music/kugou/v1/search");
+        QCOMPARE(lyricsUrl.adjusted(QUrl::RemoveQuery), QUrl(expectedOrigin + "/api/music/kugou/v1/search"));
+        QCOMPARE(QUrlQuery(lyricsUrl).queryItemValue("keywords", QUrl::FullyDecoded), query.title);
+        QCOMPARE(manager.calls.value("/api/music/kugou/v1/search"), 2);
+        QCOMPARE(manager.operations.value("/api/music/kugou/v1/search"), QNetworkAccessManager::GetOperation);
+        QVERIFY(manager.accountHeaders.value("/api/music/kugou/v1/search").isEmpty());
+    } else {
+        QVERIFY(!service.startSearch(query.title, 1).isEmpty());
+        lyrics.request(query, 1, true);
+        QCOMPARE(failures.count(), 1);
+        QVERIFY(manager.calls.isEmpty());
+    }
+    QCOMPARE(service.saveConfiguration(enabled, origin), QString());
+    QCOMPARE(AppPaths::setting("kugou").toObject(),
+             (QJsonObject{{"enabled", enabled}, {"worker_url", expectedOrigin}}));
 }
 
 // Provider artwork is accepted only from the configured trusted image hosts.
@@ -278,7 +349,7 @@ void KugouMusicTest::searchResultsCarryTrustedCovers() {
     rows.append(QJsonObject{{"FileHash", QString(32, 'e')}, {"SongName", "No cover"}});
     data.insert("lists", rows);
     body.insert("data", data);
-    manager.routes.insert("/search", {json(body)});
+    manager.routes.insert("/api/music/kugou/v1/search", {json(body)});
     KugouMusicService service(nullptr, &manager, QUrl("https://worker.example"),
                               dir.filePath("session.json"), dir.filePath("Music"));
     QSignalSpy events(&service, &KugouMusicService::eventReady);
@@ -330,11 +401,11 @@ void KugouMusicTest::storesAndClearsPrivateKey() {
     const auto sessionPath = dir.filePath(QStringLiteral("session.json"));
     const auto musicPath = dir.filePath(QStringLiteral("Music"));
     FakeManager manager;
-    manager.routes.insert(QStringLiteral("/register/dev"),
+    manager.routes.insert(QStringLiteral("/api/music/kugou/v1/register/dev"),
                           {json({{QStringLiteral("status"), 1},
                                  {QStringLiteral("cookies"),
                                   QJsonObject{{QStringLiteral("dfid"), QStringLiteral("device")}}}})});
-    manager.routes.insert(QStringLiteral("/captcha/sent"), {json({{QStringLiteral("status"), 1}})});
+    manager.routes.insert(QStringLiteral("/api/music/kugou/v1/captcha/sent"), {json({{QStringLiteral("status"), 1}})});
     {
         KugouMusicService service(nullptr, &manager, QUrl(QStringLiteral("https://worker.example")),
                                   sessionPath, musicPath, keyPath);
@@ -360,14 +431,14 @@ void KugouMusicTest::storesAndClearsPrivateKey() {
         QSignalSpy events(&service, &KugouMusicService::eventReady);
         QCOMPARE(service.startCodeRequest(QStringLiteral("13800138000")), QString());
         QTRY_VERIFY(hasEvent(events, QStringLiteral("kugou.code_sent")));
-        QCOMPARE(manager.accountHeaders.value(QStringLiteral("/register/dev")), QByteArray("saved-key"));
+        QCOMPARE(manager.accountHeaders.value(QStringLiteral("/api/music/kugou/v1/register/dev")), QByteArray("saved-key"));
         QCOMPARE(service.clearAccountKey(), QString());
         QVERIFY(!QFileInfo::exists(keyPath));
         QVERIFY(!nekotune::toJson(service.status()).value(QStringLiteral("key_saved")).toBool());
         QVERIFY(nekotune::toJson(service.status()).value(QStringLiteral("configured")).toBool());
         QCOMPARE(service.startCodeRequest(QStringLiteral("13800138000")), QString());
-        QTRY_COMPARE(manager.calls.value(QStringLiteral("/captcha/sent")), 2);
-        QCOMPARE(manager.accountHeaders.value(QStringLiteral("/captcha/sent")),
+        QTRY_COMPARE(manager.calls.value(QStringLiteral("/api/music/kugou/v1/captcha/sent")), 2);
+        QCOMPARE(manager.accountHeaders.value(QStringLiteral("/api/music/kugou/v1/captcha/sent")),
                  QByteArray("environment-key"));
     }
 }
@@ -382,13 +453,13 @@ void KugouMusicTest::loginDownloadAndReuseSession() {
     qputenv("KUGOU_ACCOUNT_API_KEY", "test-key");
     QTemporaryDir dir;
     FakeManager manager;
-    manager.routes.insert(QStringLiteral("/register/dev"),
+    manager.routes.insert(QStringLiteral("/api/music/kugou/v1/register/dev"),
                           {json({{QStringLiteral("status"), 1},
                                  {QStringLiteral("cookies"),
                                   QJsonObject{{QStringLiteral("dfid"), QStringLiteral("device")}}}})});
-    manager.routes.insert(QStringLiteral("/captcha/sent"), {json({{QStringLiteral("status"), 1}})});
+    manager.routes.insert(QStringLiteral("/api/music/kugou/v1/captcha/sent"), {json({{QStringLiteral("status"), 1}})});
     manager.routes.insert(
-        QStringLiteral("/login/cellphone"),
+        QStringLiteral("/api/music/kugou/v1/login/cellphone"),
         {json(
             {{QStringLiteral("status"), 1},
              {QStringLiteral("data"), QJsonObject{{QStringLiteral("token"), QStringLiteral("token")},
@@ -397,12 +468,12 @@ void KugouMusicTest::loginDownloadAndReuseSession() {
                                                      {QStringLiteral("userid"), QStringLiteral("123")}}}})});
     configureSearch(manager);
     manager.routes.insert(
-        QStringLiteral("/song/url"),
+        QStringLiteral("/api/music/kugou/v1/song/url"),
         {json({{QStringLiteral("status"), 1},
                {QStringLiteral("url"), QJsonArray{QStringLiteral("https://audio.kugou.com/song.mp3")}}})});
     manager.routes.insert(QStringLiteral("/song.mp3"), {"ID3test-audio", 200, QStringLiteral("audio/mpeg")});
     manager.routes.insert(
-        QStringLiteral("/search/lyric"),
+        QStringLiteral("/api/music/kugou/v1/search/lyric"),
         {json({{QStringLiteral("status"), 200},
                {QStringLiteral("candidates"),
                 QJsonArray{QJsonObject{{QStringLiteral("song"), QStringLiteral("Song")},
@@ -410,7 +481,7 @@ void KugouMusicTest::loginDownloadAndReuseSession() {
                                        {QStringLiteral("duration"), 120000},
                                        {QStringLiteral("id"), 12},
                                        {QStringLiteral("accesskey"), QStringLiteral("abc")}}}}})});
-    manager.routes.insert(QStringLiteral("/lyric"),
+    manager.routes.insert(QStringLiteral("/api/music/kugou/v1/lyric"),
                           {json({{QStringLiteral("decodeContent"), QStringLiteral("[00:01.00]Hello\n")}})});
     const auto binaryKrc =
         QByteArray::fromBase64("a3JjMTjb6lmXhn4OfBi4yEQcISJrCUzGbAZERyO2laxA9/"
@@ -432,8 +503,12 @@ void KugouMusicTest::loginDownloadAndReuseSession() {
     QCOMPARE(nekotune::toJson(service.status()).value(QStringLiteral("logged_in")).toBool(), false);
     QCOMPARE(service.startCodeRequest(QStringLiteral("13800138000")), QString());
     QTRY_VERIFY(hasEvent(events, QStringLiteral("kugou.code_sent")));
-    QCOMPARE(manager.calls.value(QStringLiteral("/register/dev")), 1);
-    QCOMPARE(manager.calls.value(QStringLiteral("/captcha/sent")), 1);
+    QCOMPARE(manager.calls.value(QStringLiteral("/api/music/kugou/v1/register/dev")), 1);
+    QCOMPARE(manager.calls.value(QStringLiteral("/api/music/kugou/v1/captcha/sent")), 1);
+    QCOMPARE(manager.requestBodies.value("/api/music/kugou/v1/captcha/sent").value("mobile").toString(),
+             QString("13800138000"));
+    QCOMPARE(manager.requestBodies.value("/api/music/kugou/v1/captcha/sent")
+                 .value("cookies").toObject().value("dfid").toString(), QString("device"));
     QVERIFY(!QFileInfo::exists(session));
     const auto persisted = systemCredentialStore()->read(session);
     QVERIFY(persisted && persisted.value());
@@ -452,6 +527,23 @@ void KugouMusicTest::loginDownloadAndReuseSession() {
     QCOMPARE(service.startDownload(QString::fromLatin1(kHash)), QString());
     QTRY_COMPARE(audio.count(), 1);
     const auto path = audio.at(0).at(0).toString();
+    for (const QString route : {"/api/music/kugou/v1/register/dev", "/api/music/kugou/v1/captcha/sent",
+                                 "/api/music/kugou/v1/login/cellphone", "/api/music/kugou/v1/song/url"}) {
+        QCOMPARE(manager.requestedUrls.value(route), QUrl("https://worker.example" + route));
+        QCOMPARE(manager.operations.value(route), QNetworkAccessManager::PostOperation);
+        QCOMPARE(manager.accountHeaders.value(route), QByteArray("test-key"));
+        QVERIFY(manager.requestBodies.value(route).value("cookies").isObject());
+    }
+    const auto songBody = manager.requestBodies.value("/api/music/kugou/v1/song/url");
+    QCOMPARE(songBody.value("cookies").toObject().value("token").toString(), QString("token"));
+    QCOMPARE(songBody.value("cookies").toObject().value("userid").toString(), QString("123"));
+    const auto lyricSearch = manager.requestedUrls.value("/api/music/kugou/v1/search/lyric");
+    QCOMPARE(QUrlQuery(lyricSearch).queryItemValue("hash"), QString::fromLatin1(kHash));
+    QCOMPARE(QUrlQuery(lyricSearch).queryItemValue("duration"), QString("120000"));
+    QVERIFY(manager.accountHeaders.value("/api/music/kugou/v1/search/lyric").isEmpty());
+    QCOMPARE(manager.requestedUrls.value("/download").adjusted(QUrl::RemoveQuery),
+             QUrl("https://lyrics.kugou.com/download"));
+    QVERIFY(manager.accountHeaders.value("/download").isEmpty());
     QCOMPARE(path, QDir(music).filePath("000001/000001.mp3"));
     QCOMPARE(audio.at(0).at(1).toString(), QStringLiteral("saved"));
     QVERIFY(QFileInfo(path).isFile());
@@ -507,7 +599,7 @@ void KugouMusicTest::rejectsPermissionRedirectAndNonAudio() {
     QCOMPARE(service.startSearch(QStringLiteral("Song"), 1), QString());
     QTRY_VERIFY(hasEvent(events, QStringLiteral("kugou.search_results")));
 
-    manager.routes.insert(QStringLiteral("/song/url"),
+    manager.routes.insert(QStringLiteral("/api/music/kugou/v1/song/url"),
                           {json({{QStringLiteral("status"), 0},
                                  {QStringLiteral("priv_status"), 0},
                                  {QStringLiteral("fail_process"), QJsonArray{QStringLiteral("pkg")}}})});
@@ -516,7 +608,7 @@ void KugouMusicTest::rejectsPermissionRedirectAndNonAudio() {
     QTRY_VERIFY(hasEvent(events, QStringLiteral("kugou.operation_failed")));
 
     manager.routes.insert(
-        QStringLiteral("/song/url"),
+        QStringLiteral("/api/music/kugou/v1/song/url"),
         {json({{QStringLiteral("status"), 1},
                {QStringLiteral("url"), QJsonArray{QStringLiteral("https://audio.kugou.com/song.mp3")}}})});
     manager.routes.insert(
@@ -549,13 +641,13 @@ void KugouMusicTest::reportsSmsAndLoginFailure() {
     qputenv("KUGOU_ACCOUNT_API_KEY", "test-key");
     QTemporaryDir dir;
     FakeManager manager;
-    manager.routes.insert(QStringLiteral("/register/dev"),
+    manager.routes.insert(QStringLiteral("/api/music/kugou/v1/register/dev"),
                           {json({{QStringLiteral("status"), 1},
                                  {QStringLiteral("cookies"),
                                   QJsonObject{{QStringLiteral("dfid"), QStringLiteral("device")}}}})});
-    manager.routes.insert(QStringLiteral("/captcha/sent"),
+    manager.routes.insert(QStringLiteral("/api/music/kugou/v1/captcha/sent"),
                           {json({{QStringLiteral("status"), 0}, {QStringLiteral("error_code"), 400}})});
-    manager.routes.insert(QStringLiteral("/login/cellphone"),
+    manager.routes.insert(QStringLiteral("/api/music/kugou/v1/login/cellphone"),
                           {json({{QStringLiteral("status"), 0}, {QStringLiteral("error_code"), 20028}})});
     KugouMusicService service(nullptr, &manager, QUrl(QStringLiteral("https://worker.example")),
                               dir.filePath(QStringLiteral("session.json")),
@@ -588,7 +680,7 @@ void KugouMusicTest::followsTrustedRedirect() {
     FakeManager manager;
     configureSearch(manager);
     manager.routes.insert(
-        QStringLiteral("/song/url"),
+        QStringLiteral("/api/music/kugou/v1/song/url"),
         {json({{QStringLiteral("status"), 200},
                {QStringLiteral("url"), QJsonArray{QStringLiteral("https://audio.kugou.com/song.mp3")}}})});
     manager.routes.insert(
@@ -596,7 +688,7 @@ void KugouMusicTest::followsTrustedRedirect() {
         {"", 302, QStringLiteral("audio/mpeg"), QUrl(QStringLiteral("https://cdn.kugou.com/final.mp3"))});
     manager.routes.insert(QStringLiteral("/final.mp3"), {"ID3test", 200, QStringLiteral("audio/mpeg")});
     manager.routes.insert(
-        QStringLiteral("/search/lyric"),
+        QStringLiteral("/api/music/kugou/v1/search/lyric"),
         {json({{QStringLiteral("status"), 404}, {QStringLiteral("candidates"), QJsonArray{}}})});
     KugouMusicService service(nullptr, &manager, QUrl(QStringLiteral("https://worker.example")), session,
                               dir.filePath(QStringLiteral("Music")));
@@ -631,7 +723,7 @@ void KugouMusicTest::cancelsAndSkipsAmbiguousLyrics() {
     FakeManager manager;
     configureSearch(manager);
     manager.routes.insert(
-        QStringLiteral("/song/url"),
+        QStringLiteral("/api/music/kugou/v1/song/url"),
         {json({{QStringLiteral("status"), 1},
                {QStringLiteral("url"), QJsonArray{QStringLiteral("https://audio.kugou.com/song.mp3")}}})});
     manager.routes.insert(QStringLiteral("/song.mp3"),
@@ -656,16 +748,16 @@ void KugouMusicTest::cancelsAndSkipsAmbiguousLyrics() {
                                 {QStringLiteral("duration"), 120000},
                                 {QStringLiteral("id"), 1},
                                 {QStringLiteral("accesskey"), QStringLiteral("abc")}};
-    manager.routes.insert(QStringLiteral("/search/lyric"),
+    manager.routes.insert(QStringLiteral("/api/music/kugou/v1/search/lyric"),
                           {json({{QStringLiteral("status"), 200},
                                  {QStringLiteral("candidates"), QJsonArray{candidate, candidate}}})});
     QCOMPARE(service.startDownload(QString::fromLatin1(kHash)), QString());
     QTRY_COMPARE(audio.count(), 1);
     QCOMPARE(audio.at(0).at(1).toString(), QStringLiteral("uncertain"));
-    QCOMPARE(manager.calls.value(QStringLiteral("/lyric")), 0);
+    QCOMPARE(manager.calls.value(QStringLiteral("/api/music/kugou/v1/lyric")), 0);
 
     manager.routes.insert(
-        QStringLiteral("/search/lyric"),
+        QStringLiteral("/api/music/kugou/v1/search/lyric"),
         {json({{QStringLiteral("status"), 200}, {QStringLiteral("candidates"), QJsonArray{candidate}}})});
     manager.routes.insert(
         QStringLiteral("/download"),
@@ -675,7 +767,7 @@ void KugouMusicTest::cancelsAndSkipsAmbiguousLyrics() {
     QCOMPARE(service.cancelDownload(), QString());
     QTRY_COMPARE(audio.count(), 2);
     QCOMPARE(audio.at(1).at(1).toString(), QStringLiteral("skipped"));
-    QCOMPARE(manager.calls.value(QStringLiteral("/lyric")), 0);
+    QCOMPARE(manager.calls.value(QStringLiteral("/api/music/kugou/v1/lyric")), 0);
     const QFileInfo downloaded(audio.at(1).at(0).toString());
     QVERIFY(!QFileInfo::exists(downloaded.absolutePath() + QLatin1Char('/') + downloaded.completeBaseName() +
                                QStringLiteral(".krc")));
@@ -701,12 +793,12 @@ void KugouMusicTest::downloadsCoverAndPreservesExistingFile() {
     FakeManager manager;
     configureSearchWithCover(manager, QStringLiteral("http://imge.kugou.com/stdmusic/{size}/cover.jpg"));
     manager.routes.insert(
-        QStringLiteral("/song/url"),
+        QStringLiteral("/api/music/kugou/v1/song/url"),
         {json({{QStringLiteral("status"), 1},
                {QStringLiteral("url"), QJsonArray{QStringLiteral("https://audio.kugou.com/song.mp3")}}})});
     manager.routes.insert(QStringLiteral("/song.mp3"), {"ID3audio", 200, QStringLiteral("audio/mpeg")});
     manager.routes.insert(
-        QStringLiteral("/search/lyric"),
+        QStringLiteral("/api/music/kugou/v1/search/lyric"),
         {json({{QStringLiteral("status"), 404}, {QStringLiteral("candidates"), QJsonArray{}}})});
     QImage image(2, 2, QImage::Format_RGB32);
     image.fill(Qt::red);
@@ -762,12 +854,12 @@ void KugouMusicTest::rejectsInvalidCoverWithoutLosingAudio() {
     FakeManager manager;
     configureSearchWithCover(manager, QStringLiteral("https://imge.kugou.com/stdmusic/{size}/bad.jpg"));
     manager.routes.insert(
-        QStringLiteral("/song/url"),
+        QStringLiteral("/api/music/kugou/v1/song/url"),
         {json({{QStringLiteral("status"), 1},
                {QStringLiteral("url"), QJsonArray{QStringLiteral("https://audio.kugou.com/song.mp3")}}})});
     manager.routes.insert(QStringLiteral("/song.mp3"), {"ID3audio", 200, QStringLiteral("audio/mpeg")});
     manager.routes.insert(
-        QStringLiteral("/search/lyric"),
+        QStringLiteral("/api/music/kugou/v1/search/lyric"),
         {json({{QStringLiteral("status"), 404}, {QStringLiteral("candidates"), QJsonArray{}}})});
     manager.routes.insert(QStringLiteral("/stdmusic/240/bad.jpg"),
                           {"<html>not image</html>", 200, QStringLiteral("image/jpeg")});
@@ -787,7 +879,7 @@ void KugouMusicTest::rejectsInvalidCoverWithoutLosingAudio() {
                  .exists());
     configureSearchWithCover(manager, QStringLiteral("https://evil.example/cover.jpg"));
     QCOMPARE(service.startSearch(QStringLiteral("Song"), 1), QString());
-    QTRY_VERIFY(manager.calls.value(QStringLiteral("/search")) == 2);
+    QTRY_VERIFY(manager.calls.value(QStringLiteral("/api/music/kugou/v1/search")) == 2);
     QTRY_VERIFY(!nekotune::toJson(service.status()).value(QStringLiteral("busy")).toBool());
     QCOMPARE(service.startDownload(QString::fromLatin1(kHash)), QString());
     QTRY_COMPARE(audio.count(), 2);
@@ -802,7 +894,7 @@ void KugouMusicTest::rejectsInvalidCoverWithoutLosingAudio() {
     configureSearchWithCover(manager, QStringLiteral("https://imge.kugou.com/stdmusic/{size}/bad.jpg"));
     manager.routes.insert(QStringLiteral("/stdmusic/240/bad.jpg"), {png, 200, QStringLiteral("image/png")});
     QCOMPARE(service.startSearch(QStringLiteral("Song"), 1), QString());
-    QTRY_VERIFY(manager.calls.value(QStringLiteral("/search")) == 3);
+    QTRY_VERIFY(manager.calls.value(QStringLiteral("/api/music/kugou/v1/search")) == 3);
     QTRY_VERIFY(!nekotune::toJson(service.status()).value(QStringLiteral("busy")).toBool());
     QCOMPARE(service.startDownload(QString::fromLatin1(kHash)), QString());
     QTRY_COMPARE(audio.count(), 3);
