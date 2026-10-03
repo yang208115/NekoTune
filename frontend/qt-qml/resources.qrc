@@ -27,6 +27,7 @@
         <file>qml/components/AiSettingsPanel.qml</file>
         <file>qml/components/TextButton.qml</file>
         <file>qml/components/Theme.qml</file>
+        <file>qml/components/qmldir</file>
         <file>qml/pages/KugouPage.qml</file>
         <file>qml/pages/HomePage.qml</file>
         <file>qml/pages/LibraryPage.qml</file>

@@ -2,15 +2,16 @@ import QtQuick
 import QtTest
 import "../../frontend/qt-qml/qml/components" as PlayerComponents
 
-Item {
+Rectangle {
     id: scene
     width: 800
-    height: 520
+    height: 900
+    color: PlayerComponents.Theme.bgCanvas
 
     QtObject {
         id: fakeTranslator
         property string language: "en"
-        function text(key, language) { return key }
+        function text(key, language) { return testTranslator.text(key, language) }
     }
 
     QtObject {
@@ -19,6 +20,8 @@ Item {
         property var status: ({kugou: {configured: false, key_saved: false, busy: false}})
         property string lastKey: ""
         property int clears: 0
+        property var lastConfiguration: ({})
+        function kugouSaveConfiguration(enabled, url) { lastConfiguration = {enabled: enabled, worker_url: url} }
         signal requestSucceeded(string method)
         signal requestFailed(string method, string reason)
         function kugouSaveKey(key) { lastKey = key }
@@ -47,11 +50,46 @@ Item {
             fakeClient.status = {kugou: {configured: false, key_saved: false, busy: false}}
             fakeClient.lastKey = ""
             fakeClient.clears = 0
+            fakeClient.lastConfiguration = ({})
             panel = createTemporaryObject(panelComponent, scene)
             verify(panel !== null)
         }
 
         function cleanup() { panel = null }
+
+        function test_configurationDefaultsSaveAndFailure() {
+            const toggle = findChild(panel, "kugouEnabledSwitch")
+            const url = findChild(panel, "kugouWorkerUrlField")
+            const save = findChild(panel, "kugouSaveConfigButton")
+            compare(toggle.checked, false)
+            compare(url.text, "")
+            verify(!save.enabled)
+            mouseClick(toggle)
+            verify(!save.enabled)
+            url.text = " https://worker.example "
+            verify(save.enabled)
+            mouseClick(save)
+            compare(fakeClient.lastConfiguration.enabled, true)
+            compare(fakeClient.lastConfiguration.worker_url, "https://worker.example")
+            verify(panel.saving)
+            fakeClient.requestFailed("kugou.config.set", "Cannot save")
+            verify(!panel.saving)
+            verify(panel.failed)
+            compare(toggle.checked, true)
+            compare(url.text, " https://worker.example ")
+            mouseClick(save)
+            fakeClient.status = {kugou: {enabled: true, worker_url: "https://worker.example", busy: false}}
+            fakeClient.requestSucceeded("kugou.config.set")
+            verify(!panel.saving)
+            verify(!panel.configDirty)
+            compare(url.text, "https://worker.example")
+            url.text = "https://new.example"
+            fakeClient.status = {kugou: {enabled: true, worker_url: "https://worker.example", key_saved: true, busy: false}}
+            compare(url.text, "https://new.example")
+            mouseClick(toggle)
+            mouseClick(save)
+            compare(fakeClient.lastConfiguration.enabled, false)
+        }
 
         // The password field holds only newly entered secret text and clears immediately on submit.
         // Saved status arrives from the backend rather than revealing or refilling the key.
@@ -80,6 +118,14 @@ Item {
             fakeClient.status = {kugou: {configured: false, key_saved: false, busy: false}}
             fakeClient.requestSucceeded("kugou.clear_key")
             compare(clear.visible, false)
+            for (const language of ["zh", "en"]) {
+                fakeTranslator.language = language
+                const screenshot = testFixtures.screenshotPath("kugou-settings-" + language)
+                if (screenshot) {
+                    waitForRendering(panel)
+                    grabImage(scene).save(screenshot)
+                }
+            }
         }
     }
 }

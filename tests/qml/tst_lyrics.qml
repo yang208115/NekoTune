@@ -189,6 +189,42 @@ Item {
             compare(word.progress, 0.02)
         }
 
+        function test_krcLineHighlightSwitchesAtBoundary_data() {
+            return [{tag: "paused-seek", playing: false}, {tag: "playing", playing: true}]
+        }
+
+        // A new line takes focus at its timestamp, even when the previous line's duration overlaps.
+        // Word reveal still follows its own interval; a color/opacity fade must not delay the new line.
+        function test_krcLineHighlightSwitchesAtBoundary(data) {
+            lyrics.lines = [
+                {time_ms: 1000, duration_ms: 3000, text: "Previous", words: [
+                    {text: "Previous", time_ms: 1000, duration_ms: 3000}
+                ]},
+                {time_ms: 2000, duration_ms: 1000, text: "Next", words: [
+                    {text: "Next", time_ms: 2000, duration_ms: 1000}
+                ]}
+            ]
+            lyrics.position = 1500
+            lyrics.playing = data.playing
+            wait(360)
+            compare(lyrics.activeIndex, 0)
+            lyrics.position = 2000
+            compare(lyrics.activeIndex, 1)
+            compare(findChild(lyrics, "krcLine1").opacity, 1)
+            compare(findChild(lyrics, "krcLine0").opacity, 0.82)
+            compare(findChild(lyrics, "krcBaseText1_0").color, lyrics.inactiveColor)
+            compare(findChild(lyrics, "krcReveal1_0").children[0].color, lyrics.activeColor)
+            compare(findChild(lyrics, "krcWord1_0").progress, 0)
+
+            lyrics.playing = false
+            lyrics.position = 2250
+            compare(findChild(lyrics, "krcWord1_0").progress, 0.25)
+            lyrics.position = 1500
+            compare(lyrics.activeIndex, 0)
+            compare(findChild(lyrics, "krcLine0").opacity, 1)
+            compare(findChild(lyrics, "krcReveal0_0").children[0].color, lyrics.activeColor)
+        }
+
         // Moving to an adjacent active line should animate rather than snap to its target.
         // An intermediate sample proves that scrolling is still in progress.
         // The final sample checks convergence while preserving the automatic-scroll state.
@@ -210,7 +246,9 @@ Item {
             verify(target > before + 10)
             lyrics.position = 6000
             compare(lyrics.activeIndex, 6)
-            wait(160)
+            wait(50)
+            verify(list.contentY > before + 5, "Following should respond as soon as the line changes")
+            wait(110)
             verify(list.contentY > before + 1)
             verify(list.contentY < target - 1)
             wait(360)

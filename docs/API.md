@@ -249,8 +249,9 @@ NekoTune 使用基于换行分隔的 JSON 协议，通过 Unix domain socket 进
 
 ### 酷狗音乐下载
 
-账号与下载由后端异步处理；以下耗时方法先返回操作受理结果，完成情况通过事件广播。`kugou.status` 返回 `data.kugou`，含 `configured`、`key_saved`、`logged_in`、`busy`、`download_active` 和 `credential_error`，不返回 Cookie 或密钥。`kugou.search` 可匿名使用，其余账号操作需要在设置页保存密钥，或配置 `KUGOU_ACCOUNT_API_KEY` / `KUGOU_ACCOUNT_API_KEY_FILE`。设置页密钥优先，存于系统密钥环；清除后回退到环境配置。
+账号与下载由后端异步处理；以下耗时方法先返回操作受理结果，完成情况通过事件广播。`kugou.status` 返回 `data.kugou`，含 `enabled`、`worker_url`、`configured`、`key_saved`、`logged_in`、`busy`、`download_active` 和 `credential_error`，不返回 Cookie 或密钥。`kugou.search` 可匿名使用，其余账号操作需要在设置页保存密钥，或配置 `KUGOU_ACCOUNT_API_KEY` / `KUGOU_ACCOUNT_API_KEY_FILE`。设置页密钥优先，存于系统密钥环；清除后回退到环境配置。
 
+- `kugou.config.set`：必须传入布尔值 `enabled` 和字符串 `worker_url`；默认关闭、地址为空。启用时必须有有效地址，仅支持 HTTPS origin（回环地址允许 HTTP）。配置原子保存至 `settings.json` 的 `kugou` 对象并立即生效；忙碌或保存失败时保留原配置。关闭后拦截酷狗网络操作并从 `lyrics.sources` 隐藏酷狗，保留凭据。成功广播 `kugou.config_changed`，客户端据此刷新状态和歌词来源。
 - `kugou.save_key`：传入 `key` 字符串，保存到系统密钥环并回读校验后立即生效；响应仅返回密钥配置状态。
 - `kugou.clear_key`：删除设置页保存的密钥，并重新读取启动环境配置；响应仅返回密钥配置状态。
 - `kugou.send_code`：传入 `mobile`，必要时先注册设备，再发送短信验证码。

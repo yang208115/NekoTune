@@ -5,19 +5,19 @@ Button {
     id: button
 
     property bool subtle: false
-    property color lavenderColor: "#CBB8FF"
-    property color subtleBg: "#17141F"
-    property color subtleHoverBg: "#2A2338"
-    property color subtleBorder: "#332C41"
-    property color subtleText: "#D7CFE2"
-    property color primaryText: "#21172F"
-    property real cornerRadius: 8
+    property color lavenderColor: Theme.accentPrimary
+    property color subtleBg: Theme.bgSurface
+    property color subtleHoverBg: Theme.bgHover
+    property color subtleBorder: Theme.borderSubtle
+    property color subtleText: Theme.textSecondary
+    property color primaryText: Theme.textOnAccent
+    property real cornerRadius: Theme.radiusSm
 
     hoverEnabled: true
     implicitHeight: 40
     leftPadding: 16
     rightPadding: 16
-    font.pixelSize: 13
+    font.pixelSize: Theme.fontBody
     font.weight: Font.DemiBold
 
     Accessible.role: Accessible.Button
@@ -26,7 +26,7 @@ Button {
     contentItem: Text {
         textFormat: Text.PlainText
         text: button.text
-        color: !button.enabled ? "#736A83" : button.subtle ? button.subtleText : button.primaryText
+        color: !button.enabled ? Theme.textDisabled : button.subtle ? button.subtleText : button.primaryText
         font: button.font
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
@@ -37,17 +37,17 @@ Button {
         id: bgRect
         radius: button.cornerRadius
         border.width: button.subtle ? 1 : 0
-        border.color: !button.enabled ? "#2A2338"
-                      : button.hovered ? "#8D809F"
+        border.color: !button.enabled ? Theme.bgHover
+                      : button.hovered ? Theme.borderControl
                       : button.subtleBorder
 
-        color: button.subtle ? (!button.enabled ? "#17141F"
-                                : button.down ? "#322743"
+        color: button.subtle ? (!button.enabled ? Theme.bgSurface
+                                : button.down ? Theme.bgSelected
                                 : button.hovered ? button.subtleHoverBg
                                 : button.subtleBg)
-                             : (!button.enabled ? "#332C41"
-                                : button.down ? "#B7A0ED"
-                                : button.hovered ? "#DBCDFF"
+                             : (!button.enabled ? Theme.borderSubtle
+                                : button.down ? Theme.accentPressed
+                                : button.hovered ? Theme.accentHover
                                 : button.lavenderColor)
 
         // Keyboard focus ring (Section 7.1 & 11)
@@ -56,13 +56,13 @@ Button {
             anchors.margins: -4
             radius: bgRect.radius + 4
             color: "transparent"
-            border.color: "#CBB8FF"
+            border.color: Theme.accentPrimary
             border.width: 2
             visible: button.activeFocus
         }
 
         Behavior on color {
-            ColorAnimation { duration: 120 }
+            ColorAnimation { duration: Theme.reducedMotion ? 0 : Theme.durationFast }
         }
     }
 }

@@ -38,7 +38,7 @@ Item {
         Label {
             Layout.fillWidth: true
             text: i18n.text("lyrics", i18n.language) + (document.source ? " · " + document.source : "")
-            color: "#AAA0B8"
+            color: Theme.textMuted
             font.pixelSize: 12
             font.weight: Font.Medium
             elide: Text.ElideRight
@@ -78,7 +78,7 @@ Item {
         text: root.current.cache_warning ? i18n.text("lyrics_cache_warning", i18n.language)
              : root.current.state === "error" ? i18n.text("lyrics_error_" + root.current.error, i18n.language)
              : i18n.text("lyrics_" + (root.current.state || "loading"), i18n.language)
-        color: root.current.state === "error" ? "#FF9BAE" : "#AAA0B8"
+        color: root.current.state === "error" ? Theme.statusError : Theme.textMuted
         wrapMode: Text.Wrap
         textFormat: Text.PlainText
         font.pixelSize: 12
@@ -118,9 +118,9 @@ Item {
         padding: 22
         background: Rectangle {
             objectName: "shortcutBlocker"
-            color: "#211C2D"
-            radius: 16
-            border.color: "#332C41"
+            color: Theme.bgRaised
+            radius: Theme.radiusLg
+            border.color: Theme.borderSubtle
             border.width: 1
         }
 
@@ -133,8 +133,8 @@ Item {
                 Label {
                     Layout.fillWidth: true
                     text: i18n.text("lyrics_search", i18n.language)
-                    color: "#F5F1FA"
-                    font.pixelSize: 18
+                    color: Theme.textPrimary
+                    font.pixelSize: Theme.fontDialogTitle
                     font.weight: Font.DemiBold
                 }
                 IconButton {
@@ -149,15 +149,15 @@ Item {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 40
                 placeholderText: i18n.text("custom_title", i18n.language)
-                color: "#F5F1FA"
-                placeholderTextColor: "#AAA0B8"
+                color: Theme.textPrimary
+                placeholderTextColor: Theme.textMuted
                 leftPadding: 12
                 rightPadding: 12
                 maximumLength: 500
                 background: Rectangle {
-                    radius: 8
-                    color: "#17141F"
-                    border.color: titleField.activeFocus ? "#CBB8FF" : "#8D809F"
+                    radius: Theme.radiusSm
+                    color: Theme.bgSurface
+                    border.color: titleField.activeFocus ? Theme.accentPrimary : Theme.borderControl
                     border.width: 1
                 }
             }
@@ -170,15 +170,15 @@ Item {
                     Layout.fillWidth: true
                     Layout.preferredHeight: 40
                     placeholderText: i18n.text("artist_author", i18n.language)
-                    color: "#F5F1FA"
-                    placeholderTextColor: "#AAA0B8"
+                    color: Theme.textPrimary
+                    placeholderTextColor: Theme.textMuted
                     leftPadding: 12
                     rightPadding: 12
                     maximumLength: 500
                     background: Rectangle {
-                        radius: 8
-                        color: "#17141F"
-                        border.color: artistField.activeFocus ? "#CBB8FF" : "#8D809F"
+                        radius: Theme.radiusSm
+                        color: Theme.bgSurface
+                        border.color: artistField.activeFocus ? Theme.accentPrimary : Theme.borderControl
                         border.width: 1
                     }
                 }
@@ -187,15 +187,15 @@ Item {
                     Layout.fillWidth: true
                     Layout.preferredHeight: 40
                     placeholderText: i18n.text("album", i18n.language)
-                    color: "#F5F1FA"
-                    placeholderTextColor: "#AAA0B8"
+                    color: Theme.textPrimary
+                    placeholderTextColor: Theme.textMuted
                     leftPadding: 12
                     rightPadding: 12
                     maximumLength: 500
                     background: Rectangle {
-                        radius: 8
-                        color: "#17141F"
-                        border.color: albumField.activeFocus ? "#CBB8FF" : "#8D809F"
+                        radius: Theme.radiusSm
+                        color: Theme.bgSurface
+                        border.color: albumField.activeFocus ? Theme.accentPrimary : Theme.borderControl
                         border.width: 1
                     }
                 }
@@ -211,12 +211,12 @@ Item {
                     valueRole: "id"
                     Layout.preferredWidth: 160
                     implicitHeight: 40
-                    palette.button: "#241e31"
-                    palette.buttonText: "#f6f3fa"
-                    palette.text: "#f6f3fa"
-                    palette.base: "#241e31"
-                    palette.highlight: "#4b3e67"
-                    background: Rectangle { color: "#17141F"; radius: 8; border.color: sourceBox.activeFocus ? "#CBB8FF" : "#8D809F" }
+                    palette.buttonText: Theme.textPrimary
+                    palette.text: Theme.textPrimary
+                    palette.base: Theme.bgSurface
+                    palette.highlight: Theme.accentPrimary
+                    palette.highlightedText: Theme.textOnAccent
+                    background: Rectangle { color: Theme.bgSurface; radius: Theme.radiusSm; border.color: sourceBox.activeFocus ? Theme.accentPrimary : Theme.borderControl }
                     delegate: ItemDelegate {
                         id: sourceDelegate
                         required property var modelData
@@ -224,22 +224,22 @@ Item {
                         width: sourceBox.width - 12
                         text: String(modelData.name)
                         highlighted: sourceBox.highlightedIndex === index
-                        contentItem: Label { text: sourceDelegate.text; textFormat: Text.PlainText; color: "#D7CFE2"; font.pixelSize: 13 }
-                        background: Rectangle { radius: 6; color: sourceDelegate.highlighted ? "#322743" : "transparent" }
+                        contentItem: Label { text: sourceDelegate.text; textFormat: Text.PlainText; color: Theme.textSecondary; font.pixelSize: Theme.fontBodySecondary }
+                        background: Rectangle { radius: 6; color: sourceDelegate.highlighted ? Theme.bgSelected : "transparent" }
                     }
                     popup: Popup {
                         y: sourceBox.height + 4
                         width: sourceBox.width
                         padding: 6
                         implicitHeight: Math.min(contentItem.implicitHeight + 12, 240)
-                        background: Rectangle { objectName: "shortcutBlocker"; color: "#211C2D"; radius: 8; border.color: "#332C41" }
+                        background: Rectangle { objectName: "shortcutBlocker"; color: Theme.bgRaised; radius: Theme.radiusSm; border.color: Theme.borderSubtle }
                         contentItem: ListView { clip: true; implicitHeight: contentHeight; model: sourceBox.popup.visible ? sourceBox.delegateModel : null; currentIndex: sourceBox.highlightedIndex; ScrollIndicator.vertical: ScrollIndicator {} }
                     }
                 }
                 CheckBox {
                     id: offlineCheckbox
                     implicitHeight: 40
-                    indicator: Rectangle { width: 18; height: 18; anchors.verticalCenter: parent.verticalCenter; radius: 4; color: offlineCheckbox.checked ? "#CBB8FF" : "#17141F"; border.color: "#8D809F"; Rectangle { width: 8; height: 8; anchors.centerIn: parent; radius: 2; color: "#21172F"; visible: offlineCheckbox.checked } }
+                    indicator: Rectangle { width: 18; height: 18; anchors.verticalCenter: parent.verticalCenter; radius: 4; color: offlineCheckbox.checked ? Theme.accentPrimary : Theme.bgSurface; border.color: Theme.borderControl; Rectangle { width: 8; height: 8; anchors.centerIn: parent; radius: 2; color: Theme.textOnAccent; visible: offlineCheckbox.checked } }
                     text: i18n.text("lyrics_offline_mode", i18n.language)
                     checked: Boolean(root.current.offline)
                     enabled: root.connected
@@ -247,7 +247,7 @@ Item {
                     contentItem: Text {
                         text: offlineCheckbox.text
                         font.pixelSize: 12
-                        color: "#D7CFE2"
+                        color: Theme.textSecondary
                         leftPadding: offlineCheckbox.indicator.width + 6
                         verticalAlignment: Text.AlignVCenter
                     }
@@ -269,7 +269,7 @@ Item {
                       : root.current.state === "candidates" && root.current.search_stage === "songs"
                         ? i18n.text("lyrics_choose_song", i18n.language)
                         : i18n.text("lyrics_" + (root.current.state || "idle"), i18n.language)
-                color: "#AAA0B8"
+                color: Theme.textMuted
                 font.pixelSize: 12
                 wrapMode: Text.Wrap
             }
@@ -277,7 +277,7 @@ Item {
             Rectangle {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 1
-                color: "#282335"
+                color: Theme.borderSubtle
             }
 
             // Candidates List
@@ -291,7 +291,7 @@ Item {
                 ScrollBar.vertical: ScrollBar {
                     policy: ScrollBar.AsNeeded
                     width: 4
-                    contentItem: Rectangle { radius: 2; color: "#363044" }
+                    contentItem: Rectangle { radius: 2; color: Theme.borderSubtle }
                 }
 
                 delegate: Rectangle {
@@ -300,9 +300,9 @@ Item {
                     required property int index
                     width: ListView.view.width
                     height: 58
-                    radius: 8
-                    color: candHover.hovered ? "#241f33" : "#1a1626"
-                    border.color: candHover.hovered ? "#3d3452" : "#262135"
+                    radius: Theme.radiusSm
+                    color: candHover.hovered ? Theme.bgHover : Theme.bgSurface
+                    border.color: candHover.hovered ? Theme.borderControl : Theme.borderSubtle
                     border.width: 1
 
                     HoverHandler { id: candHover; cursorShape: Qt.PointingHandCursor }
@@ -325,15 +325,15 @@ Item {
                             spacing: 6
                             Label {
                                 text: candDelegate.modelData.title || i18n.text("untitled", i18n.language)
-                                color: "#f6f3fa"
-                                font.pixelSize: 13
+                                color: Theme.textPrimary
+                                font.pixelSize: Theme.fontBodySecondary
                                 font.weight: Font.DemiBold
                                 elide: Text.ElideRight
                             }
                             Label {
                                 text: candDelegate.modelData.artist ? "· " + candDelegate.modelData.artist : ""
-                                color: "#cfc8db"
-                                font.pixelSize: 12
+                                color: Theme.textSecondary
+                                font.pixelSize: Theme.fontCaption
                                 elide: Text.ElideRight
                                 Layout.fillWidth: true
                             }
@@ -348,8 +348,8 @@ Item {
                                 Layout.fillWidth: true
                                 text: (candDelegate.modelData.album ? candDelegate.modelData.album + " · " : "")
                                       + (candDelegate.modelData.duration ? Math.round(Number(candDelegate.modelData.duration) / 1000) + "s" : "")
-                                color: "#AAA0B8"
-                                font.pixelSize: 11
+                                color: Theme.textMuted
+                                font.pixelSize: Theme.fontCaption
                                 elide: Text.ElideRight
                             }
 
@@ -357,15 +357,15 @@ Item {
                                 Layout.preferredHeight: 18
                                 Layout.preferredWidth: typeLabel.implicitWidth + 10
                                 radius: 4
-                                color: candDelegate.modelData.synced ? "#231c36" : "#1c1828"
-                                border.color: candDelegate.modelData.synced ? "#3f335e" : "#2c263d"
+                                color: candDelegate.modelData.synced ? Theme.bgSelected : Theme.bgRaised
+                                border.color: candDelegate.modelData.synced ? Theme.borderControl : Theme.borderSubtle
 
                                 Label {
                                     id: typeLabel
                                     anchors.centerIn: parent
                                     text: i18n.text(candDelegate.modelData.song_result ? "lyrics_song_version" : candDelegate.modelData.instrumental ? "lyrics_instrumental" : candDelegate.modelData.synced ? "lyrics_synced" : "lyrics_plain", i18n.language)
-                                    color: candDelegate.modelData.synced ? "#cbb8ff" : "#8e879c"
-                                    font.pixelSize: 10
+                                    color: candDelegate.modelData.synced ? Theme.accentPrimary : Theme.textMuted
+                                    font.pixelSize: Theme.fontCaption
                                     font.weight: Font.Medium
                                 }
                             }
@@ -379,9 +379,9 @@ Item {
                         anchors.verticalCenter: parent.verticalCenter
                         width: 42
                         height: 42
-                        radius: 5
+                        radius: 6
                         clip: true
-                        color: "#211b2c"
+                        color: Theme.bgSurface
                         Image {
                             anchors.fill: parent
                             source: "qrc:/artwork/default-cover.png"

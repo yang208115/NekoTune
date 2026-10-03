@@ -19,6 +19,7 @@ class KugouApiClient final : public QObject {
     using JsonCallback = std::function<void(const QJsonObject &, const QString &)>;
     KugouApiClient(QNetworkAccessManager &manager, QUrl baseUrl, KugouAccountSession &account)
         : m_manager(&manager), m_baseUrl(std::move(baseUrl)), m_account(account) {}
+    void setBaseUrl(const QUrl &url) { m_baseUrl = url; }
     void requestJson(const QString &route, const QJsonObject &body, JsonCallback callback);
     void accountRequest(const QString &route, const QJsonObject &body, JsonCallback callback);
     void cancel();

@@ -24,14 +24,13 @@ Rectangle {
     function t(key) { return translator.text(key, translator.language) }
     height: 72
     radius: 10
-    color: selected ? palette.bgSelected : hover.hovered ? palette.bgHover
-                                                        : rowIndex % 2 ? "#19151F" : palette.bgSurface
-    border.color: activeFocus ? palette.accentPrimary : selected ? "#66547F" : "transparent"
+    color: selected ? Theme.bgSelected : hover.hovered ? Theme.bgHover
+                                                        : rowIndex % 2 ? Theme.bgRaised : Theme.bgSurface
+    border.color: activeFocus ? Theme.accentPrimary : selected ? Theme.borderControl : "transparent"
     activeFocusOnTab: true
     Accessible.role: Accessible.ListItem
     Accessible.name: String(song.title || t("untitled")) + ", " + String(song.artist || "")
     Accessible.selected: selected
-    Theme { id: palette }
     HoverHandler { id: hover }
     ToolTip.visible: hover.hovered
     ToolTip.text: String(song.title || "") + "\n" + String(song.artist || "")
@@ -48,7 +47,7 @@ Rectangle {
     Rectangle {
         x: 0; width: 3; height: 24; radius: 1.5
         anchors.verticalCenter: parent.verticalCenter
-        color: palette.accentPrimary
+        color: Theme.accentPrimary
         visible: row.selected
     }
     RowLayout {
@@ -60,13 +59,13 @@ Rectangle {
             text: String(row.rowIndex + 1).padStart(2, "0")
             horizontalAlignment: Text.AlignHCenter
             font.pixelSize: 12
-            color: row.selected ? palette.accentPrimary : palette.textMuted
+            color: row.selected ? Theme.accentPrimary : Theme.textMuted
         }
         Rectangle {
             Layout.preferredWidth: 48; Layout.preferredHeight: 48
             radius: 8
-            color: palette.bgRaised
-            border.color: palette.borderSubtle
+            color: Theme.bgRaised
+            border.color: Theme.borderSubtle
             Image { anchors.fill: parent; anchors.margins: 3; source: "qrc:/artwork/default-cover.png"; fillMode: Image.PreserveAspectCrop; mipmap: true }
             Image {
                 // Keep the default artwork underneath throughout asynchronous loading or failure.
@@ -91,7 +90,7 @@ Rectangle {
                 Layout.fillWidth: true; Layout.minimumWidth: 0
                 text: row.song.title || row.t("untitled")
                 textFormat: Text.PlainText
-                color: row.selected ? palette.accentPrimary : palette.textPrimary
+                color: row.selected ? Theme.accentPrimary : Theme.textPrimary
                 font.pixelSize: 14; font.weight: Font.DemiBold
                 elide: Text.ElideRight
             }
@@ -111,7 +110,7 @@ Rectangle {
             visible: !row.compact
             artist: String(row.song.artist || "")
             fallbackText: row.t("unknown_artist")
-            color: palette.textSecondary
+            color: Theme.textSecondary
             font.pixelSize: 13
         }
         Label {
@@ -121,7 +120,7 @@ Rectangle {
             visible: !row.compact
             text: row.song.album || "—"
             textFormat: Text.PlainText
-            color: palette.textMuted; font.pixelSize: 13
+            color: Theme.textMuted; font.pixelSize: 13
             elide: Text.ElideRight
         }
         Label {
@@ -134,7 +133,7 @@ Rectangle {
                 return Math.floor(seconds / 60) + ":" + ("0" + seconds % 60).slice(-2)
             }
             horizontalAlignment: Text.AlignRight
-            color: palette.textMuted; font.pixelSize: 12
+            color: Theme.textMuted; font.pixelSize: 12
         }
         TextButton {
             objectName: "kugouDownloadButton"
@@ -143,9 +142,9 @@ Rectangle {
             text: row.t("kugou_download")
             enabled: row.downloadEnabled
             subtle: true
-            subtleBg: row.selected ? "#40324F" : "#211C2D"
-            subtleBorder: row.selected ? "#8D72AF" : palette.borderSubtle
-            subtleText: palette.accentPrimary
+            subtleBg: row.selected ? Theme.bgSelected : Theme.bgRaised
+            subtleBorder: row.selected ? Theme.borderControl : Theme.borderSubtle
+            subtleText: Theme.accentPrimary
             onClicked: row.downloadRequested()
         }
     }

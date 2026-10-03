@@ -49,7 +49,7 @@ Rectangle {
         when: windowShown
         property var panel
         function init() {
-            fakeClient.account = {configured: true, logged_in: false, busy: false, credential_error: ""}
+            fakeClient.account = {enabled: true, configured: true, logged_in: false, busy: false, credential_error: ""}
             fakeClient.downloads = []; fakeClient.searches = []
             scene.width = 820; scene.height = 500
             panel = createTemporaryObject(component, scene)
@@ -82,7 +82,7 @@ Rectangle {
             tryCompare(popup, "opened", true)
             popup.close()
             tryCompare(popup, "opened", false)
-            fakeClient.account = {configured: true, logged_in: true, busy: false, credential_error: ""}
+            fakeClient.account = {enabled: true, configured: true, logged_in: true, busy: false, credential_error: ""}
             compare(button.text, "已登录")
             compare(button.visible, true)
             compare(visibleLoginButtons(panel), 0)
@@ -91,7 +91,7 @@ Rectangle {
         // A locked or unconfigured credential store must remain visible to the user.
         // It must not remove the account entry needed to resolve the configuration problem.
         function test_errorAndUnconfiguredEntry() {
-            fakeClient.account = {configured: false, logged_in: false, busy: false, credential_error: "locked"}
+            fakeClient.account = {enabled: true, configured: false, logged_in: false, busy: false, credential_error: "locked"}
             tryCompare(findChild(panel, "kugouCredentialError"), "visible", true)
             compare(visibleLoginButtons(panel), 1)
             mouseClick(findChild(panel, "kugouAccountButton"))
@@ -129,7 +129,7 @@ Rectangle {
         function test_responsiveColumnsAndDownloadsDoNotSelectRows() {
             scene.width = 1360; scene.height = 700
             panel.submittedQuery = "STAGE OF SEKAI"
-            fakeClient.account = {configured: true, logged_in: true, busy: false}
+            fakeClient.account = {enabled: true, configured: true, logged_in: true, busy: false}
             fakeClient.kugouEvent({event: "kugou.search_results", page: 1, songs: [
                 {hash: "a", title: "A very long song title that needs to fit alongside every other column", artist: "Orangestar,初音ミク", album: "A very long album title that must stay within the album column", duration_ms: 180000},
                 {hash: "b", title: "Another song", artist: "Singer", album: "Album", duration_ms: 200000}

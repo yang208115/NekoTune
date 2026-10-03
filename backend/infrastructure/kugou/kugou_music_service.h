@@ -20,6 +20,7 @@ class KugouMusicService final : public IKugouBackend {
     ~KugouMusicService() override;
     KugouStatus status() const override;
     void shutdown();
+    QString saveConfiguration(bool enabled, const QString &workerUrl) override;
     QString saveAccountKey(const QString &key) override;
     QString clearAccountKey() override;
     QString startCodeRequest(const QString &mobile) override;
@@ -39,6 +40,7 @@ class KugouMusicService final : public IKugouBackend {
     std::unique_ptr<KugouDownloadJob> m_download;
     QHash<QString, KugouSong> m_songs;
     KugouSong m_selected;
+    bool m_enabled = false;
     bool m_busy = false, m_downloadActive = false, m_cancelled = false;
     std::function<Result<QString>(const QString &, const QString &)> m_destination;
 };

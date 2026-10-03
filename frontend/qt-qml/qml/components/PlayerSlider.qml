@@ -9,8 +9,8 @@ import QtQuick.Controls
 Slider {
     id: slider
 
-    property color activeColor: "#CBB8FF"
-    property color baseColor: "#332C41"
+    property color activeColor: Theme.accentPrimary
+    property color baseColor: Theme.borderSubtle
 
     implicitHeight: 32
     hoverEnabled: true
@@ -53,8 +53,8 @@ Slider {
             width: slider.pressed || slider.hovered ? 14 : 10
             height: width
             radius: width / 2
-            color: "#F5F1FA"
-            border.color: "#21172F"
+            color: Theme.textPrimary
+            border.color: Theme.textOnAccent
             border.width: 2
 
             // Focus ring (Section 7.1 & 11)
@@ -63,7 +63,7 @@ Slider {
                 anchors.margins: -4
                 radius: parent.radius + 4
                 color: "transparent"
-                border.color: "#CBB8FF"
+                border.color: Theme.accentPrimary
                 border.width: 2
                 visible: slider.activeFocus
             }

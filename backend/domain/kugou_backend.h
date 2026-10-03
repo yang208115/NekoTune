@@ -18,6 +18,8 @@ struct KugouStatus {
     bool busy = false;
     bool downloadActive = false;
     QString credentialError;
+    bool enabled = false;
+    QString workerUrl;
 };
 
 /// hash is a provider identity, not the local audio SHA-256.
@@ -35,6 +37,7 @@ struct KugouSearchItem {
 };
 
 enum class KugouEventType {
+    ConfigChanged,
     CodeSent,
     LoggedIn,
     OperationFailed,
@@ -71,6 +74,7 @@ class IKugouBackend : public QObject {
   public:
     using QObject::QObject;
     virtual KugouStatus status() const = 0;
+    virtual QString saveConfiguration(bool enabled, const QString &workerUrl) = 0;
     virtual QString saveAccountKey(const QString &key) = 0;
     virtual QString clearAccountKey() = 0;
     virtual QString startCodeRequest(const QString &mobile) = 0;

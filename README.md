@@ -113,7 +113,9 @@ NEKOTUNE_SOCKET="$nekotune_profile/nekotune.sock" \
 
 ### 酷狗搜索与下载
 
-「酷狗音乐」可匿名搜索，账号操作位于右上角弹窗。发送验证码、登录和下载需要在设置页保存与服务端 `ACCOUNT_API_KEY` 相同的密钥；密钥保存在系统密钥库，界面只显示配置状态。
+酷狗音乐默认关闭，未预设 Worker 地址。在「设置 → 酷狗音乐」填写自己的 Worker 地址、勾选「启用酷狗音乐」并保存后，侧边栏显示酷狗入口，歌词搜索可选择酷狗来源。关闭后不再接受酷狗网络请求，保留已有密钥和登录资料。配置保存后立即生效并在重启后保留。
+
+启用后「酷狗音乐」可匿名搜索，账号操作位于右上角弹窗。发送验证码、登录和下载需要在设置页保存与服务端 `ACCOUNT_API_KEY` 相同的密钥；密钥保存在系统密钥库，界面只显示配置状态。
 
 也可使用 `KUGOU_ACCOUNT_API_KEY` 或 `KUGOU_ACCOUNT_API_KEY_FILE`。设置页保存的密钥优先，清除后回退到启动环境配置：
 
@@ -121,7 +123,7 @@ NEKOTUNE_SOCKET="$nekotune_profile/nekotune.sock" \
 KUGOU_ACCOUNT_API_KEY_FILE=/path/to/private-account-key ./build/nekotune
 ```
 
-密钥文件应仅自己可读。登录会话同样保存在系统密钥库，不读取其他项目的 Cookie。默认服务为 [酷狗 Worker](https://kugou-lyrics-api.lyuy.workers.dev)，可用 `KUGOU_MUSIC_API_URL` 指定服务地址；远程地址要求 HTTPS。
+密钥文件应仅自己可读。登录会话同样保存在系统密钥库，不读取其他项目的 Cookie。Worker 地址仅从设置页配置，远程地址要求 HTTPS，仅本机回环地址允许 HTTP；地址不能包含路径、账号信息、查询参数或片段。
 
 下载使用服务端返回的临时 HTTPS 地址和固定 `128` 音质。可靠匹配时保存 KRC、LRC 和封面，已有下载文件不覆盖；配套资源失败不阻止音频入库。账号、歌曲或设备限制可能导致下载失败，具体原因由界面提示。当前没有 VIP 领取或升级操作。
 
@@ -167,7 +169,6 @@ KUGOU_ACCOUNT_API_KEY_FILE=/path/to/private-account-key ./build/nekotune
 | `NEKOTUNE_LANGUAGE` | 指定 `zh`／`en`，优先于保存的设置和系统语言 |
 | `KUGOU_ACCOUNT_API_KEY` | 设置酷狗服务密钥 |
 | `KUGOU_ACCOUNT_API_KEY_FILE` | 从私有文件读取酷狗服务密钥 |
-| `KUGOU_MUSIC_API_URL` | 覆盖酷狗服务地址 |
 
 ## 开发与验证
 

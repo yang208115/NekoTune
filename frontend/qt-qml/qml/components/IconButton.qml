@@ -7,13 +7,13 @@ Button {
     property string kind: "dot"
     property string tooltipText: ""
     property color fillColor: "transparent"
-    property color hoverColor: "#2A2338"
-    property color pressedColor: "#322743"
+    property color hoverColor: Theme.bgHover
+    property color pressedColor: Theme.bgSelected
     property color borderColor: "transparent"
-    property color glyphColor: "#AAA0B8"
-    property color hoverGlyphColor: "#F5F1FA"
+    property color glyphColor: Theme.textMuted
+    property color hoverGlyphColor: Theme.textPrimary
     property real iconSize: 18
-    property real cornerRadius: 8
+    property real cornerRadius: Theme.radiusSm
 
     hoverEnabled: true
     implicitWidth: 40
@@ -33,7 +33,7 @@ Button {
         height: button.iconSize
         antialiasing: true
 
-        readonly property color currentStrokeColor: !button.enabled ? "#736A83"
+        readonly property color currentStrokeColor: !button.enabled ? Theme.textDisabled
                                                     : button.hovered ? button.hoverGlyphColor
                                                     : button.glyphColor
 
@@ -46,7 +46,7 @@ Button {
             const col = currentStrokeColor
             ctx.strokeStyle = col
             ctx.fillStyle = col
-            ctx.lineWidth = 1.6
+            ctx.lineWidth = 1.8
             ctx.lineCap = "round"
             ctx.lineJoin = "round"
 
@@ -259,13 +259,13 @@ Button {
             anchors.margins: -4
             radius: bgRect.radius + 4
             color: "transparent"
-            border.color: "#CBB8FF"
+            border.color: Theme.accentPrimary
             border.width: 2
             visible: button.activeFocus
         }
 
         Behavior on color {
-            ColorAnimation { duration: 120 }
+            ColorAnimation { duration: Theme.reducedMotion ? 0 : Theme.durationFast }
         }
     }
 }

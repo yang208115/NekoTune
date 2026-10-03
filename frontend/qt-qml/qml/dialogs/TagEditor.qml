@@ -42,14 +42,20 @@ Popup {
     closePolicy: pending ? Popup.NoAutoClose : Popup.CloseOnEscape
     padding: 18
     background: Rectangle {
-            objectName: "shortcutBlocker"; color: tagEditor.shell.surfaceRaised; radius: 14; border.color: tagEditor.shell.border }
+        objectName: "shortcutBlocker"
+        color: Theme.bgRaised
+        radius: Theme.radiusLg
+        border.color: Theme.borderSubtle
+        border.width: 1
+    }
     ColumnLayout {
         anchors.fill: parent
         spacing: 10
         Label {
             text: tagEditor.translator.text(tagEditor.tagId ? "rename_tag" : "new_tag", tagEditor.translator.language)
-            color: tagEditor.shell.ink
-            font.pixelSize: 16
+            color: Theme.textPrimary
+            font.pixelSize: Theme.fontDialogTitle
+            font.weight: Font.DemiBold
         }
         InputField {
             id: tagNameField
@@ -57,22 +63,22 @@ Popup {
             enabled: !tagEditor.pending
             maximumLength: 64
             placeholderText: tagEditor.translator.text("tag_name", tagEditor.translator.language)
-            color: tagEditor.shell.ink
-            placeholderTextColor: tagEditor.shell.muted
-            background: Rectangle { color: tagEditor.shell.surface; radius: 8; border.color: tagEditor.shell.borderControl }
+            color: Theme.textPrimary
+            placeholderTextColor: Theme.textMuted
+            background: Rectangle { color: Theme.bgSurface; radius: Theme.radiusSm; border.color: tagNameField.activeFocus ? Theme.accentPrimary : Theme.borderControl }
         }
         Label {
             visible: tagEditor.tagId > 0
             text: tagEditor.translator.text("delete_tag_hint", tagEditor.translator.language)
             wrapMode: Text.WordWrap
-            color: tagEditor.shell.muted
+            color: Theme.textMuted
             font.pixelSize: 11
             Layout.fillWidth: true
         }
         Label {
             visible: Boolean(tagEditor.saveError)
             text: tagEditor.saveError
-            color: tagEditor.shell.rose
+            color: Theme.statusError
             wrapMode: Text.WordWrap
             Layout.fillWidth: true
             font.pixelSize: 11

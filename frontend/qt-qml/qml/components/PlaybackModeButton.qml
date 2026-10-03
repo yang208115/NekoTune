@@ -45,7 +45,7 @@ IconButton {
         }
         background: Rectangle {
             objectName: "shortcutBlocker"
-            color: "#211C2D"; radius: 12; border.color: "#332C41"
+            color: Theme.bgRaised; radius: Theme.radiusMd; border.color: Theme.borderSubtle
         }
         contentItem: Column {
             spacing: 2
@@ -65,9 +65,9 @@ IconButton {
                     width: parent.width
                     text: (selected ? "✓  " : "    ") + button.t("playback_mode_" + modelData)
                     subtle: true
-                    subtleBg: modeMenu.currentIndex === index ? "#322743" : "transparent"
+                    subtleBg: modeMenu.currentIndex === index ? Theme.bgSelected : "transparent"
                     subtleBorder: "transparent"
-                    subtleText: selected ? "#CBB8FF" : "#D7CFE2"
+                    subtleText: selected ? Theme.accentPrimary : Theme.textSecondary
                     Accessible.role: Accessible.MenuItem
                     Accessible.name: button.t("playback_mode_" + modelData)
                     Accessible.checkable: true

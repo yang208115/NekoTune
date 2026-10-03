@@ -26,9 +26,9 @@ Rectangle {
     // The format helpers distinguish absence from a legitimate timestamp of zero.
     readonly property var nextLine: activeIndex >= 0 && activeIndex + 1 < lines.length ? lines[activeIndex + 1] : ({})
 
-    color: "#11151b"
-    radius: 14
-    border.color: "#e8a9c3"
+    color: Theme.bgSurface
+    radius: Theme.radiusMd
+    border.color: Theme.borderSubtle
     border.width: 1
     ColumnLayout {
         anchors.fill: parent
@@ -41,13 +41,13 @@ Rectangle {
             Label {
                 Layout.fillWidth: true
                 text: root.tr("lyrics_debug_page")
-                color: "#e8a9c3"
+                color: Theme.accentSecondary
                 font.bold: true
                 font.pixelSize: 18
             }
             Label {
                 text: "--lyrics-debug"
-                color: "#89929a"
+                color: Theme.textMuted
                 font.pixelSize: 11
             }
         }
@@ -58,29 +58,29 @@ Rectangle {
             columnSpacing: 10
             rowSpacing: 3
 
-            Label { text: "state"; color: "#89929a" }
-            Label { Layout.fillWidth: true; text: root.playbackState; color: "#f7f4ed"; elide: Text.ElideRight }
-            Label { text: "lyrics"; color: "#89929a" }
-            Label { Layout.fillWidth: true; text: String(root.lyrics.state || "-") + " / " + String(root.document.source || "-"); color: "#f7f4ed"; elide: Text.ElideRight }
+            Label { text: "state"; color: Theme.textMuted }
+            Label { Layout.fillWidth: true; text: root.playbackState; color: Theme.textPrimary; elide: Text.ElideRight }
+            Label { text: "lyrics"; color: Theme.textMuted }
+            Label { Layout.fillWidth: true; text: String(root.lyrics.state || "-") + " / " + String(root.document.source || "-"); color: Theme.textPrimary; elide: Text.ElideRight }
 
-            Label { text: "position"; color: "#89929a" }
-            Label { Layout.fillWidth: true; text: root.formatMs(root.position) + " (" + String(Math.round(root.position)) + " ms)"; color: "#f7f4ed"; elide: Text.ElideRight }
-            Label { text: "duration"; color: "#89929a" }
-            Label { Layout.fillWidth: true; text: root.formatMs(root.duration) + " (" + String(Math.round(root.duration)) + " ms)"; color: "#f7f4ed"; elide: Text.ElideRight }
+            Label { text: "position"; color: Theme.textMuted }
+            Label { Layout.fillWidth: true; text: root.formatMs(root.position) + " (" + String(Math.round(root.position)) + " ms)"; color: Theme.textPrimary; elide: Text.ElideRight }
+            Label { text: "duration"; color: Theme.textMuted }
+            Label { Layout.fillWidth: true; text: root.formatMs(root.duration) + " (" + String(Math.round(root.duration)) + " ms)"; color: Theme.textPrimary; elide: Text.ElideRight }
 
-            Label { text: "active"; color: "#89929a" }
-            Label { Layout.fillWidth: true; text: String(root.activeIndex) + " @ " + root.lineTime(root.activeLine); color: "#f7f4ed"; elide: Text.ElideRight }
-            Label { text: "next"; color: "#89929a" }
-            Label { Layout.fillWidth: true; text: root.lineTime(root.nextLine) + " (Δ " + root.deltaToNext() + ")"; color: "#f7f4ed"; elide: Text.ElideRight }
+            Label { text: "active"; color: Theme.textMuted }
+            Label { Layout.fillWidth: true; text: String(root.activeIndex) + " @ " + root.lineTime(root.activeLine); color: Theme.textPrimary; elide: Text.ElideRight }
+            Label { text: "next"; color: Theme.textMuted }
+            Label { Layout.fillWidth: true; text: root.lineTime(root.nextLine) + " (Δ " + root.deltaToNext() + ")"; color: Theme.textPrimary; elide: Text.ElideRight }
 
-            Label { text: "track"; color: "#89929a" }
-            Label { Layout.columnSpan: 3; Layout.fillWidth: true; text: String(root.song.title || "-") + " · " + String(root.song.artist || "-"); color: "#f7f4ed"; elide: Text.ElideRight }
+            Label { text: "track"; color: Theme.textMuted }
+            Label { Layout.columnSpan: 3; Layout.fillWidth: true; text: String(root.song.title || "-") + " · " + String(root.song.artist || "-"); color: Theme.textPrimary; elide: Text.ElideRight }
         }
 
         Label {
             Layout.fillWidth: true
             text: "Current: " + String(root.activeLine.text || "(none)")
-            color: "#cbb8ff"
+            color: Theme.accentPrimary
             elide: Text.ElideRight
             textFormat: Text.PlainText
         }
@@ -102,8 +102,8 @@ Rectangle {
                 objectName: "debugLine" + index
                 width: lineList.width - 12
                 height: 26
-                radius: 5
-                color: lineRow.index === root.activeIndex ? "#49384b" : "transparent"
+                radius: Theme.radiusSm
+                color: lineRow.index === root.activeIndex ? Theme.bgSelected : "transparent"
 
                 HoverHandler { cursorShape: Qt.PointingHandCursor }
                 TapHandler { onTapped: root.seekRequested(Number(lineRow.modelData.time_ms)) }
@@ -116,13 +116,13 @@ Rectangle {
                     Label {
                         Layout.preferredWidth: 86
                         text: String(lineRow.modelData.time_ms) + " ms"
-                        color: lineRow.index === root.activeIndex ? "#e8a9c3" : "#89929a"
+                        color: lineRow.index === root.activeIndex ? Theme.accentSecondary : Theme.textMuted
                         font.pixelSize: 11
                     }
                     Label {
                         Layout.fillWidth: true
                         text: lineRow.modelData.text
-                        color: lineRow.index === root.activeIndex ? "#f7f4ed" : "#a7adb3"
+                        color: lineRow.index === root.activeIndex ? Theme.textPrimary : Theme.textSecondary
                         elide: Text.ElideRight
                         textFormat: Text.PlainText
                     }

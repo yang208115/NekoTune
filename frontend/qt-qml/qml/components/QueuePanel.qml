@@ -116,8 +116,8 @@ Item {
             ColumnLayout {
                 Layout.fillWidth: true
                 spacing: 5
-                Label { Layout.fillWidth: true; text: root.selectedPlaylist ? root.selectedPlaylist.name : i18n.text("queue", i18n.language); font.pixelSize: root.compact ? 20 : 26; font.weight: Font.DemiBold; color: "#F5F1FA"; elide: Text.ElideRight; textFormat: Text.PlainText }
-                Label { text: i18n.countText("tracks", root.sourceItems.length, i18n.language); font.pixelSize: 12; color: "#AAA0B8" }
+                Label { Layout.fillWidth: true; text: root.selectedPlaylist ? root.selectedPlaylist.name : i18n.text("queue", i18n.language); font.pixelSize: root.compact ? 20 : Theme.fontTitle; font.weight: Font.DemiBold; color: Theme.textPrimary; elide: Text.ElideRight; textFormat: Text.PlainText }
+                Label { text: i18n.countText("tracks", root.sourceItems.length, i18n.language); font.pixelSize: Theme.fontCaption; color: Theme.textMuted }
             }
             TextButton { visible: Boolean(root.currentPlaylist); text: i18n.text("play_all", i18n.language); enabled: root.visibleItems.length > 0 && root.connected; onClicked: root.playAll() }
             TextButton { visible: !root.compact; text: i18n.text("import_music", i18n.language); subtle: true; enabled: root.connected; onClicked: root.addRequested(root.currentPlaylist) }
@@ -126,7 +126,7 @@ Item {
                 visible: !root.currentPlaylist
                 text: i18n.text("clear_queue", i18n.language)
                 subtle: true
-                subtleText: "#FF9BAE"
+                subtleText: Theme.statusError
                 enabled: root.sourceItems.length > 0 && root.connected && !confirmation.busy
                 onClicked: confirmation.open()
             }
@@ -150,17 +150,21 @@ Item {
                 onModeRequested: mode => { if (root.playbackController) root.playbackController.setPlaybackMode(mode) }
             }
         }
-        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: "#332C41" }
+        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.borderSubtle }
         ListView {
             id: songList
             objectName: root.currentPlaylist ? "playlistSongList" : "queueSongList"
-            Layout.fillWidth: true; Layout.fillHeight: true; clip: true; spacing: 2
+            Layout.fillWidth: true; Layout.fillHeight: true; clip: true; spacing: 8
+            header: Item { height: 4 }
+            footer: Item { height: 4 }
+            leftMargin: 4
+            rightMargin: 4
             model: !root.currentPlaylist && !root.searchText && root.queueModel ? root.queueModel : root.visibleItems
             ScrollBar.vertical: ScrollBar {}
             delegate: TrackRow {
                 required property var modelData
                 required property int index
-                width: songList.width
+                width: songList.width - 8
                 objectName: (root.currentPlaylist ? "playlistRow" : "queueRow") + root.identity(modelData)
                 song: current && root.duration > 0 ? Object.assign({}, modelData, {duration: root.duration}) : modelData
                 rowIndex: index; compact: root.compact
@@ -179,7 +183,7 @@ Item {
             Column {
                 anchors.centerIn: parent; width: parent.width; spacing: 16
                 visible: songList.count === 0
-                Label { width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap; text: i18n.text(root.searchText ? "no_search_results" : root.currentPlaylist ? "empty_playlist" : "empty_queue", i18n.language); color: "#AAA0B8" }
+                Label { width: parent.width; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap; text: i18n.text(root.searchText ? "no_search_results" : root.currentPlaylist ? "empty_playlist" : "empty_queue", i18n.language); color: Theme.textMuted }
                 TextButton { anchors.horizontalCenter: parent.horizontalCenter; visible: !root.searchText; text: i18n.text("browse_library", i18n.language); onClicked: root.libraryRequested() }
             }
         }
@@ -214,12 +218,12 @@ Item {
         padding: 24; modal: true; focus: true
         closePolicy: root.pendingMethod ? Popup.NoAutoClose : Popup.CloseOnEscape
         onOpened: playlistName.forceActiveFocus()
-        background: Rectangle { objectName: "shortcutBlocker"; color: "#211C2D"; radius: 16; border.color: "#332C41" }
+        background: Rectangle { objectName: "shortcutBlocker"; color: Theme.bgRaised; radius: Theme.radiusLg; border.color: Theme.borderSubtle }
         contentItem: ColumnLayout {
             spacing: 16
-            Label { text: i18n.text(root.editingPlaylist ? "rename_playlist" : "new_playlist", i18n.language); color: "#F5F1FA"; font.pixelSize: 18 }
+            Label { text: i18n.text(root.editingPlaylist ? "rename_playlist" : "new_playlist", i18n.language); color: Theme.textPrimary; font.pixelSize: Theme.fontDialogTitle }
             InputField { id: playlistName; objectName: "playlistNameInput"; Layout.fillWidth: true; placeholderText: i18n.text("playlist_name", i18n.language); enabled: !root.pendingMethod; onAccepted: if (saveName.enabled) saveName.clicked() }
-            Label { Layout.fillWidth: true; visible: Boolean(root.operationError); text: root.operationError; color: "#FF9BAE"; wrapMode: Text.WordWrap; textFormat: Text.PlainText }
+            Label { Layout.fillWidth: true; visible: Boolean(root.operationError); text: root.operationError; color: Theme.statusError; wrapMode: Text.WordWrap; textFormat: Text.PlainText }
             RowLayout {
                 Layout.alignment: Qt.AlignRight
                 TextButton { text: i18n.text("cancel", i18n.language); subtle: true; enabled: !root.pendingMethod; onClicked: namePopup.close() }
@@ -243,10 +247,10 @@ Item {
         width: Math.min(360, parent.width - 40); height: Math.min(400, parent.height - 40)
         modal: true; focus: true; padding: 20
         closePolicy: root.pendingMethod ? Popup.NoAutoClose : Popup.CloseOnEscape | Popup.CloseOnPressOutside
-        background: Rectangle { objectName: "shortcutBlocker"; color: "#211C2D"; radius: 16; border.color: "#332C41" }
+        background: Rectangle { objectName: "shortcutBlocker"; color: Theme.bgRaised; radius: Theme.radiusLg; border.color: Theme.borderSubtle }
         ColumnLayout {
             anchors.fill: parent; spacing: 12
-            Label { text: i18n.text("add_to_playlist", i18n.language); color: "#F5F1FA"; font.pixelSize: 18 }
+            Label { text: i18n.text("add_to_playlist", i18n.language); color: Theme.textPrimary; font.pixelSize: Theme.fontDialogTitle }
             ListView {
                 Layout.fillWidth: true; Layout.fillHeight: true; clip: true
                 model: root.playlists
@@ -262,9 +266,9 @@ Item {
                         root.playlistRequested("add", root.currentPlaylist ? {id: Number(modelData.id), song_id: Number(root.addingSong.song_id)} : {id: Number(modelData.id), queue_id: Number(root.addingSong.queue_id || root.addingSong.id)})
                     }
                 }
-                Label { anchors.centerIn: parent; visible: root.playlists.length === 0; width: parent.width; wrapMode: Text.WordWrap; text: i18n.text("no_playlists", i18n.language); color: "#AAA0B8" }
+                Label { anchors.centerIn: parent; visible: root.playlists.length === 0; width: parent.width; wrapMode: Text.WordWrap; text: i18n.text("no_playlists", i18n.language); color: Theme.textMuted }
             }
-            Label { Layout.fillWidth: true; visible: Boolean(root.operationError); text: root.operationError; wrapMode: Text.WordWrap; color: "#FF9BAE"; textFormat: Text.PlainText }
+            Label { Layout.fillWidth: true; visible: Boolean(root.operationError); text: root.operationError; wrapMode: Text.WordWrap; color: Theme.statusError; textFormat: Text.PlainText }
             TextButton { Layout.alignment: Qt.AlignRight; text: i18n.text("cancel", i18n.language); subtle: true; enabled: !root.pendingMethod; onClicked: addPopup.close() }
         }
     }

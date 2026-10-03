@@ -270,7 +270,8 @@ class RefactorTest final : public QObject {
         QCOMPARE(peer.call("queue.remove", {{"id", id}}).value("status").toString(), QString("ok"));
         QCOMPARE(peer.call("player.play").value("status").toString(), QString("error"));
         auto sources = peer.call("lyrics.sources").value("data").toObject().value("sources").toArray();
-        QCOMPARE(sources.size(), 2);
+        QCOMPARE(sources.size(), 1);
+        QCOMPARE(sources.first().toObject().value("id").toString(), QString("lrclib"));
         runtime.stop(); // Live socket must not call into a destroyed client-buffer map.
         QVERIFY(runtime.start());
         RpcPeer reconnected;
@@ -747,12 +748,142 @@ class RefactorTest final : public QObject {
         QCOMPARE(peer.call("player.status").value("data").toObject().value("playback_mode").toString(), QString("shuffle"));
         runtime.stop();
     }
+    // Exercise animation interruption and real hit areas rather than checking token values alone.
+    void drawerAnimationAndCompactControls() {
+        BackendRuntime runtime;
+        QVERIFY(runtime.start());
+        RpcPeer peer;
+        QVERIFY(peer.connect(m_socket));
+        peer.call("lyrics.set_offline", {{"offline", true}});
+        IpcClient client;
+        AppControllers controllers(client);
+        I18n translator;
+        QQmlApplicationEngine engine;
+        QStringList warnings;
+        connect(&engine, &QQmlEngine::warnings, this, [&](const QList<QQmlError> &errors) {
+            for (const auto &error : errors)
+                warnings.append(error.toString());
+        });
+        engine.rootContext()->setContextProperty("ipcClient", &client);
+        engine.rootContext()->setContextProperty("controllers", &controllers);
+        engine.rootContext()->setContextProperty("i18n", &translator);
+        engine.rootContext()->setContextProperty("lyricsDebugEnabled", false);
+        engine.load(QUrl("qrc:/qml/Main.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
+        QVERIFY(window);
+        QTRY_VERIFY(client.connected());
+        auto *drawer = window->findChild<QQuickItem *>("queueDrawer");
+        auto *secondary = window->findChild<QQuickItem *>("playerSecondaryControls");
+        auto *transport = window->findChild<QQuickItem *>("transportControls");
+        QVERIFY(drawer && secondary && transport);
+        QVERIFY(!drawer->isVisible());
+        QVERIFY(!drawer->isEnabled());
+
+        window->setProperty("queueOpen", true);
+        QTRY_VERIFY(drawer->opacity() > 0 && drawer->opacity() < 1);
+        window->setProperty("queueOpen", false);
+        QVERIFY(drawer->isVisible());
+        QVERIFY(!drawer->isEnabled());
+        window->setProperty("queueOpen", true);
+        QTRY_COMPARE(drawer->opacity(), 1.0);
+        QTRY_COMPARE(drawer->x() + drawer->width(), qreal(window->width()));
+        QVERIFY(drawer->isEnabled());
+        QTest::keyClick(window, Qt::Key_Escape);
+        QTRY_VERIFY(!window->property("queueOpen").toBool());
+        QVERIFY(!drawer->isEnabled());
+        QTRY_VERIFY(!drawer->isVisible());
+        QCOMPARE(drawer->opacity(), 0.0);
+
+        for (const QString language : {"zh", "en"}) {
+            translator.setLanguage(language);
+            for (int width : {1000, 1360}) {
+                window->resize(width, width == 1000 ? 640 : 860);
+                QTest::qWait(60);
+                QCOMPARE(secondary->width(), width == 1000 ? 160.0 : 220.0);
+                QCOMPARE(transport->mapToScene(QPointF(transport->width() / 2, 0)).x(), width / 2.0);
+                const QRectF bounds(0, 0, secondary->width(), secondary->height());
+                QList<QRectF> controlRects;
+                for (const QString name : {"volumeMuteButton", "volumeSlider", "nowPlayingButton", "queueToggleButton"}) {
+                    auto *control = secondary->findChild<QQuickItem *>(name);
+                    QVERIFY2(control, qPrintable(name));
+                    const QRectF rect(control->mapToItem(secondary, QPointF()), control->size());
+                    QVERIFY2(bounds.contains(rect), qPrintable(name));
+                    for (const auto &other : controlRects)
+                        QVERIFY2(!rect.intersects(other), qPrintable(name));
+                    controlRects.append(rect);
+                    if (name == "volumeSlider")
+                        QVERIFY(control->width() >= 72);
+                }
+                auto *toggle = secondary->findChild<QQuickItem *>("queueToggleButton");
+                QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier,
+                                 toggle->mapToScene(QPointF(toggle->width() / 2, toggle->height() / 2)).toPoint());
+                QTRY_COMPARE(drawer->opacity(), 1.0);
+                QCOMPARE(drawer->width(), width == 1000 ? 360.0 : 400.0);
+                window->setProperty("queueOpen", false);
+                QTRY_VERIFY(!drawer->isVisible());
+            }
+        }
+        QVERIFY2(warnings.isEmpty(), qPrintable(warnings.join('\n')));
+        runtime.stop();
+    }
     // Use loaded QML to verify controller/model separation under real events.
     // Metadata editing must request full fields before saving sparse changes.
     // Library selection should survive playback progress and metadata reconciliation.
     // Muting is explicit zero and unmuting restores the remembered positive level.
     // The test also exercises dialog lifecycle and current-row action identity.
     // It does not substitute for a separate screenshot-based visual acceptance.
+    void kugouSettingsNavigation() {
+        QVERIFY(AppPaths::saveSetting("kugou", QJsonObject{}));
+        BackendRuntime runtime;
+        QVERIFY(runtime.start());
+        RpcPeer peer;
+        QVERIFY(peer.connect(m_socket));
+        IpcClient client;
+        AppControllers controllers(client);
+        I18n translator;
+        QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("ipcClient", &client);
+        engine.rootContext()->setContextProperty("controllers", &controllers);
+        engine.rootContext()->setContextProperty("i18n", &translator);
+        engine.rootContext()->setContextProperty("lyricsDebugEnabled", false);
+        engine.load(QUrl("qrc:/qml/Main.qml"));
+        QVERIFY(!engine.rootObjects().isEmpty());
+        auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
+        QVERIFY(window);
+        QTRY_VERIFY(client.connected());
+        QTRY_COMPARE(controllers.lyrics->sources().size(), 1);
+        QVERIFY(!visualItem(window->contentItem(), "nav_kugou"));
+        QVERIFY(!controllers.kugou->account().value("enabled").toBool());
+        QCOMPARE(peer.call("kugou.search", {{"keywords", "Song"}}).value("status").toString(),
+                 QString("error"));
+        for (const QJsonObject params : {QJsonObject{{"enabled", "true"}, {"worker_url", "https://worker.example"}},
+                                         QJsonObject{{"enabled", true}}})
+            QCOMPARE(peer.call("kugou.config.set", params).value("status").toString(), QString("error"));
+        controllers.settings->kugouSaveConfiguration(true, "https://worker.example");
+        QTRY_VERIFY(controllers.kugou->account().value("enabled").toBool());
+        QTRY_VERIFY(visualItem(window->contentItem(), "nav_kugou"));
+        QTRY_COMPARE(controllers.lyrics->sources().size(), 2);
+        auto *button = visualItem(window->contentItem(), "nav_kugou");
+        QVERIFY(QMetaObject::invokeMethod(button, "clicked"));
+        QCOMPARE(window->property("viewMode").toString(), QString("kugou"));
+        // A different IPC client changes settings; event delivery updates all UI controllers.
+        QCOMPARE(peer.call("kugou.config.set", {{"enabled", false}, {"worker_url", "https://worker.example"}})
+                     .value("status").toString(), QString("ok"));
+        QTRY_VERIFY(!controllers.kugou->account().value("enabled").toBool());
+        QTRY_VERIFY(!visualItem(window->contentItem(), "nav_kugou"));
+        QTRY_COMPARE(controllers.lyrics->sources().size(), 1);
+        QTRY_COMPARE(window->property("viewMode").toString(), QString("settings"));
+        runtime.stop();
+        QVERIFY(runtime.start());
+        RpcPeer restored;
+        QVERIFY(restored.connect(m_socket));
+        const auto status = restored.call("kugou.status").value("data").toObject().value("kugou").toObject();
+        QVERIFY(!status.value("enabled").toBool());
+        QCOMPARE(status.value("worker_url").toString(), QString("https://worker.example"));
+        runtime.stop();
+    }
+
     void realQmlMetadataSelectionAndMute() {
         QImage coverImage(40, 40, QImage::Format_RGB32);
         coverImage.fill(QColor("#E8A9C3"));

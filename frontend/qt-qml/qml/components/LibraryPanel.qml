@@ -138,8 +138,8 @@ Item {
             ColumnLayout {
                 Layout.fillWidth: true
                 spacing: 6
-                Label { Layout.fillWidth: true; text: i18n.text("local_music", i18n.language); color: "#F5F1FA"; font.pixelSize: 26; font.weight: Font.DemiBold }
-                Label { Layout.fillWidth: true; text: i18n.countText("tracks", root.filteredSongs.length, i18n.language); color: "#AAA0B8"; font.pixelSize: 13 }
+                Label { Layout.fillWidth: true; text: i18n.text("local_music", i18n.language); color: Theme.textPrimary; font.pixelSize: Theme.fontTitle; font.weight: Font.DemiBold }
+                Label { Layout.fillWidth: true; text: i18n.countText("tracks", root.filteredSongs.length, i18n.language); color: Theme.textMuted; font.pixelSize: Theme.fontBodySecondary }
             }
             TextButton { objectName: "playFilteredButton"; text: i18n.text("play_all", i18n.language); enabled: root.playableCount > 0 && root.connected; onClicked: root.requestPlay(0) }
             TextButton { text: i18n.text("import_music", i18n.language); subtle: true; enabled: root.connected; onClicked: root.importRequested() }
@@ -179,32 +179,36 @@ Item {
             Label {
                 Layout.fillWidth: true
                 text: root.selectedTagIds.length ? root.controller.tags.items.filter(tag => root.selectedTagIds.indexOf(Number(tag.id)) !== -1).map(tag => tag.name).join(" + ") : ""
-                color: "#D7CFE2"; font.pixelSize: 12; elide: Text.ElideRight; textFormat: Text.PlainText
+                color: Theme.textSecondary; font.pixelSize: Theme.fontCaption; elide: Text.ElideRight; textFormat: Text.PlainText
             }
-            Label { text: root.selectedSongIds.length ? i18n.text("selected_count", i18n.language).replace("%1", root.selectedSongIds.length) : ""; color: "#CBB8FF"; font.pixelSize: 12 }
+            Label { text: root.selectedSongIds.length ? i18n.text("selected_count", i18n.language).replace("%1", root.selectedSongIds.length) : ""; color: Theme.accentPrimary; font.pixelSize: Theme.fontCaption }
         }
-        Label { Layout.fillWidth: true; visible: root.skippedCount > 0; text: i18n.text("unavailable_skipped", i18n.language).replace("%1", root.skippedCount); color: "#E8C58A"; wrapMode: Text.WordWrap }
+        Label { Layout.fillWidth: true; visible: root.skippedCount > 0; text: i18n.text("unavailable_skipped", i18n.language).replace("%1", root.skippedCount); color: Theme.statusWarning; wrapMode: Text.WordWrap }
         Label {
             objectName: "libraryCleanupWarning"
             Layout.fillWidth: true
             visible: root.cleanupWarning.length > 0
             text: root.cleanupWarning
             textFormat: Text.PlainText
-            color: "#E8A9C3"
+            color: Theme.statusWarning
             wrapMode: Text.WrapAnywhere
         }
-        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: "#332C41" }
+        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.borderSubtle }
         ListView {
             id: songList
             objectName: "librarySongList"
-            Layout.fillWidth: true; Layout.fillHeight: true; clip: true; spacing: 2
+            Layout.fillWidth: true; Layout.fillHeight: true; clip: true; spacing: 8
+            header: Item { height: 4 }
+            footer: Item { height: 4 }
+            leftMargin: 4
+            rightMargin: 4
             model: root.controller.filteredSongs
             ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
             delegate: TrackRow {
                 required property var modelData
                 required property int index
                 objectName: "libraryRow" + modelData.song_id
-                width: songList.width
+                width: songList.width - 8
                 song: current && root.currentDuration > 0 ? Object.assign({}, modelData, {duration: root.currentDuration}) : modelData
                 rowIndex: index
                 available: Boolean(modelData.available); connected: root.connected
@@ -222,7 +226,7 @@ Item {
             }
             Column {
                 anchors.centerIn: parent; visible: songList.count === 0; spacing: 16
-                Label { anchors.horizontalCenter: parent.horizontalCenter; text: i18n.text(root.controller.searchText ? "no_search_results" : root.selectedTagIds.length ? "no_tag_matches" : "empty_library", i18n.language); color: "#AAA0B8" }
+                Label { anchors.horizontalCenter: parent.horizontalCenter; text: i18n.text(root.controller.searchText ? "no_search_results" : root.selectedTagIds.length ? "no_tag_matches" : "empty_library", i18n.language); color: Theme.textMuted }
                 TextButton { anchors.horizontalCenter: parent.horizontalCenter; visible: !root.controller.searchText && !root.selectedTagIds.length; text: i18n.text("import_music", i18n.language); enabled: root.connected; onClicked: root.importRequested() }
             }
         }
@@ -232,10 +236,10 @@ Item {
         parent: Overlay.overlay
         width: 320; height: Math.min(400, parent.height - 100)
         focus: true; padding: 16
-        background: Rectangle { objectName: "shortcutBlocker"; color: "#211C2D"; radius: 12; border.color: "#332C41" }
+        background: Rectangle { objectName: "shortcutBlocker"; color: Theme.bgRaised; radius: Theme.radiusMd; border.color: Theme.borderSubtle }
         ColumnLayout {
             anchors.fill: parent; spacing: 10
-            Label { text: i18n.text("tag_filter_all", i18n.language); color: "#AAA0B8"; font.pixelSize: 12 }
+            Label { text: i18n.text("tag_filter_all", i18n.language); color: Theme.textMuted; font.pixelSize: Theme.fontCaption }
             TextButton { Layout.fillWidth: true; text: i18n.text("all_songs", i18n.language); subtle: true; onClicked: root.controller.selectedTagIds = [] }
             ListView {
                 Layout.fillWidth: true; Layout.fillHeight: true; clip: true
@@ -263,21 +267,21 @@ Item {
         focus: true
         closePolicy: Popup.NoAutoClose
         padding: 18
-        background: Rectangle { objectName: "shortcutBlocker"; color: "#211C2D"; radius: 14; border.color: "#332C41" }
+        background: Rectangle { objectName: "shortcutBlocker"; color: Theme.bgRaised; radius: Theme.radiusLg; border.color: Theme.borderSubtle }
         ColumnLayout {
             anchors.fill: parent
             spacing: 10
             Label {
                 text: i18n.text("delete_selected_title", i18n.language)
                     .replace("%1", root.deletingSongIds.length)
-                color: "#F5F1FA"
-                font.pixelSize: 16
+                color: Theme.textPrimary
+                font.pixelSize: Theme.fontDialogTitle
                 font.weight: Font.DemiBold
             }
             Label {
                 Layout.fillWidth: true
                 text: i18n.text("delete_selected_hint", i18n.language)
-                color: "#AAA0B8"
+                color: Theme.textMuted
                 wrapMode: Text.WordWrap
             }
             CheckBox {
@@ -288,28 +292,28 @@ Item {
                 checked: root.cleanManagedFiles
                 enabled: !root.deletePending
                 onToggled: root.cleanManagedFiles = checked
-                palette.windowText: "#F5F1FA"
+                palette.windowText: Theme.textPrimary
                 indicator: Rectangle {
                     width: 18; height: 18; radius: 4
                     x: cleanupChoice.leftPadding
                     y: (cleanupChoice.height - height) / 2
-                    color: cleanupChoice.checked ? "#CBB8FF" : "#17141F"
-                    border.color: "#8D809F"
-                    Rectangle { anchors.centerIn: parent; width: 8; height: 8; radius: 2; color: "#21172F"; visible: cleanupChoice.checked }
+                    color: cleanupChoice.checked ? Theme.accentPrimary : Theme.bgSurface
+                    border.color: Theme.borderControl
+                    Rectangle { anchors.centerIn: parent; width: 8; height: 8; radius: 2; color: Theme.textOnAccent; visible: cleanupChoice.checked }
                 }
             }
             Label {
                 Layout.fillWidth: true
                 visible: root.cleanManagedFiles
                 text: i18n.text("clean_managed_files_hint", i18n.language)
-                color: "#E8A9C3"
+                color: Theme.statusWarning
                 wrapMode: Text.WordWrap
             }
             Label {
                 Layout.fillWidth: true
                 visible: root.deleteError.length > 0
                 text: root.deleteError
-                color: "#E8A9C3"
+                color: Theme.statusError
                 wrapMode: Text.WordWrap
             }
             Item { Layout.fillHeight: true }
@@ -342,14 +346,14 @@ Item {
         modal: true
         focus: true
         padding: 16
-        background: Rectangle { objectName: "shortcutBlocker"; color: "#211C2D"; radius: 14; border.color: "#332C41" }
+        background: Rectangle { objectName: "shortcutBlocker"; color: Theme.bgRaised; radius: Theme.radiusLg; border.color: Theme.borderSubtle }
         ColumnLayout {
             anchors.fill: parent
             spacing: 8
             Label {
                 text: i18n.text("add_to_playlist", i18n.language)
-                color: "#F5F1FA"
-                font.pixelSize: 16
+                color: Theme.textPrimary
+                font.pixelSize: Theme.fontDialogTitle
             }
             ListView {
                 Layout.fillWidth: true
@@ -369,11 +373,11 @@ Item {
                     anchors.centerIn: parent
                     visible: root.playlists.length === 0
                     text: i18n.text("no_playlists", i18n.language)
-                    color: "#AAA0B8"
+                    color: Theme.textMuted
                     wrapMode: Text.WordWrap
                 }
             }
-            Label { Layout.fillWidth: true; visible: root.operationError.length > 0; text: root.operationError; color: "#FF9BAE"; wrapMode: Text.WordWrap; textFormat: Text.PlainText }
+            Label { Layout.fillWidth: true; visible: root.operationError.length > 0; text: root.operationError; color: Theme.statusError; wrapMode: Text.WordWrap; textFormat: Text.PlainText }
             TextButton {
                 Layout.alignment: Qt.AlignRight
                 text: i18n.text("cancel", i18n.language)

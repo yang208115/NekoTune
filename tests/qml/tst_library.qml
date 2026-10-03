@@ -50,6 +50,22 @@ Rectangle {
 
         function cleanup() { panel = null }
 
+        function test_focusRingIsNotClippedByList() {
+            waitForRendering(panel)
+            const list = findChild(panel, "librarySongList")
+            const row = findChild(panel, "libraryRow1")
+            verify(row !== null)
+            row.forceActiveFocus()
+            const ring = findChild(row, "trackFocusRing")
+            verify(ring.visible)
+            const topLeft = ring.mapToItem(list, 0, 0)
+            const bottomRight = ring.mapToItem(list, ring.width, ring.height)
+            verify(topLeft.x >= 0 && topLeft.y >= 0, "Focus ring must fit at the first row's top/left edge")
+            verify(bottomRight.x <= list.width && bottomRight.y <= list.height)
+            const path = testFixtures.screenshotPath("library-keyboard-focus")
+            if (path) { waitForRendering(panel); grabImage(scene).save(path) }
+        }
+
         // Multiple selected tags filter by intersection, including unavailable visible songs.
         // The playable count and the submitted visible context are therefore different quantities.
         // Starting a row uses its song identity, not its index in the filtered array.

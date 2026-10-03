@@ -13,9 +13,9 @@ Rectangle {
     property int currentPlaylist: 0
     signal playlistRequested(int id)
     signal newPlaylistRequested()
-    Layout.preferredWidth: shell.width < 1200 ? 180 : 220
+    Layout.preferredWidth: shell.width < 1200 ? Theme.sidebarWidthCompact : Theme.sidebarWidthWide
     Layout.fillHeight: true
-    color: shell.bgSidebar
+    color: Theme.bgSidebar
     function t(key) { return translator.text(key, translator.language) }
     ColumnLayout {
         anchors.fill: parent
@@ -24,29 +24,45 @@ Rectangle {
         RowLayout {
             Layout.topMargin: 10; Layout.bottomMargin: 8
             Rectangle {
-                Layout.preferredWidth: 32; Layout.preferredHeight: 32; radius: 10; color: "#322743"
-                Label { anchors.centerIn: parent; text: "N"; color: "#CBB8FF"; font.pixelSize: 20; font.weight: Font.Bold }
+                Layout.preferredWidth: 32; Layout.preferredHeight: 32; radius: 10; color: Theme.bgSelected
+                Label { anchors.centerIn: parent; text: "N"; color: Theme.accentPrimary; font.pixelSize: 20; font.weight: Font.Bold }
             }
-            Label { text: "NekoTune"; color: "#F5F1FA"; font.pixelSize: 19; font.weight: Font.DemiBold }
+            Label { text: "NekoTune"; color: Theme.textPrimary; font.pixelSize: 19; font.weight: Font.DemiBold }
         }
         ColumnLayout {
             Layout.fillWidth: true; spacing: 6
             Repeater {
-                model: sidebar.pages.filter(page => page.group === "primary")
+                model: sidebar.pages.filter(page => page.group === "primary" && (page.id !== "kugou" || Boolean(sidebar.controllers.kugou.account.enabled)))
                 delegate: TextButton {
+                    id: primaryNav
                     required property var modelData
                     Layout.fillWidth: true
                     objectName: "nav_" + modelData.id
                     text: sidebar.t(modelData.title)
-                    subtle: sidebar.shell.viewMode !== modelData.id
-                    subtleBg: "transparent"; subtleBorder: "transparent"
+                    readonly property bool isCurrent: sidebar.shell.viewMode === modelData.id
+                    subtle: true
+                    subtleBg: isCurrent ? Theme.bgSelected : "transparent"
+                    subtleText: isCurrent ? Theme.accentPrimary : Theme.textSecondary
+                    subtleBorder: "transparent"
+                    Accessible.selected: isCurrent
                     onClicked: sidebar.shell.navigate(modelData.id)
+
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.leftMargin: 2
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 3
+                        height: 18
+                        radius: 1.5
+                        color: Theme.accentPrimary
+                        visible: primaryNav.isCurrent
+                    }
                 }
             }
         }
         RowLayout {
             Layout.fillWidth: true
-            Label { Layout.fillWidth: true; text: sidebar.t("playlists"); color: "#AAA0B8"; font.pixelSize: 12 }
+            Label { Layout.fillWidth: true; text: sidebar.t("playlists"); color: Theme.textMuted; font.pixelSize: Theme.fontCaption }
             IconButton { kind: "plus"; implicitWidth: 32; implicitHeight: 32; tooltipText: sidebar.t("new_playlist"); enabled: sidebar.transport.connected; onClicked: sidebar.newPlaylistRequested() }
         }
         ListView {
@@ -59,36 +75,68 @@ Rectangle {
                 if (index >= 0) playlists.positionViewAtIndex(index, ListView.Contain)
             })
             delegate: TextButton {
+                id: playlistNav
                 required property var modelData
                 width: playlists.width
                 objectName: "nav_playlist_" + modelData.id
                 text: modelData.name
-                subtle: !(sidebar.shell.viewMode === "queue" && sidebar.currentPlaylist === Number(modelData.id))
-                subtleBg: "transparent"; subtleBorder: "transparent"
+                readonly property bool isCurrent: sidebar.shell.viewMode === "queue" && sidebar.currentPlaylist === Number(modelData.id)
+                subtle: true
+                subtleBg: isCurrent ? Theme.bgSelected : "transparent"
+                subtleText: isCurrent ? Theme.accentPrimary : Theme.textSecondary
+                subtleBorder: "transparent"
+                Accessible.selected: isCurrent
                 onClicked: sidebar.playlistRequested(Number(modelData.id))
                 ToolTip.visible: hovered || activeFocus
                 ToolTip.text: modelData.name
+
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.leftMargin: 2
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 3
+                    height: 18
+                    radius: 1.5
+                    color: Theme.accentPrimary
+                    visible: playlistNav.isCurrent
+                }
             }
-            Label { anchors.horizontalCenter: parent.horizontalCenter; anchors.top: parent.top; anchors.topMargin: 8; visible: playlists.count === 0; text: sidebar.t("no_playlist_short"); color: "#AAA0B8"; font.pixelSize: 12 }
+            Label { anchors.horizontalCenter: parent.horizontalCenter; anchors.top: parent.top; anchors.topMargin: 8; visible: playlists.count === 0; text: sidebar.t("no_playlist_short"); color: Theme.textMuted; font.pixelSize: Theme.fontCaption }
         }
         ColumnLayout {
             Layout.fillWidth: true; spacing: 6
             Repeater {
                 model: sidebar.pages.filter(page => page.group === "utility" || page.debug && sidebar.shell.debugEnabled)
                 delegate: TextButton {
+                    id: utilityNav
                     required property var modelData
                     Layout.fillWidth: true
                     objectName: modelData.debug ? "lyricsDebugNavigation" : "nav_" + modelData.id
                     text: sidebar.t(modelData.title)
-                    subtle: sidebar.shell.viewMode !== modelData.id
-                    subtleBg: "transparent"; subtleBorder: "transparent"
+                    readonly property bool isCurrent: sidebar.shell.viewMode === modelData.id
+                    subtle: true
+                    subtleBg: isCurrent ? Theme.bgSelected : "transparent"
+                    subtleText: isCurrent ? Theme.accentPrimary : Theme.textSecondary
+                    subtleBorder: "transparent"
+                    Accessible.selected: isCurrent
                     onClicked: sidebar.shell.navigate(modelData.id)
+
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.leftMargin: 2
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 3
+                        height: 18
+                        radius: 1.5
+                        color: Theme.accentPrimary
+                        visible: utilityNav.isCurrent
+                    }
                 }
             }
             RowLayout {
                 Layout.fillWidth: true; Layout.topMargin: 6
-                Rectangle { Layout.preferredWidth: 6; Layout.preferredHeight: 6; radius: 3; color: sidebar.transport.connected ? "#98D8BC" : "#FF9BAE" }
-                Label { text: sidebar.t(sidebar.transport.connected ? "connected" : "offline"); color: "#AAA0B8"; font.pixelSize: 12 }
+                Rectangle { Layout.preferredWidth: 6; Layout.preferredHeight: 6; radius: 3; color: sidebar.transport.connected ? Theme.statusSuccess : Theme.statusError }
+                Label { text: sidebar.t(sidebar.transport.connected ? "connected" : "offline"); color: Theme.textMuted; font.pixelSize: Theme.fontCaption }
             }
         }
     }

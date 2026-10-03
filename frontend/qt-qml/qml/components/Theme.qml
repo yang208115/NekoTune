@@ -1,3 +1,4 @@
+pragma Singleton
 import QtQuick
 
 QtObject {
@@ -10,6 +11,7 @@ QtObject {
     readonly property color bgRaised: "#211C2D"
     readonly property color bgHover: "#2A2338"
     readonly property color bgSelected: "#322743"
+    readonly property color bgCard: bgSurface
     readonly property color borderSubtle: "#332C41"
     readonly property color borderControl: "#8D809F"
 
@@ -79,6 +81,7 @@ QtObject {
     readonly property bool reducedMotion: false
     readonly property int durationFast: 120
     readonly property int durationNormal: 180
+    readonly property int durationDrawer: 200
     readonly property int durationSmooth: 240
     readonly property int durationScroll: 280
 }

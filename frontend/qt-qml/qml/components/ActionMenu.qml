@@ -33,7 +33,7 @@ Popup {
         y = Math.max(8, Math.min(targetY, parent.height - menuHeight - 8))
         open()
     }
-    background: Rectangle { objectName: "shortcutBlocker"; color: "#211C2D"; radius: 12; border.color: "#332C41" }
+    background: Rectangle { objectName: "shortcutBlocker"; color: Theme.bgRaised; radius: Theme.radiusMd; border.color: Theme.borderSubtle }
     contentItem: Column {
         id: menuContent
         spacing: 2
@@ -48,7 +48,7 @@ Popup {
                 subtle: true
                 subtleBg: "transparent"
                 subtleBorder: "transparent"
-                subtleText: modelData.destructive ? "#FF9BAE" : "#D7CFE2"
+                subtleText: modelData.destructive ? Theme.statusError : Theme.textSecondary
                 onClicked: { menu.close(); menu.chosen(modelData.key) }
             }
         }

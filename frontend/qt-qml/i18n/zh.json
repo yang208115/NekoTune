@@ -252,5 +252,11 @@
   "ai_error_service": "AI 服务暂时不可用，请稍后重试。",
   "ai_error_request": "AI 服务拒绝了请求，请检查地址、模型和接口兼容性。",
   "ai_error_network": "无法连接 AI 服务，请检查网络与接口地址。",
-  "ai_error_busy": "已有多个 AI 请求正在处理，请稍后重试。"
+  "ai_error_busy": "已有多个 AI 请求正在处理，请稍后重试。",
+  "kugou_enable": "启用酷狗音乐",
+  "kugou_worker_url": "Worker 地址",
+  "kugou_worker_help": "默认关闭。填写自己的 Worker 地址并启用后保存，即可使用酷狗搜索、下载和歌词搜索。远程地址必须使用 HTTPS。",
+  "kugou_config_save": "保存酷狗配置",
+  "kugou_config_saved": "酷狗配置已保存",
+  "lyrics_error_kugou_unavailable": "请在设置中启用酷狗音乐并配置 Worker 地址；修改地址后请重新搜索。"
 }

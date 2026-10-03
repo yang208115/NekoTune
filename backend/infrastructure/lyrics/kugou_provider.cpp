@@ -1,4 +1,5 @@
 #include "infrastructure/kugou/krc_response.h"
+#include "infrastructure/kugou/kugou_settings.h"
 #include "infrastructure/lyrics/kugou_provider.h"
 #include "domain/lyrics/krc_parser.h"
 #include "domain/lyrics/lrc_parser.h"
@@ -60,7 +61,14 @@ QString coverUrl(const QString &image) {
 
 KugouProvider::KugouProvider(QObject *parent, QNetworkAccessManager *manager, const QUrl &baseUrl)
     : LyricsProvider(parent), m_manager(manager ? manager : new QNetworkAccessManager(this)),
-      m_baseUrl(baseUrl) {}
+      m_baseUrl(baseUrl), m_useSettings(baseUrl.isEmpty()) {}
+
+bool KugouProvider::configurationAvailable() const {
+    if (!m_useSettings)
+        return true;
+    const auto settings = KugouSettings::load();
+    return settings.unavailableReason().isEmpty() && settings.workerUrl == m_baseUrl;
+}
 
 KugouProvider::~KugouProvider() { cancel(); }
 
@@ -78,6 +86,10 @@ void KugouProvider::get(const QString &path, const QUrlQuery &params, quint64 to
                         const std::function<void(const QJsonObject &)> &onSuccess,
                         const std::function<void(const QString &)> &onFailure) {
     cancel();
+    if (!configurationAvailable()) {
+        emit failed(token, QStringLiteral("kugou_unavailable"));
+        return;
+    }
     QUrl url = m_baseUrl.resolved(QUrl(path));
     url.setQuery(params);
     QNetworkRequest request(url);
@@ -108,6 +120,10 @@ void KugouProvider::get(const QString &path, const QUrlQuery &params, quint64 to
                 if (m_reply != reply)
                     return;
                 m_reply.clear();
+                if (!configurationAvailable()) {
+                    emit failed(token, QStringLiteral("kugou_unavailable"));
+                    return;
+                }
                 const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
                 QString failure;
                 if (reply->property("lyrics_timeout").toBool() ||
@@ -148,6 +164,8 @@ void KugouProvider::get(const QString &path, const QUrlQuery &params, quint64 to
 // Bound candidate counts so a remote response cannot grow UI state freely.
 void KugouProvider::request(const LyricsQuery &query, quint64 token, bool) {
     m_resolutions.clear();
+    if (m_useSettings)
+        m_baseUrl = KugouSettings::load().workerUrl;
     QUrlQuery params;
     params.addQueryItem(QStringLiteral("keywords"), query.title.simplified());
     params.addQueryItem(QStringLiteral("type"), QStringLiteral("song"));

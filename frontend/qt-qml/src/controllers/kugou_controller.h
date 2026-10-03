@@ -29,7 +29,9 @@ class KugouController final : public FeatureController {
 
   private:
     void apply(const QJsonObject &data);
-    QVariantMap m_account{{"configured", false},
+    QVariantMap m_account{{"enabled", false},
+                          {"worker_url", QString()},
+                          {"configured", false},
                           {"busy", false},
                           {"logged_in", false},
                           {"key_saved", false},
@@ -43,6 +45,9 @@ class SettingsController final : public FeatureController {
     Q_OBJECT
   public:
     using FeatureController::FeatureController;
+    Q_INVOKABLE void kugouSaveConfiguration(bool enabled, const QString &workerUrl) {
+        send("kugou.config.set", {{"enabled", enabled}, {"worker_url", workerUrl}});
+    }
     Q_INVOKABLE void kugouSaveKey(const QString &key) { send("kugou.save_key", {{"key", key}}); }
     Q_INVOKABLE void kugouClearKey() { send("kugou.clear_key"); }
 };

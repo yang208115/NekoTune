@@ -24,16 +24,16 @@ Popup {
     function completed() { busy = false; close() }
     function failed(message) { busy = false; errorText = message }
     onOpened: errorText = ""
-    background: Rectangle { objectName: "shortcutBlocker"; color: "#211C2D"; radius: 16; border.color: "#332C41" }
+    background: Rectangle { objectName: "shortcutBlocker"; color: Theme.bgRaised; radius: Theme.radiusLg; border.color: Theme.borderSubtle }
     contentItem: ColumnLayout {
         spacing: 20
-        Label { Layout.fillWidth: true; text: dialog.title; color: "#F5F1FA"; font.pixelSize: 18; font.weight: Font.DemiBold; wrapMode: Text.WordWrap; textFormat: Text.PlainText }
-        Label { Layout.fillWidth: true; text: dialog.message; color: "#D7CFE2"; wrapMode: Text.WordWrap; textFormat: Text.PlainText }
-        Label { Layout.fillWidth: true; visible: dialog.errorText.length > 0; text: dialog.errorText; color: "#FF9BAE"; wrapMode: Text.WordWrap; textFormat: Text.PlainText }
+        Label { Layout.fillWidth: true; text: dialog.title; color: Theme.textPrimary; font.pixelSize: Theme.fontDialogTitle; font.weight: Font.DemiBold; wrapMode: Text.WordWrap; textFormat: Text.PlainText }
+        Label { Layout.fillWidth: true; text: dialog.message; color: Theme.textSecondary; wrapMode: Text.WordWrap; textFormat: Text.PlainText }
+        Label { Layout.fillWidth: true; visible: dialog.errorText.length > 0; text: dialog.errorText; color: Theme.statusError; wrapMode: Text.WordWrap; textFormat: Text.PlainText }
         RowLayout {
             Layout.alignment: Qt.AlignRight
             TextButton { text: i18n.text("cancel", i18n.language); subtle: true; enabled: !dialog.busy; onClicked: dialog.close() }
-            TextButton { objectName: "confirmActionButton"; text: i18n.text("confirm_delete", i18n.language); lavenderColor: "#FF9BAE"; enabled: !dialog.busy; onClicked: { dialog.busy = true; dialog.confirmed() } }
+            TextButton { objectName: "confirmActionButton"; text: i18n.text("confirm_delete", i18n.language); lavenderColor: Theme.statusError; enabled: !dialog.busy; onClicked: { dialog.busy = true; dialog.confirmed() } }
         }
     }
 }

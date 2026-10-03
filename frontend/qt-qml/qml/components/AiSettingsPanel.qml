@@ -44,9 +44,9 @@ Rectangle {
             ai.refreshConfiguration();
     }
     implicitHeight: content.implicitHeight + 36
-    radius: 12
-    color: "#211C2D"
-    border.color: "#332C41"
+    radius: Theme.radiusMd
+    color: Theme.bgRaised
+    border.color: Theme.borderSubtle
     Connections {
         target: root.ai
         function onConfigurationChanged() {
@@ -77,20 +77,20 @@ Rectangle {
         spacing: 10
         Label {
             text: root.t("ai_settings")
-            color: "#F5F1FA"
-            font.pixelSize: 18
+            color: Theme.textPrimary
+            font.pixelSize: Theme.fontDialogTitle
             font.weight: Font.DemiBold
         }
         Label {
             Layout.fillWidth: true
             text: root.t("ai_settings_help")
             wrapMode: Text.WordWrap
-            color: "#AAA0B8"
-            font.pixelSize: 12
+            color: Theme.textMuted
+            font.pixelSize: Theme.fontCaption
         }
         Label {
             text: root.t("ai_base_url")
-            color: "#D7CFE2"
+            color: Theme.textSecondary
         }
         InputField {
             id: baseField
@@ -103,7 +103,7 @@ Rectangle {
         }
         Label {
             text: root.t("ai_model")
-            color: "#D7CFE2"
+            color: Theme.textSecondary
         }
         InputField {
             id: modelField
@@ -116,7 +116,7 @@ Rectangle {
         }
         Label {
             text: root.t("ai_api_key")
-            color: "#D7CFE2"
+            color: Theme.textSecondary
         }
         InputField {
             id: keyField
@@ -133,8 +133,8 @@ Rectangle {
             Layout.fillWidth: true
             text: root.t(baseField.text.trim().replace(/\/+$/, "") !== String(root.config.base_url || "") ? "ai_key_new_endpoint" : root.config.key_saved ? "ai_key_saved" : "ai_key_optional")
             wrapMode: Text.WordWrap
-            color: "#AAA0B8"
-            font.pixelSize: 12
+            color: Theme.textMuted
+            font.pixelSize: Theme.fontCaption
         }
         Flow {
             Layout.fillWidth: true
@@ -175,8 +175,8 @@ Rectangle {
             text: root.t(root.busy ? "ai_working" : root.message || root.config.credential_error || (root.dirty ? "ai_save_before_test" : ""))
             wrapMode: Text.WordWrap
             textFormat: Text.PlainText
-            color: root.failed || Boolean(root.config.credential_error) ? "#F0A4A4" : "#AAA0B8"
-            font.pixelSize: 12
+            color: root.failed || Boolean(root.config.credential_error) ? Theme.statusError : Theme.textMuted
+            font.pixelSize: Theme.fontCaption
         }
     }
 }

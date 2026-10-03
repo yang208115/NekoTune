@@ -13,8 +13,8 @@ RowLayout {
     id: root
     property string artist: ""
     property string fallbackText: ""
-    property color color: "#AAA0B8"
-    property font font: Qt.font({pixelSize: 12})
+    property color color: Theme.textMuted
+    property font font: Qt.font({pixelSize: Theme.fontCaption})
     property bool summarizeOverflow: false
     property string remainingTextTemplate: "+%1"
     readonly property var names: {

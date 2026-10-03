@@ -15,11 +15,11 @@ Rectangle {
     property bool addPending: false
     property string addError: ""
     readonly property int leftWidth: shell.width < 1200 ? 220 : 280
-    readonly property int rightWidth: shell.width < 1200 ? 220 : 240
+    readonly property int rightWidth: shell.width < 1200 ? 160 : 220
     readonly property string coverUrl: String(shell.song.cover_url || "")
     Layout.fillWidth: true
-    Layout.preferredHeight: 96
-    color: shell.bgSidebar
+    Layout.preferredHeight: Theme.bottomBarHeight
+    color: Theme.bgSidebar
     function t(key) { return translator.text(key, translator.language) }
     // An unknown duration needs a placeholder, while a current position of zero is a valid time.
     // Both values arrive in milliseconds and are displayed at whole-second precision.
@@ -29,7 +29,7 @@ Rectangle {
         const seconds = Math.max(0, Math.floor(Number(ms || 0) / 1000))
         return Math.floor(seconds / 60) + ":" + ("0" + seconds % 60).slice(-2)
     }
-    Rectangle { anchors.top: parent.top; width: parent.width; height: 1; color: "#332C41" }
+    Rectangle { anchors.top: parent.top; width: parent.width; height: 1; color: Theme.borderSubtle }
     RowLayout {
         anchors.left: parent.left; anchors.leftMargin: 16; anchors.verticalCenter: parent.verticalCenter
         width: bar.leftWidth
@@ -39,7 +39,7 @@ Rectangle {
             implicitWidth: 48; implicitHeight: 48
             enabled: bar.shell.hasSong
             Accessible.name: bar.t("now_playing")
-            background: Rectangle { color: "#17141F"; radius: 8 }
+            background: Rectangle { color: Theme.bgSurface; radius: Theme.radiusSm }
             contentItem: Item {
                 Image { anchors.fill: parent; source: "qrc:/artwork/default-cover.png"; fillMode: Image.PreserveAspectCrop; mipmap: true }
                 Image { objectName: "nowPlayingCover"; anchors.fill: parent; source: bar.shell.hasSong ? bar.coverUrl : ""; fillMode: Image.PreserveAspectCrop; asynchronous: true; visible: status === Image.Ready }
@@ -56,7 +56,7 @@ Rectangle {
             background: Item {}
             contentItem: ColumnLayout {
                 spacing: 4
-                Label { Layout.fillWidth: true; text: bar.shell.hasSong ? bar.shell.song.title || bar.t("untitled") : bar.t("no_track_selected"); color: "#F5F1FA"; font.pixelSize: 13; font.weight: Font.DemiBold; elide: Text.ElideRight; textFormat: Text.PlainText }
+                Label { Layout.fillWidth: true; text: bar.shell.hasSong ? bar.shell.song.title || bar.t("untitled") : bar.t("no_track_selected"); color: Theme.textPrimary; font.pixelSize: Theme.fontBody; font.weight: Font.DemiBold; elide: Text.ElideRight; textFormat: Text.PlainText }
                 ArtistNames {
                     id: nowPlayingArtists
                     objectName: "nowPlayingArtists"
@@ -99,8 +99,8 @@ Rectangle {
                 kind: bar.shell.isPlaying ? "pause" : "play"
                 tooltipText: bar.t(bar.shell.isPlaying ? "pause" : "play")
                 implicitWidth: 48; implicitHeight: 48; iconSize: 26; cornerRadius: 24
-                fillColor: "#CBB8FF"; hoverColor: "#DBCDFF"; pressedColor: "#B7A0ED"
-                glyphColor: "#21172F"; hoverGlyphColor: "#21172F"
+                fillColor: Theme.accentPrimary; hoverColor: Theme.accentHover; pressedColor: Theme.accentPressed
+                glyphColor: Theme.textOnAccent; hoverGlyphColor: Theme.textOnAccent
                 enabled: bar.shell.transport.connected && (bar.shell.hasSong || bar.shell.queue.length > 0)
                 onClicked: bar.controller.togglePlayPause()
             }
@@ -109,7 +109,7 @@ Rectangle {
         RowLayout {
             Layout.fillWidth: true
             spacing: 8
-            Label { Layout.preferredWidth: 40; text: bar.formatTime(timeline.pressed ? timeline.valueAt(timeline.position) : timeline.value, false); color: "#AAA0B8"; font.pixelSize: 12; horizontalAlignment: Text.AlignRight }
+            Label { Layout.preferredWidth: 40; text: bar.formatTime(timeline.pressed ? timeline.valueAt(timeline.position) : timeline.value, false); color: Theme.textMuted; font.pixelSize: Theme.fontCaption; horizontalAlignment: Text.AlignRight }
             // The time label above follows the handle's preview while pressed, not stale backend position.
             // SeekSlider keeps that preview stable until release and eventual backend acknowledgment.
             // Only its committed signal sends the millisecond seek request to the controller.
@@ -120,35 +120,51 @@ Rectangle {
                 onSeekRequested: value => bar.controller.seek(value)
                 Accessible.name: bar.t("playback_progress")
             }
-            Label { Layout.preferredWidth: 40; text: bar.formatTime(bar.shell.duration, true); color: "#AAA0B8"; font.pixelSize: 12 }
+            Label { Layout.preferredWidth: 40; text: bar.formatTime(bar.shell.duration, true); color: Theme.textMuted; font.pixelSize: Theme.fontCaption }
         }
     }
-    RowLayout {
+    Item {
+        id: rightControls
+        objectName: "playerSecondaryControls"
         anchors.right: parent.right; anchors.rightMargin: 16; anchors.verticalCenter: parent.verticalCenter
         width: bar.rightWidth
-        spacing: 4
-        IconButton { kind: bar.shell.volume > 0 ? "volume" : "mute"; tooltipText: bar.t("volume"); enabled: bar.shell.transport.connected; implicitWidth: 32; onClicked: bar.controller.toggleMute() }
-        // Volume intentionally follows every moved event for continuous audible feedback.
-        // This uses the normalized volume range rather than SeekSlider's release-only media timing.
-        // Backend events remain the source of the control's confirmed value binding.
-        PlayerSlider {
-            Layout.fillWidth: true; Layout.minimumWidth: 60; Layout.maximumWidth: 90
-            from: 0; to: 1; value: bar.shell.volume
-            enabled: bar.shell.transport.connected
-            onMoved: bar.controller.setVolume(value)
-            Accessible.name: bar.t("volume")
+        readonly property bool compact: bar.shell.width < 1200
+        height: compact ? 80 : 44
+        // Two rows preserve both the volume hit area and view buttons within the 160px compact column.
+        RowLayout {
+            anchors.left: parent.left
+            y: rightControls.compact ? 0 : (parent.height - height) / 2
+            width: rightControls.compact ? parent.width : parent.width - viewControls.width - 8
+            height: rightControls.compact ? 32 : 40
+            spacing: 4
+            IconButton { objectName: "volumeMuteButton"; kind: bar.shell.volume > 0 ? "volume" : "mute"; tooltipText: bar.t("volume"); enabled: bar.shell.transport.connected; implicitWidth: 32; implicitHeight: rightControls.compact ? 32 : 40; onClicked: bar.controller.toggleMute() }
+            // Volume follows every moved event; seeking retains its separate release-only behavior.
+            PlayerSlider {
+                objectName: "volumeSlider"
+                Layout.fillWidth: true; Layout.minimumWidth: 72
+                from: 0; to: 1; value: bar.shell.volume
+                enabled: bar.shell.transport.connected
+                onMoved: bar.controller.setVolume(value)
+                Accessible.name: bar.t("volume")
+            }
         }
-        IconButton {
-            objectName: "nowPlayingButton"
-            kind: "lyrics"; tooltipText: bar.t("now_playing")
-            glyphColor: bar.shell.nowPlayingOpen ? "#CBB8FF" : "#AAA0B8"
-            enabled: bar.shell.hasSong
-            onClicked: bar.shell.nowPlayingOpen ? bar.shell.closeNowPlaying() : bar.shell.openNowPlaying()
-        }
-        Item {
-            Layout.preferredWidth: 44; Layout.preferredHeight: 44
-            IconButton { objectName: "queueToggleButton"; anchors.fill: parent; kind: "queue"; tooltipText: bar.t("queue") + " (" + bar.shell.queue.length + ")"; glyphColor: bar.shell.queueOpen ? "#CBB8FF" : "#AAA0B8"; onClicked: bar.shell.queueOpen = !bar.shell.queueOpen }
-            Label { anchors.right: parent.right; anchors.top: parent.top; text: String(bar.shell.queue.length); color: "#CBB8FF"; font.pixelSize: 10; visible: bar.shell.queue.length > 0 }
+        RowLayout {
+            id: viewControls
+            anchors.right: parent.right; anchors.bottom: parent.bottom
+            width: implicitWidth
+            spacing: 4
+            IconButton {
+                objectName: "nowPlayingButton"
+                kind: "lyrics"; tooltipText: bar.t("now_playing")
+                glyphColor: bar.shell.nowPlayingOpen ? Theme.accentPrimary : Theme.textMuted
+                enabled: bar.shell.hasSong
+                onClicked: bar.shell.nowPlayingOpen ? bar.shell.closeNowPlaying() : bar.shell.openNowPlaying()
+            }
+            Item {
+                Layout.preferredWidth: 44; Layout.preferredHeight: 44
+                IconButton { objectName: "queueToggleButton"; anchors.fill: parent; kind: "queue"; tooltipText: bar.t("queue") + " (" + bar.shell.queue.length + ")"; glyphColor: bar.shell.queueOpen ? Theme.accentPrimary : Theme.textMuted; onClicked: bar.shell.queueOpen = !bar.shell.queueOpen }
+                Label { anchors.right: parent.right; anchors.top: parent.top; text: String(bar.shell.queue.length); color: Theme.accentPrimary; font.pixelSize: 10; visible: bar.shell.queue.length > 0 }
+            }
         }
     }
     ActionMenu {
@@ -173,10 +189,10 @@ Rectangle {
         width: 360; height: Math.min(400, parent.height - 40); padding: 20
         modal: true; focus: true
         closePolicy: bar.addPending ? Popup.NoAutoClose : Popup.CloseOnEscape | Popup.CloseOnPressOutside
-        background: Rectangle { objectName: "shortcutBlocker"; color: "#211C2D"; radius: 16; border.color: "#332C41" }
+        background: Rectangle { objectName: "shortcutBlocker"; color: Theme.bgRaised; radius: Theme.radiusLg; border.color: Theme.borderSubtle }
         ColumnLayout {
             anchors.fill: parent; spacing: 12
-            Label { text: bar.t("add_to_playlist"); color: "#F5F1FA"; font.pixelSize: 18 }
+            Label { text: bar.t("add_to_playlist"); color: Theme.textPrimary; font.pixelSize: Theme.fontDialogTitle }
             ListView {
                 Layout.fillWidth: true; Layout.fillHeight: true; clip: true
                 model: bar.shell.app.playlists.model
@@ -187,9 +203,9 @@ Rectangle {
                     enabled: !bar.addPending && bar.shell.transport.connected
                     onClicked: { bar.addPending = true; bar.shell.app.playlists.managePlaylist("add", {id: Number(modelData.id), song_id: Number(bar.shell.song.song_id)}) }
                 }
-                Label { width: parent.width; anchors.centerIn: parent; wrapMode: Text.WordWrap; visible: bar.shell.app.playlists.model.count === 0; text: bar.t("no_playlists"); color: "#AAA0B8" }
+                Label { width: parent.width; anchors.centerIn: parent; wrapMode: Text.WordWrap; visible: bar.shell.app.playlists.model.count === 0; text: bar.t("no_playlists"); color: Theme.textMuted }
             }
-            Label { Layout.fillWidth: true; text: bar.addError; visible: Boolean(bar.addError); color: "#FF9BAE"; wrapMode: Text.WordWrap; textFormat: Text.PlainText }
+            Label { Layout.fillWidth: true; text: bar.addError; visible: Boolean(bar.addError); color: Theme.statusError; wrapMode: Text.WordWrap; textFormat: Text.PlainText }
             TextButton { Layout.alignment: Qt.AlignRight; text: bar.t("cancel"); subtle: true; enabled: !bar.addPending; onClicked: picker.close() }
         }
     }

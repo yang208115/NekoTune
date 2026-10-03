@@ -30,14 +30,26 @@ Rectangle {
     signal activated()
     signal playClicked()
     signal actionRequested(string action)
-    height: 64
-    radius: 8
-    color: selected ? "#322743" : hover.hovered ? "#2A2338" : "transparent"
-    border.color: activeFocus ? "#CBB8FF" : "transparent"
+    height: Theme.songRowHeight
+    radius: Theme.radiusMd
+    color: (selected || current) ? Theme.bgSelected : hover.hovered ? Theme.bgHover : "transparent"
+    border.color: "transparent"
     activeFocusOnTab: true
     Accessible.role: Accessible.ListItem
     Accessible.name: String(song.title || i18n.text("untitled", i18n.language)) + " " + String(song.artist || "")
     Accessible.selected: selected
+
+    Rectangle {
+        objectName: "trackFocusRing"
+        anchors.fill: parent
+        anchors.margins: -4
+        radius: row.radius + 4
+        color: "transparent"
+        border.color: Theme.accentPrimary
+        border.width: 2
+        visible: row.activeFocus
+    }
+    z: activeFocus ? 1 : 0
     Keys.onReturnPressed: if (!downloadRow && available && connected) activated()
     Keys.onEnterPressed: if (!downloadRow && available && connected) activated()
     HoverHandler { id: hover }
@@ -75,9 +87,9 @@ Rectangle {
             indicator: Rectangle {
                 width: 18; height: 18; radius: 4
                 anchors.centerIn: parent
-                color: selectionBox.checked ? "#CBB8FF" : "#17141F"
-                border.color: "#8D809F"
-                Rectangle { anchors.centerIn: parent; width: 8; height: 8; radius: 2; color: "#21172F"; visible: selectionBox.checked }
+                color: selectionBox.checked ? Theme.accentPrimary : Theme.bgSurface
+                border.color: Theme.borderControl
+                Rectangle { anchors.centerIn: parent; width: 8; height: 8; radius: 2; color: Theme.textOnAccent; visible: selectionBox.checked }
             }
             contentItem: Item {}
         }
@@ -88,7 +100,7 @@ Rectangle {
                 anchors.centerIn: parent
                 text: String(row.rowIndex + 1)
                 visible: row.downloadRow || (!hover.hovered && !row.selected && !row.current && !row.activeFocus)
-                color: "#AAA0B8"
+                color: Theme.textMuted
                 font.pixelSize: 12
             }
             IconButton {
@@ -96,7 +108,7 @@ Rectangle {
                 objectName: row.playObjectName
                 implicitWidth: 32; implicitHeight: 36
                 kind: row.current && row.playing ? "pause" : "play"
-                glyphColor: row.current ? "#CBB8FF" : "#F5F1FA"
+                glyphColor: row.current ? Theme.accentPrimary : Theme.textPrimary
                 visible: !row.downloadRow && (hover.hovered || row.selected || row.current || row.activeFocus)
                 enabled: row.available && row.connected
                 tooltipText: i18n.text(row.current && row.playing ? "pause" : "play", i18n.language)
@@ -117,7 +129,7 @@ Rectangle {
                 Layout.fillWidth: true
                 text: row.song.title || i18n.text("untitled", i18n.language)
                 textFormat: Text.PlainText
-                color: row.current ? "#CBB8FF" : row.available ? "#F5F1FA" : "#AAA0B8"
+                color: row.current ? Theme.accentPrimary : row.available ? Theme.textPrimary : Theme.textMuted
                 font.pixelSize: 14
                 font.weight: row.current ? Font.DemiBold : Font.Normal
                 elide: Text.ElideRight
@@ -131,7 +143,7 @@ Rectangle {
                 artist: row.available ? String(row.song.artist || "") : ""
                 fallbackText: row.available ? String(row.song.path || "").split("/").pop()
                                             : i18n.text("file_unavailable", i18n.language)
-                color: row.available ? "#AAA0B8" : "#E8C58A"
+                color: row.available ? Theme.textMuted : Theme.statusWarning
                 font.pixelSize: 12
             }
         }
@@ -143,7 +155,7 @@ Rectangle {
                 const seconds = Math.floor(duration / 1000)
                 return Math.floor(seconds / 60) + ":" + ("0" + seconds % 60).slice(-2)
             }
-            color: "#AAA0B8"
+            color: Theme.textMuted
             font.pixelSize: 12
             Layout.preferredWidth: 44
             horizontalAlignment: Text.AlignRight

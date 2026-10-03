@@ -17,17 +17,17 @@ Item {
     property bool connected: false
     property string errorText: ""
 
-    property color panelColor: "#17141F"
-    property color lineColor: "#332C41"
-    property color textStrongColor: "#F5F1FA"
-    property color textSoftColor: "#D7CFE2"
-    property color textMutedColor: "#AAA0B8"
-    property color lavenderColor: "#CBB8FF"
-    property color roseColor: "#E8A9C3"
+    property color panelColor: Theme.bgSurface
+    property color lineColor: Theme.borderSubtle
+    property color textStrongColor: Theme.textPrimary
+    property color textSoftColor: Theme.textSecondary
+    property color textMutedColor: Theme.textMuted
+    property color lavenderColor: Theme.accentPrimary
+    property color roseColor: Theme.accentSecondary
 
     readonly property bool hasSong: Boolean(root.song && root.song.song_id)
     readonly property string coverUrl: String(root.song.cover_url || "")
-    readonly property real targetArtSize: root.width < 1100 ? 224 : 280
+    readonly property real targetArtSize: root.width < 1200 ? Theme.artworkCompact : Theme.artworkWide
 
     signal addRequested()
     signal togglePlayPauseRequested()
@@ -152,17 +152,17 @@ Item {
                 Layout.fillWidth: true
                 Layout.preferredHeight: root.errorText.length > 0 ? 32 : 0
                 visible: root.errorText.length > 0
-                color: "#38202B"
-                radius: 8
-                border.color: "#FF9BAE"
+                color: Theme.statusErrorBg
+                radius: Theme.radiusSm
+                border.color: Theme.statusError
                 border.width: 1
                 Label {
                     anchors.fill: parent
                     anchors.margins: 6
                     text: root.errorText
-                    color: "#FF9BAE"
+                    color: Theme.statusError
                     elide: Text.ElideRight
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.fontCaption
                     verticalAlignment: Text.AlignVCenter
                 }
             }

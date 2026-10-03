@@ -10,6 +10,12 @@ void registerKugouApi(IpcRouter &router, ApiContext &api) {
         done(success({{"kugou", toJson(api.kugou.status())}}));
     });
     const QHash<QString, std::function<Result<void>(const QJsonObject &)>> methods{
+        {"config.set",
+         [&api](const auto &p) {
+             if (!p.value("enabled").isBool() || !p.value("worker_url").isString())
+                 return Result<void>{failure(QStringLiteral("enabled must be a boolean and worker_url a string"))};
+             return api.kugou.saveConfiguration(p.value("enabled").toBool(), p.value("worker_url").toString());
+         }},
         {"send_code",
          [&api](const auto &p) { return api.kugou.startCodeRequest(p.value("mobile").toString()); }},
         {"login",

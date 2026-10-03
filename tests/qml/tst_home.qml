@@ -1,14 +1,13 @@
 import QtQuick
 import QtTest
 import "../../frontend/qt-qml/qml/pages" as Pages
-import "../../frontend/qt-qml/qml/components" as Components
+import "../../frontend/qt-qml/qml/components" 1.0 as Components
 
 Rectangle {
     id: scene
     width: 1140
     height: 764
     color: "#0E0D14"
-    Components.Theme { id: palette }
     QtObject { id: songModel; property var items: [] }
     QtObject { id: playlistModel; property var items: [] }
     QtObject { id: fakeTransport; property bool connected: true }
@@ -57,7 +56,7 @@ Rectangle {
     }
     QtObject {
         id: fakeShell
-        property var theme: palette
+        property var theme: Components.Theme
         property int width: 1360
         property var song: ({})
         property var queue: []

@@ -22,7 +22,7 @@ ApplicationWindow {
     minimumHeight: 640
     visible: true
     title: "NekoTune"
-    color: "#0E0D14"
+    color: Theme.bgCanvas
     property var app: controllers
     property var transport: ipcClient
     property var translator: i18n
@@ -32,7 +32,7 @@ ApplicationWindow {
     property bool queueOpen: false
     property int currentPlaylist: 0
     property var pages: PageRegistry.pages
-    readonly property var theme: palette
+    readonly property var theme: Theme
     readonly property var song: app.playback.song
     readonly property var queue: app.queue.model.items
     readonly property var lyrics: app.lyrics.current
@@ -42,23 +42,11 @@ ApplicationWindow {
     readonly property real volume: app.playback.volume
     readonly property string playbackState: app.playback.state
     readonly property string databasePath: app.databasePath
+    readonly property bool kugouEnabled: Boolean(app.kugou.account.enabled)
+    onKugouEnabledChanged: if (!kugouEnabled && viewMode === "kugou") navigate("settings")
     readonly property bool isPlaying: playbackState === "playing"
     readonly property bool hasSong: Boolean(song.song_id)
     readonly property int currentIndex: queue.findIndex(item => item.state === "current")
-    Theme { id: palette }
-    readonly property color ink: "#F5F1FA"           // text.primary
-    readonly property color subtle: "#D7CFE2"        // text.secondary
-    readonly property color muted: "#AAA0B8"         // text.muted
-    readonly property color border: "#332C41"        // border.subtle
-    readonly property color borderControl: "#8D809F" // border.control
-    readonly property color surface: "#17141F"       // bg.surface
-    readonly property color surfaceRaised: "#211C2D" // bg.raised
-    readonly property color bgSidebar: "#121019"     // bg.sidebar
-    readonly property color bgHover: "#2A2338"       // bg.hover
-    readonly property color bgSelected: "#322743"    // bg.selected
-    readonly property color lavender: "#CBB8FF"      // accent.primary
-    readonly property color rose: "#E8A9C3"          // accent.secondary
-
 
     // The same chooser serves three explicit collection destinations.
     // Library import only registers songs; playlist import also adds membership.
@@ -103,6 +91,7 @@ ApplicationWindow {
     // Playlist identity is set before selecting that page so bindings agree.
     // No navigation action itself starts or replaces playback.
     function navigate(id, playlistId) {
+        if (id === "kugou" && !kugouEnabled) id = "settings"
         nowPlayingOpen = false
         queueOpen = false
         if (id === "queue") currentPlaylist = Number(playlistId || 0)
@@ -179,12 +168,12 @@ ApplicationWindow {
                             Layout.fillWidth: true
                             Layout.preferredHeight: errorLabel.implicitHeight + 20
                             visible: Boolean(root.transport.error)
-                            color: "#38202B"
+                            color: Theme.statusErrorBg
                             Label {
                                 id: errorLabel
                                 anchors.fill: parent; anchors.margins: 10
                                 text: root.transport.error; textFormat: Text.PlainText
-                                color: "#FF9BAE"; wrapMode: Text.WordWrap; font.pixelSize: 12
+                                color: Theme.statusError; wrapMode: Text.WordWrap; font.pixelSize: 12
                             }
                         }
                         Item {
@@ -219,11 +208,22 @@ ApplicationWindow {
                 id: drawer
                 objectName: "queueDrawer"
                 anchors.top: parent.top; anchors.bottom: parent.bottom; anchors.right: parent.right
+                anchors.rightMargin: root.queueOpen ? 0 : -8
                 width: root.width < 1200 ? 360 : 400
-                visible: root.queueOpen
-                color: root.surfaceRaised
-                border.color: root.border
+                // Keep rendering through the exit animation, but stop accepting input immediately.
+                visible: root.queueOpen || opacity > 0
+                enabled: root.queueOpen
+                opacity: root.queueOpen ? 1 : 0
+                color: Theme.bgRaised
+                border.color: Theme.borderSubtle
+                border.width: 1
                 z: 10
+                Behavior on opacity {
+                    NumberAnimation { duration: Theme.reducedMotion ? 0 : Theme.durationDrawer; easing.type: Easing.OutCubic }
+                }
+                Behavior on anchors.rightMargin {
+                    NumberAnimation { duration: Theme.reducedMotion ? 0 : Theme.durationDrawer; easing.type: Easing.OutCubic }
+                }
                 MouseArea {
                     anchors.fill: parent
                     acceptedButtons: Qt.AllButtons

@@ -1,9 +1,9 @@
 #include "infrastructure/kugou/kugou_music_service.h"
 #include "app_paths.h"
+#include "infrastructure/kugou/kugou_settings.h"
 
 #include <QDir>
 #include <QJsonArray>
-#include <QProcessEnvironment>
 #include <QRegularExpression>
 #include <QStandardPaths>
 #include <QUrlQuery>
@@ -35,21 +35,12 @@ KugouMusicService::KugouMusicService(
     std::function<Result<QString>(const QString &, const QString &)> destination)
     : IKugouBackend(parent), m_manager(manager ? manager : new QNetworkAccessManager(this)) {
     qRegisterMetaType<KugouEvent>();
-    const auto env = QProcessEnvironment::systemEnvironment();
-    m_baseUrl = baseUrl.isEmpty()
-                    ? QUrl(env.value(QStringLiteral("KUGOU_MUSIC_API_URL"),
-                                     QStringLiteral("https://kugou-lyrics-api.lyuy.workers.dev")))
-                    : baseUrl;
-    const auto host = m_baseUrl.host().toLower();
-    const bool loopback = host == QStringLiteral("localhost") || host == QStringLiteral("127.0.0.1") ||
-                          host == QStringLiteral("::1");
-    if (m_baseUrl.host().isEmpty() || !m_baseUrl.userInfo().isEmpty() || !m_baseUrl.query().isEmpty() ||
-        !m_baseUrl.fragment().isEmpty() ||
-        (m_baseUrl.path() != QString() && m_baseUrl.path() != QStringLiteral("/")) ||
-        !(m_baseUrl.scheme() == QStringLiteral("https") ||
-          (loopback && m_baseUrl.scheme() == QStringLiteral("http")))) {
-        m_configurationError = QStringLiteral("Invalid Kugou Worker URL");
-    }
+    auto settings = KugouSettings::load();
+    if (!baseUrl.isEmpty())
+        settings.workerUrl = baseUrl;
+    m_enabled = settings.enabled;
+    m_baseUrl = settings.workerUrl;
+    m_configurationError = settings.unavailableReason();
     m_baseUrl.setPath({});
     m_destination = std::move(destination);
     QString directoryError;
@@ -86,6 +77,26 @@ void KugouMusicService::shutdown() {
     m_busy = false;
     m_downloadActive = false;
 }
+QString KugouMusicService::saveConfiguration(bool enabled, const QString &workerUrl) {
+    if (m_busy)
+        return QStringLiteral("Kugou operation already in progress");
+    KugouSettings settings{enabled, QUrl(workerUrl.trimmed(), QUrl::StrictMode)};
+    const auto error = settings.validationError();
+    if (!error.isEmpty())
+        return error;
+    settings.workerUrl.setPath({});
+    if (!AppPaths::saveSetting("kugou", QJsonObject{
+            {"enabled", enabled}, {"worker_url", settings.workerUrl.toString(QUrl::FullyEncoded)}}))
+        return QStringLiteral("Unable to save Kugou settings");
+    m_enabled = enabled;
+    m_baseUrl = settings.workerUrl;
+    m_configurationError = settings.unavailableReason();
+    m_api->setBaseUrl(m_baseUrl);
+    m_songs.clear();
+    emit eventReady({.type = KugouEventType::ConfigChanged});
+    return {};
+}
+
 QString KugouMusicService::saveAccountKey(const QString &key) {
     return m_busy ? QStringLiteral("Kugou operation already in progress") : m_account->saveAccountKey(key);
 }
@@ -102,11 +113,13 @@ QString KugouMusicService::cancelDownload() {
 
 KugouStatus KugouMusicService::status() const {
     return {m_configurationError.isEmpty() && !m_account->key.isEmpty(), m_account->keySaved,
-            !m_account->cookies.value(QStringLiteral("token")).isEmpty() &&
+            m_enabled && m_configurationError.isEmpty() &&
+                !m_account->cookies.value(QStringLiteral("token")).isEmpty() &&
                 !m_account->cookies.value(QStringLiteral("userid")).isEmpty() &&
                 validDfid(m_account->cookies.value(QStringLiteral("dfid"))),
             m_busy, m_downloadActive,
-            !m_account->keyError.isEmpty() ? m_account->keyError : m_account->sessionError};
+            !m_account->keyError.isEmpty() ? m_account->keyError : m_account->sessionError,
+            m_enabled, m_baseUrl.toString(QUrl::FullyEncoded)};
 }
 
 bool KugouMusicService::businessOk(const QJsonObject &body, const QString &expected) {

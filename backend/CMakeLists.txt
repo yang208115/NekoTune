@@ -26,7 +26,7 @@ add_library(nekotune_providers STATIC
     infrastructure/lyrics/lrclib_provider.cpp
     infrastructure/lyrics/network_diagnostics.cpp
 )
-target_link_libraries(nekotune_providers PUBLIC nekotune_domain Qt6::Network)
+target_link_libraries(nekotune_providers PUBLIC nekotune_domain nekotune_paths Qt6::Network)
 
 add_library(nekotune_infrastructure STATIC
     infrastructure/ai/ai_backend.cpp

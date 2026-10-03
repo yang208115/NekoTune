@@ -13,8 +13,8 @@ Item {
     property string coverUrl: ""
     property string playbackState: "stopped"
     property real maxDimension: 280
-    property color lavenderColor: "#CBB8FF"
-    property color roseColor: "#E8A9C3"
+    property color lavenderColor: Theme.accentPrimary
+    property color roseColor: Theme.accentSecondary
 
     readonly property bool isPlaying: playbackState === "playing"
     readonly property real artSize: Math.min(Math.min(parent.width, parent.height), root.maxDimension)
@@ -25,7 +25,7 @@ Item {
         width: coverCard.width + 20
         height: coverCard.height + 20
         radius: coverCard.radius + 6
-        color: root.hasSong ? Qt.rgba(0.796, 0.722, 1.0, 0.08) : "transparent"
+        color: root.hasSong ? Qt.rgba(root.lavenderColor.r, root.lavenderColor.g, root.lavenderColor.b, 0.08) : "transparent"
         z: -1
     }
 
@@ -34,8 +34,8 @@ Item {
         anchors.centerIn: parent
         width: Math.max(140, root.artSize)
         height: width
-        radius: 16
-        color: "#17141F"
+        radius: Theme.radiusLg
+        color: Theme.bgSurface
         clip: true
 
         // Image if has song
@@ -65,7 +65,7 @@ Item {
 
             Rectangle {
                 anchors.fill: parent
-                color: "#121019"
+                color: Theme.bgSidebar
             }
 
             Canvas {
@@ -75,7 +75,7 @@ Item {
                 onPaint: {
                     const ctx = getContext("2d")
                     ctx.reset()
-                    ctx.strokeStyle = "#332C41"
+                    ctx.strokeStyle = Theme.borderSubtle
                     ctx.lineWidth = 2
                     ctx.lineCap = "round"
                     ctx.lineJoin = "round"
@@ -99,7 +99,7 @@ Item {
             anchors.fill: parent
             radius: parent.radius
             color: "transparent"
-            border.color: Qt.rgba(1, 1, 1, 0.07)
+            border.color: Theme.borderSubtle
             border.width: 1
         }
     }

@@ -106,9 +106,9 @@ Popup {
     padding: 24
     background: Rectangle {
         objectName: "shortcutBlocker"
-        color: metadataEditor.shell.surfaceRaised
-        radius: 16
-        border.color: metadataEditor.shell.border
+        color: Theme.bgRaised
+        radius: Theme.radiusLg
+        border.color: Theme.borderSubtle
         border.width: 1
     }
     ColumnLayout {
@@ -119,8 +119,8 @@ Popup {
             Label {
                 Layout.fillWidth: true
                 text: metadataEditor.translator.text("edit_track_info", metadataEditor.translator.language)
-                color: metadataEditor.shell.ink
-                font.pixelSize: 18
+                color: Theme.textPrimary
+                font.pixelSize: Theme.fontDialogTitle
                 font.weight: Font.DemiBold
             }
             IconButton {
@@ -162,8 +162,8 @@ Popup {
             text: metadataEditor.t(metadataEditor.ai && metadataEditor.ai.suggestionError ? metadataEditor.ai.suggestionError : metadataEditor.aiMessage || (metadataEditor.ai && metadataEditor.ai.configuration.configured ? "ai_fill_help" : "ai_error_configuration"))
             wrapMode: Text.WordWrap
             textFormat: Text.PlainText
-            font.pixelSize: 11
-            color: metadataEditor.ai && metadataEditor.ai.suggestionError ? metadataEditor.shell.rose : metadataEditor.shell.muted
+            font.pixelSize: Theme.fontCaption
+            color: metadataEditor.ai && metadataEditor.ai.suggestionError ? Theme.statusError : Theme.textMuted
         }
         ScrollView {
             id: formScroll
@@ -185,14 +185,14 @@ Popup {
                         Layout.fillWidth: true
                         Layout.preferredHeight: 40
                         placeholderText: metadataEditor.translator.text("custom_title", metadataEditor.translator.language)
-                        color: metadataEditor.shell.ink
-                        placeholderTextColor: metadataEditor.shell.muted
+                        color: Theme.textPrimary
+                        placeholderTextColor: Theme.textMuted
                         leftPadding: 12
                         rightPadding: 12
                         background: Rectangle {
-                            color: metadataEditor.shell.surface
-                            radius: 8
-                            border.color: titleField.activeFocus ? metadataEditor.shell.lavender : metadataEditor.shell.borderControl
+                            color: Theme.bgSurface
+                            radius: Theme.radiusSm
+                            border.color: titleField.activeFocus ? Theme.accentPrimary : Theme.borderControl
                             border.width: 1
                         }
                     }
@@ -203,20 +203,20 @@ Popup {
                         Layout.fillWidth: true
                         Layout.preferredHeight: 40
                         placeholderText: metadataEditor.translator.text("artist_author", metadataEditor.translator.language)
-                        color: metadataEditor.shell.ink
-                        placeholderTextColor: metadataEditor.shell.muted
+                        color: Theme.textPrimary
+                        placeholderTextColor: Theme.textMuted
                         leftPadding: 12
                         rightPadding: 12
                         background: Rectangle {
-                            color: metadataEditor.shell.surface
-                            radius: 8
-                            border.color: artistField.activeFocus ? metadataEditor.shell.lavender : metadataEditor.shell.borderControl
+                            color: Theme.bgSurface
+                            radius: Theme.radiusSm
+                            border.color: artistField.activeFocus ? Theme.accentPrimary : Theme.borderControl
                             border.width: 1
                         }
                     }
                     Label {
                         text: metadataEditor.translator.text("tags", metadataEditor.translator.language)
-                        color: metadataEditor.shell.subtle
+                        color: Theme.textSecondary
                         font.pixelSize: 12
                     }
                     Flow {
@@ -259,28 +259,28 @@ Popup {
                                 currentIndex = -1;
                                 editText = "";
                             }
-                            palette.text: metadataEditor.shell.ink
-                            palette.buttonText: metadataEditor.shell.ink
-                            palette.base: metadataEditor.shell.surface
-                            palette.highlight: metadataEditor.shell.lavender
-                            palette.highlightedText: metadataEditor.shell.surface
+                            palette.text: Theme.textPrimary
+                            palette.buttonText: Theme.textPrimary
+                            palette.base: Theme.bgSurface
+                            palette.highlight: Theme.accentPrimary
+                            palette.highlightedText: Theme.textOnAccent
                             contentItem: TextField {
                                 text: tagInput.editText
                                 font: tagInput.font
                                 maximumLength: 64
                                 selectByMouse: true
-                                color: metadataEditor.shell.ink
-                                selectionColor: metadataEditor.shell.lavender
-                                selectedTextColor: metadataEditor.shell.surface
+                                color: Theme.textPrimary
+                                selectionColor: Theme.accentPrimary
+                                selectedTextColor: Theme.textOnAccent
                                 placeholderText: metadataEditor.translator.text("tag_name", metadataEditor.translator.language)
-                                placeholderTextColor: metadataEditor.shell.muted
+                                placeholderTextColor: Theme.textMuted
                                 verticalAlignment: Text.AlignVCenter
                                 background: Item {}
                             }
                             background: Rectangle {
-                                color: metadataEditor.shell.surface
-                                radius: 8
-                                border.color: tagInput.activeFocus ? metadataEditor.shell.lavender : metadataEditor.shell.borderControl
+                                color: Theme.bgSurface
+                                radius: Theme.radiusSm
+                                border.color: tagInput.activeFocus ? Theme.accentPrimary : Theme.borderControl
                             }
                             delegate: ItemDelegate {
                                 id: tagOption
@@ -292,11 +292,11 @@ Popup {
                                     text: tagOption.modelData
                                     textFormat: Text.PlainText
                                     elide: Text.ElideRight
-                                    color: metadataEditor.shell.ink
+                                    color: Theme.textPrimary
                                 }
                                 background: Rectangle {
                                     radius: 6
-                                    color: tagOption.highlighted ? metadataEditor.shell.surface : "transparent"
+                                    color: tagOption.highlighted ? Theme.bgSelected : "transparent"
                                 }
                             }
                             popup: Popup {
@@ -305,9 +305,9 @@ Popup {
                                 padding: 6
                                 implicitHeight: Math.min(contentItem.implicitHeight + 12, 240)
                                 background: Rectangle {
-                                    color: metadataEditor.shell.surfaceRaised
-                                    radius: 8
-                                    border.color: metadataEditor.shell.borderControl
+                                    color: Theme.bgRaised
+                                    radius: Theme.radiusSm
+                                    border.color: Theme.borderControl
                                 }
                                 contentItem: ListView {
                                     clip: true
@@ -334,8 +334,8 @@ Popup {
                         textFormat: Text.PlainText
                         visible: !metadataEditor.tagsReady || Boolean(metadataEditor.saveError)
                         text: !metadataEditor.tagsReady ? metadataEditor.translator.text("loading_tags", metadataEditor.translator.language) : metadataEditor.saveError
-                        color: metadataEditor.shell.rose
-                        font.pixelSize: 11
+                        color: Theme.statusError
+                        font.pixelSize: Theme.fontCaption
                     }
                 }
                 ScrollView {
@@ -347,14 +347,14 @@ Popup {
                         objectName: "metadataLyricsField"
                         enabled: metadataEditor.editable
                         placeholderText: metadataEditor.translator.text("lyrics", metadataEditor.translator.language)
-                        color: metadataEditor.shell.ink
-                        placeholderTextColor: metadataEditor.shell.muted
+                        color: Theme.textPrimary
+                        placeholderTextColor: Theme.textMuted
                         wrapMode: TextEdit.Wrap
                         padding: 12
                         background: Rectangle {
-                            color: metadataEditor.shell.surface
-                            radius: 8
-                            border.color: lyricsField.activeFocus ? metadataEditor.shell.lavender : metadataEditor.shell.borderControl
+                            color: Theme.bgSurface
+                            radius: Theme.radiusSm
+                            border.color: lyricsField.activeFocus ? Theme.accentPrimary : Theme.borderControl
                             border.width: 1
                         }
                     }

@@ -2,7 +2,9 @@
 #include <QJsonArray>
 namespace nekotune {
 QJsonObject toJson(const KugouStatus &status) {
-    return {{"configured", status.configured},
+    return {{"enabled", status.enabled},
+            {"worker_url", status.workerUrl},
+            {"configured", status.configured},
             {"key_saved", status.keySaved},
             {"logged_in", status.loggedIn},
             {"busy", status.busy},
@@ -17,6 +19,9 @@ QJsonObject toJson(const KugouStatus &status) {
 QJsonObject toJson(const KugouEvent &event) {
     QJsonObject data;
     switch (event.type) {
+    case KugouEventType::ConfigChanged:
+        data.insert("event", "kugou.config_changed");
+        break;
     case KugouEventType::CodeSent:
         data.insert("event", "kugou.code_sent");
         break;

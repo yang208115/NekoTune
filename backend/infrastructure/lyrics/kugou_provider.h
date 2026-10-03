@@ -20,7 +20,7 @@ class KugouProvider final : public LyricsProvider {
   public:
     explicit KugouProvider(
         QObject *parent = nullptr, QNetworkAccessManager *manager = nullptr,
-        const QUrl &baseUrl = QUrl(QStringLiteral("https://kugou-lyrics-api.lyuy.workers.dev")));
+        const QUrl &baseUrl = {});
     ~KugouProvider() override;
     void request(const LyricsQuery &query, quint64 token, bool search) override;
     void choose(const LyricsCandidate &candidate, quint64 token) override;
@@ -36,6 +36,8 @@ class KugouProvider final : public LyricsProvider {
     QNetworkAccessManager *m_manager;
     QPointer<QNetworkReply> m_reply;
     QUrl m_baseUrl;
+    bool m_useSettings = true;
+    bool configurationAvailable() const;
     struct Resolution {
         QString hash;
         QString accessKey;

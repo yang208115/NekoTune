@@ -23,10 +23,10 @@ Item {
     property real anchorPosition: position
     property real anchorClock: 0
     readonly property real shownPosition: playing && hasWordTiming && !reducedMotion ? displayPosition : position
-    property color activeColor: "#F5F1FA"
-    property color nearColor: "#D7CFE2"
-    property color inactiveColor: "#AAA0B8"
-    property bool reducedMotion: false
+    property color activeColor: Theme.textPrimary
+    property color nearColor: Theme.textSecondary
+    property color inactiveColor: Theme.textMuted
+    property bool reducedMotion: Theme.reducedMotion
 
     property bool userScrolling: false
     property int lastAutoIndex: -1
@@ -101,8 +101,8 @@ Item {
             id: followScroll
             target: lyricsList
             property: "contentY"
-            duration: root.reducedMotion ? 0 : 440
-            easing.type: Easing.InOutCubic
+            duration: root.reducedMotion ? 0 : Theme.durationScroll
+            easing.type: Easing.OutCubic
         }
 
         onDraggingChanged: {
@@ -123,7 +123,7 @@ Item {
         ScrollBar.vertical: ScrollBar {
             policy: ScrollBar.AsNeeded
             width: 4
-            contentItem: Rectangle { radius: 2; color: "#332C41" }
+            contentItem: Rectangle { radius: 2; color: Theme.borderSubtle }
         }
 
         delegate: Item {
@@ -144,8 +144,8 @@ Item {
 
             Rectangle {
                 anchors.fill: parent
-                radius: 8
-                color: lineMouse.hovered ? "#2A2338" : "transparent"
+                radius: Theme.radiusSm
+                color: lineMouse.hovered ? Theme.bgHover : "transparent"
             }
 
             Text {
@@ -158,17 +158,17 @@ Item {
                 textFormat: Text.PlainText
                 wrapMode: Text.Wrap
                 horizontalAlignment: Text.AlignHCenter
-                font.pixelSize: root.width < 500 ? 20 : 24
+                font.pixelSize: root.width < 500 ? Theme.fontLyricsCompact : Theme.fontLyricsWide
                 font.weight: lineDelegate.active ? Font.DemiBold : Font.Normal
                 lineHeightMode: Text.ProportionalHeight
-                lineHeight: 1.6
+                lineHeight: Theme.lineHeightLyrics
                 color: lineDelegate.active ? root.activeColor
-                       : lineMouse.hovered ? "#F5F1FA"
+                       : lineMouse.hovered ? Theme.textPrimary
                        : (lineDelegate.distanceToActive <= 1 ? root.nearColor : root.inactiveColor)
                 opacity: 1.0
 
                 Behavior on color {
-                    ColorAnimation { duration: 140 }
+                    ColorAnimation { duration: root.reducedMotion ? 0 : Theme.durationFast }
                 }
             }
 
@@ -189,9 +189,8 @@ Item {
                 x: (parent.width - width) / 2
                 y: (parent.height - height) / 2
                 spacing: 0
+                // Line focus follows the timestamp immediately; only word reveal and scrolling interpolate.
                 opacity: lineDelegate.active ? 1 : lineDelegate.distanceToActive <= 1 ? 0.82 : 0.62
-
-                Behavior on opacity { NumberAnimation { duration: root.reducedMotion ? 0 : 320 } }
 
                 Repeater {
                     id: wordRepeater
@@ -217,7 +216,6 @@ Item {
                             color: lineDelegate.active ? root.inactiveColor
                                    : lineDelegate.distanceToActive <= 1 ? root.nearColor : root.inactiveColor
 
-                            Behavior on color { ColorAnimation { duration: root.reducedMotion ? 0 : 320 } }
                         }
 
                         Item {
@@ -239,7 +237,6 @@ Item {
                                 color: lineDelegate.active ? root.activeColor
                                        : lineDelegate.distanceToActive <= 1 ? root.nearColor : root.inactiveColor
 
-                                Behavior on color { ColorAnimation { duration: root.reducedMotion ? 0 : 320 } }
                             }
                         }
                     }
@@ -277,7 +274,7 @@ Item {
         height: 36
         enabled: false
         gradient: Gradient {
-            GradientStop { position: 0.0; color: "#0E0D14" }
+            GradientStop { position: 0.0; color: Theme.bgCanvas }
             GradientStop { position: 1.0; color: "transparent" }
         }
     }
@@ -291,7 +288,7 @@ Item {
         enabled: false
         gradient: Gradient {
             GradientStop { position: 0.0; color: "transparent" }
-            GradientStop { position: 1.0; color: "#0E0D14" }
+            GradientStop { position: 1.0; color: Theme.bgCanvas }
         }
     }
 
@@ -306,7 +303,7 @@ Item {
             textFormat: TextEdit.PlainText
             readOnly: true
             wrapMode: TextEdit.Wrap
-            color: "#D7CFE2"
+            color: Theme.textSecondary
             font.pixelSize: 15
             horizontalAlignment: TextEdit.AlignHCenter
             background: null

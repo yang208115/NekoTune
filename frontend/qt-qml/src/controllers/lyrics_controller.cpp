@@ -4,6 +4,8 @@ LyricsController::LyricsController(IpcClient &client) : FeatureController(client
     connect(&client, &IpcClient::eventReceived, this, [this](const QJsonObject &event) {
         if (event.value("event") == "server.connected") {
             apply(event.value("data").toObject());
+        }
+        if (event.value("event") == "server.connected" || event.value("event") == "kugou.config_changed") {
             send("lyrics.sources", {}, [this](const QJsonObject &data, const QString &error) {
                 if (error.isEmpty()) {
                     m_sources.clear();

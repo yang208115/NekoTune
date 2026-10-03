@@ -16,6 +16,9 @@ class KugouService final : public QObject {
         connect(&backend, &IKugouBackend::audioReady, this, &KugouService::audioReady);
     }
     KugouStatus status() const { return m_backend.status(); }
+    Result<void> saveConfiguration(bool enabled, const QString &workerUrl) {
+        return result(m_backend.saveConfiguration(enabled, workerUrl));
+    }
     Result<void> saveAccountKey(const QString &key) { return result(m_backend.saveAccountKey(key)); }
     Result<void> clearAccountKey() { return result(m_backend.clearAccountKey()); }
     Result<void> startCodeRequest(const QString &mobile) {

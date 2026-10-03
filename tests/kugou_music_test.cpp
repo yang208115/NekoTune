@@ -3,6 +3,9 @@
 #include "infrastructure/library/music_directory.h"
 #include "support/store_fixture.h"
 #include "domain/lyrics/krc_parser.h"
+#include "infrastructure/lyrics/kugou_provider.h"
+#include "app_paths.h"
+#include <QLockFile>
 
 #include <QBuffer>
 #include <QFile>
@@ -156,6 +159,10 @@ class KugouMusicTest final : public QObject {
         qputenv("XDG_DATA_HOME", m_profile.filePath("data").toUtf8());
         qunsetenv("KUGOU_ACCOUNT_API_KEY_FILE");
     }
+    void init() {
+        QVERIFY(AppPaths::saveSetting("kugou", QJsonObject{{"enabled", true}, {"worker_url", "https://worker.example"}}));
+    }
+    void configurationDefaultsPersistenceAndRequestGating();
     void rejectsInsecureWorkerUrl();
     void storesAndClearsPrivateKey();
     void searchResultsCarryTrustedCovers();
@@ -167,6 +174,85 @@ class KugouMusicTest final : public QObject {
     void downloadsCoverAndPreservesExistingFile();
     void rejectsInvalidCoverWithoutLosingAudio();
 };
+
+void KugouMusicTest::configurationDefaultsPersistenceAndRequestGating() {
+    QVERIFY(AppPaths::saveSetting("kugou", QJsonObject{}));
+    QVERIFY(AppPaths::saveSetting("language", "en"));
+    qputenv("KUGOU_ACCOUNT_API_KEY", "test-key");
+    qputenv("KUGOU_MUSIC_API_URL", "https://ignored.example");
+    QTemporaryDir dir;
+    FakeManager manager;
+    manager.routes.insert("/search", {json(searchBody())});
+    KugouMusicService service(nullptr, &manager, {}, dir.filePath("session"),
+                              dir.filePath("music"), dir.filePath("key"));
+    qunsetenv("KUGOU_MUSIC_API_URL");
+    QVERIFY(!service.status().enabled);
+    QVERIFY(!service.status().configured);
+    QVERIFY(service.status().workerUrl.isEmpty());
+    QVERIFY(!service.startSearch("Song", 1).isEmpty());
+    QVERIFY(!service.startCodeRequest("13800138000").isEmpty());
+    QVERIFY(!service.startLogin("13800138000", "123456").isEmpty());
+    QVERIFY(!service.startDownload(QString(32, 'a')).isEmpty());
+    KugouProvider lyrics(nullptr, &manager);
+    QSignalSpy failures(&lyrics, &KugouProvider::failed);
+    QSignalSpy candidates(&lyrics, &KugouProvider::completed);
+    LyricsQuery query;
+    query.title = "Song";
+    lyrics.request(query, 1, true);
+    QCOMPARE(failures.count(), 1);
+    QVERIFY(manager.calls.isEmpty());
+    for (const QString url : {"", "http://worker.example", "https://worker.example/api",
+                              "https://user:pass@worker.example", "https://worker.example?key=value",
+                              "https://worker.example#fragment", "not a URL"}) {
+        QVERIFY(!service.saveConfiguration(true, url).isEmpty());
+        QVERIFY(!service.status().enabled);
+        QVERIFY(AppPaths::setting("kugou").toObject().isEmpty());
+    }
+    QCOMPARE(service.saveConfiguration(true, " https://first.example/ "), QString());
+    QVERIFY(service.status().enabled);
+    QCOMPARE(service.status().workerUrl, QString("https://first.example"));
+    QCOMPARE(AppPaths::setting("language").toString(), QString("en"));
+    QSignalSpy events(&service, &KugouMusicService::eventReady);
+    QCOMPARE(service.startSearch("Song", 1), QString());
+    QVERIFY(!service.saveConfiguration(false, "https://first.example").isEmpty());
+    QTRY_VERIFY(hasEvent(events, "kugou.search_results"));
+    QCOMPARE(manager.requestedUrls.value("/search").host(), QString("first.example"));
+    lyrics.request(query, 2, true);
+    QTRY_COMPARE(candidates.count(), 1);
+    const auto oldCandidates = candidates.first().at(1).value<QVector<LyricsCandidate>>();
+    QVERIFY(!oldCandidates.isEmpty());
+    QCOMPARE(service.saveConfiguration(true, "https://second.example"), QString());
+    lyrics.choose(oldCandidates.first(), 3);
+    QCOMPARE(failures.count(), 2);
+    QCOMPARE(service.startSearch("Song", 1), QString());
+    QTRY_VERIFY(!service.status().busy);
+    QCOMPARE(manager.requestedUrls.value("/search").host(), QString("second.example"));
+    lyrics.request(query, 4, true);
+    QTRY_COMPARE(candidates.count(), 2);
+    QCOMPARE(manager.requestedUrls.value("/search").host(), QString("second.example"));
+    QCOMPARE(service.saveConfiguration(false, "https://second.example"), QString());
+    const auto calls = manager.calls;
+    QVERIFY(!service.startSearch("Song", 1).isEmpty());
+    lyrics.request(query, 5, true);
+    lyrics.choose(oldCandidates.first(), 6);
+    QCOMPARE(failures.count(), 4);
+    QCOMPARE(manager.calls, calls);
+    {
+        KugouMusicService restored(nullptr, &manager, {}, dir.filePath("session"),
+                                   dir.filePath("music"), dir.filePath("key"));
+        QVERIFY(!restored.status().enabled);
+        QCOMPARE(restored.status().workerUrl, QString("https://second.example"));
+        QLockFile lock(AppPaths::configFile("settings.lock"));
+        QVERIFY(lock.tryLock());
+        QVERIFY(!restored.saveConfiguration(true, "https://third.example").isEmpty());
+        QVERIFY(!restored.status().enabled);
+        QCOMPARE(restored.status().workerUrl, QString("https://second.example"));
+    }
+    QCOMPARE(AppPaths::setting("kugou").toObject().value("worker_url").toString(),
+             QString("https://second.example"));
+    QCOMPARE(service.saveConfiguration(false, ""), QString());
+    QVERIFY(service.status().workerUrl.isEmpty());
+}
 
 // Provider artwork is accepted only from the configured trusted image hosts.
 // HTTP image hints are normalized to HTTPS and the size placeholder is resolved.

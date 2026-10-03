@@ -26,12 +26,12 @@ Item {
     property int total: 0
     property string message: ""
     property string pendingImportPath: ""
+    enabled: Boolean(account.enabled)
     readonly property var account: client.account || ({})
     readonly property bool activeDownload: downloading || Boolean(account.download_active)
     readonly property bool compactResults: resultsCard.width - 16 < 900
     readonly property real artistColumnWidth: Math.min(280, (resultsCard.width - 16) * 0.21)
     readonly property real albumColumnWidth: Math.min(320, (resultsCard.width - 16) * 0.24)
-    Theme { id: palette }
 
     function t(key) { return translator.text(key, translator.language) }
 
@@ -39,6 +39,14 @@ Item {
         target: root.client
         function onKugouEvent(payload) {
             const event = String(payload.event || "")
+            if (event === "kugou.config_changed") {
+                root.results = []
+                root.selectedHash = ""
+                root.submittedQuery = ""
+                root.page = 1
+                root.message = ""
+                return
+            }
             if (event === "kugou.download_progress") {
                 root.received = Number(payload.received || 0)
                 root.total = Number(payload.total || 0)
@@ -108,7 +116,7 @@ Item {
         spacing: 16
         RowLayout {
             Layout.fillWidth: true
-            Label { Layout.fillWidth: true; text: root.t("kugou_music"); color: "#F5F1FA"; font.pixelSize: 26; font.weight: Font.DemiBold }
+            Label { Layout.fillWidth: true; text: root.t("kugou_music"); color: Theme.textPrimary; font.pixelSize: Theme.fontTitle; font.weight: Font.DemiBold }
             TextButton {
                 objectName: "kugouAccountButton"
                 text: root.t(root.account.logged_in ? "account_logged_in" : "kugou_login")
@@ -143,14 +151,14 @@ Item {
         RowLayout {
             Layout.fillWidth: true
             visible: !root.account.logged_in
-            Label { Layout.fillWidth: true; text: root.t("anonymous_search_hint"); color: "#AAA0B8"; font.pixelSize: 12; wrapMode: Text.WordWrap }
+            Label { Layout.fillWidth: true; text: root.t("anonymous_search_hint"); color: Theme.textMuted; font.pixelSize: Theme.fontCaption; wrapMode: Text.WordWrap }
         }
         Label {
             objectName: "kugouCredentialError"
             Layout.fillWidth: true
             visible: Boolean(root.account.credential_error)
             text: root.t("kugou_keyring_error")
-            color: "#E8A0A8"
+            color: Theme.statusError
             wrapMode: Text.WordWrap
         }
         Rectangle {
@@ -158,8 +166,8 @@ Item {
             objectName: "kugouResultsCard"
             Layout.fillWidth: true; Layout.fillHeight: true
             radius: 14
-            color: palette.bgSurface
-            border.color: palette.borderSubtle
+            color: Theme.bgSurface
+            border.color: Theme.borderSubtle
             ColumnLayout {
                 anchors.fill: parent
                 anchors.margins: 8
@@ -168,19 +176,19 @@ Item {
                     Layout.fillWidth: true
                     Layout.margins: 16
                     spacing: 12
-                    Label { text: root.t("kugou_search_results"); color: palette.textPrimary; font.pixelSize: 15; font.weight: Font.DemiBold }
+                    Label { text: root.t("kugou_search_results"); color: Theme.textPrimary; font.pixelSize: 15; font.weight: Font.DemiBold }
                     Label {
                         Layout.fillWidth: true; Layout.minimumWidth: 0
                         text: root.submittedQuery ? root.t("kugou_results_for").replace("%1", root.submittedQuery) : ""
                         textFormat: Text.PlainText
-                        color: palette.textMuted; font.pixelSize: 12; elide: Text.ElideRight
+                        color: Theme.textMuted; font.pixelSize: 12; elide: Text.ElideRight
                     }
                     Label {
                         text: root.t("kugou_page_count").replace("%1", root.results.length)
-                        color: palette.accentPrimary; font.pixelSize: 12
+                        color: Theme.accentPrimary; font.pixelSize: 12
                     }
                 }
-                Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: palette.borderSubtle }
+                Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.borderSubtle }
                 RowLayout {
                     objectName: "kugouColumns"
                     visible: root.results.length > 0
@@ -188,15 +196,15 @@ Item {
                     Layout.leftMargin: 16; Layout.rightMargin: 16
                     Layout.preferredHeight: 38
                     spacing: 14
-                    Label { Layout.preferredWidth: 28; text: "#"; color: palette.textMuted; font.pixelSize: 12; horizontalAlignment: Text.AlignHCenter }
+                    Label { Layout.preferredWidth: 28; text: "#"; color: Theme.textMuted; font.pixelSize: 12; horizontalAlignment: Text.AlignHCenter }
                     Item {
                         Layout.fillWidth: true; Layout.minimumWidth: 0
-                        Label { anchors.left: parent.left; anchors.leftMargin: 62; anchors.verticalCenter: parent.verticalCenter; text: root.t("kugou_song_column"); color: palette.textMuted; font.pixelSize: 12 }
+                        Label { anchors.left: parent.left; anchors.leftMargin: 62; anchors.verticalCenter: parent.verticalCenter; text: root.t("kugou_song_column"); color: Theme.textMuted; font.pixelSize: 12 }
                     }
-                    Label { objectName: "kugouArtistColumn"; Layout.preferredWidth: root.artistColumnWidth; visible: !root.compactResults; text: root.t("artist_author"); color: palette.textMuted; font.pixelSize: 12 }
-                    Label { objectName: "kugouAlbumColumn"; Layout.preferredWidth: root.albumColumnWidth; visible: !root.compactResults; text: root.t("album"); color: palette.textMuted; font.pixelSize: 12 }
-                    Label { Layout.preferredWidth: 48; text: root.t("duration"); color: palette.textMuted; font.pixelSize: 12; horizontalAlignment: Text.AlignRight }
-                    Label { Layout.preferredWidth: 124; text: root.t("kugou_action_column"); color: palette.textMuted; font.pixelSize: 12; horizontalAlignment: Text.AlignHCenter }
+                    Label { objectName: "kugouArtistColumn"; Layout.preferredWidth: root.artistColumnWidth; visible: !root.compactResults; text: root.t("artist_author"); color: Theme.textMuted; font.pixelSize: 12 }
+                    Label { objectName: "kugouAlbumColumn"; Layout.preferredWidth: root.albumColumnWidth; visible: !root.compactResults; text: root.t("album"); color: Theme.textMuted; font.pixelSize: 12 }
+                    Label { Layout.preferredWidth: 48; text: root.t("duration"); color: Theme.textMuted; font.pixelSize: 12; horizontalAlignment: Text.AlignRight }
+                    Label { Layout.preferredWidth: 124; text: root.t("kugou_action_column"); color: Theme.textMuted; font.pixelSize: 12; horizontalAlignment: Text.AlignHCenter }
                 }
                 ListView {
                     id: resultList
@@ -223,15 +231,15 @@ Item {
                         anchors.centerIn: parent
                         visible: resultList.count === 0
                         text: root.t(root.waiting ? "kugou_waiting" : root.submittedQuery ? "kugou_no_results" : "kugou_search_hint")
-                        color: palette.textMuted; font.pixelSize: 14
+                        color: Theme.textMuted; font.pixelSize: 14
                     }
                 }
-                Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: palette.borderSubtle; visible: root.submittedQuery.length > 0 }
+                Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.borderSubtle; visible: root.submittedQuery.length > 0 }
                 RowLayout {
                     Layout.fillWidth: true
                     Layout.margins: 12
                     visible: root.submittedQuery.length > 0
-                    Label { Layout.fillWidth: true; text: root.t("kugou_page_number").replace("%1", root.page); color: palette.textMuted; font.pixelSize: 12 }
+                    Label { Layout.fillWidth: true; text: root.t("kugou_page_number").replace("%1", root.page); color: Theme.textMuted; font.pixelSize: 12 }
                     TextButton { objectName: "kugouPreviousPage"; text: root.t("kugou_previous_page"); implicitHeight: 36; subtle: true; enabled: !root.waiting && !root.account.busy && root.page > 1; onClicked: { root.waiting = true; root.client.kugouSearch(root.submittedQuery, root.page - 1) } }
                     TextButton { objectName: "kugouNextPage"; text: root.t("kugou_next_page"); implicitHeight: 36; subtle: true; enabled: !root.waiting && !root.account.busy && root.results.length > 0; onClicked: { root.waiting = true; root.client.kugouSearch(root.submittedQuery, root.page + 1) } }
                 }
@@ -241,7 +249,7 @@ Item {
             Layout.fillWidth: true
             visible: root.waiting || root.activeDownload || root.message.length > 0
             text: root.message || root.t(root.activeDownload ? "kugou_downloading" : "kugou_waiting")
-            color: "#D7CFE2"; wrapMode: Text.WordWrap; textFormat: Text.PlainText; font.pixelSize: 12
+            color: Theme.textSecondary; wrapMode: Text.WordWrap; textFormat: Text.PlainText; font.pixelSize: Theme.fontCaption
         }
         TextButton { visible: root.pendingImportPath.length > 0; text: root.t("kugou_retry_import"); enabled: !root.waiting && !root.account.busy; onClicked: root.client.importLibraryPath(root.pendingImportPath) }
         RowLayout {
@@ -259,14 +267,14 @@ Item {
         padding: 24; modal: true; focus: true
         closePolicy: root.account.busy ? Popup.NoAutoClose : Popup.CloseOnEscape
         onClosed: codeField.text = ""
-        background: Rectangle { objectName: "shortcutBlocker"; color: "#211C2D"; radius: 16; border.color: "#332C41" }
+        background: Rectangle { objectName: "shortcutBlocker"; color: Theme.bgRaised; radius: Theme.radiusLg; border.color: Theme.borderSubtle }
         contentItem: ColumnLayout {
             spacing: 16
-            Label { text: root.t("kugou_login"); color: "#F5F1FA"; font.pixelSize: 20; font.weight: Font.DemiBold }
+            Label { text: root.t("kugou_login"); color: Theme.textPrimary; font.pixelSize: Theme.fontDialogTitle; font.weight: Font.DemiBold }
             Label {
                 Layout.fillWidth: true
                 text: root.t(root.account.logged_in ? "kugou_logged_in" : root.account.configured ? "kugou_login_prompt" : "kugou_key_missing")
-                color: root.account.logged_in ? "#98D8BC" : "#D7CFE2"; wrapMode: Text.WordWrap
+                color: root.account.logged_in ? Theme.statusSuccess : Theme.textSecondary; wrapMode: Text.WordWrap
             }
             RowLayout {
                 Layout.fillWidth: true
@@ -294,7 +302,7 @@ Item {
                 }
             }
             TextButton { visible: !root.account.configured; text: root.t("open_settings"); onClicked: { loginPopup.close(); root.settingsRequested() } }
-            Label { Layout.fillWidth: true; visible: root.message.length > 0; text: root.message; color: "#D7CFE2"; wrapMode: Text.WordWrap; textFormat: Text.PlainText }
+            Label { Layout.fillWidth: true; visible: root.message.length > 0; text: root.message; color: Theme.textSecondary; wrapMode: Text.WordWrap; textFormat: Text.PlainText }
             TextButton { Layout.alignment: Qt.AlignRight; text: root.t("close"); subtle: true; enabled: !root.account.busy; onClicked: loginPopup.close() }
         }
     }
