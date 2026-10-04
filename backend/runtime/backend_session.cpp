@@ -46,6 +46,8 @@ BackendSession::BackendSession()
           [this](const QString &id, const QString &title) { return m_music.reserveDownload(id, title); }) {
     m_covers.updateLyrics(m_lyrics.snapshot());
     m_imports.setMapper([this](const ImportedFile &file) { return m_music.manage(file); });
+    m_covers.setManagedBaseResolver([this](const QString &hash) { return m_music.baseFor(hash); });
+    m_lyrics.setManagedBaseResolver([this](const QString &hash) { return m_music.baseFor(hash); });
     m_api.scan = [this] { return m_scanner.start(); };
     m_api.musicDirectory = m_music.directory();
     m_api.configDirectory = AppPaths::configDirectory();

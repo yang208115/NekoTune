@@ -25,16 +25,12 @@ QString CoverService::cachedCover(const QString &trackId) const {
 }
 
 QString CoverService::resolve(const QString &path, const QString &trackId) const {
-    if (!path.isEmpty()) {
-        const QFileInfo audio(path);
-        const auto base = QDir(audio.absolutePath()).filePath(audio.completeBaseName());
+    auto localCover = [&](const QString &base, bool managed) -> QString {
         for (const auto &suffix : {".jpg", ".jpeg", ".png", ".webp"})
             if (const QFileInfo cover(base + QLatin1String(suffix)); cover.isFile()) {
                 auto url = QUrl::fromLocalFile(cover.absoluteFilePath());
-                bool numbered = false;
-                audio.completeBaseName().toLongLong(&numbered);
-                if (numbered && audio.completeBaseName() == audio.dir().dirName()) {
-                    // Sidecars can be replaced at the same path; vary the URL to invalidate QML's image cache.
+                if (managed) {
+                    // Replacements at the same path must invalidate QML's image cache.
                     QUrlQuery version;
                     version.addQueryItem("v", QString("%1-%2-%3")
                                                   .arg(cover.lastModified().toMSecsSinceEpoch())
@@ -44,12 +40,25 @@ QString CoverService::resolve(const QString &path, const QString &trackId) const
                 }
                 return url.toString();
             }
+        return {};
+    };
+    const auto managedBase = m_managedBase ? m_managedBase(trackId) : QString();
+    if (!managedBase.isEmpty())
+        if (const auto cover = localCover(managedBase, true); !cover.isEmpty())
+            return cover;
+    if (!path.isEmpty()) {
+        const QFileInfo audio(path);
+        const auto base = audio.dir().filePath(audio.completeBaseName());
+        bool numbered = false;
+        audio.completeBaseName().toLongLong(&numbered);
+        if (const auto cover = localCover(base, numbered && audio.completeBaseName() == audio.dir().dirName());
+            !cover.isEmpty())
+            return cover;
         if (audio.isSymLink() && audio.exists()) {
             const QFileInfo original(audio.canonicalFilePath());
-            const auto originalBase = original.dir().filePath(original.completeBaseName());
-            for (const auto &suffix : {".jpg", ".jpeg", ".png", ".webp"})
-                if (QFileInfo(originalBase + QLatin1String(suffix)).isFile())
-                    return QUrl::fromLocalFile(originalBase + QLatin1String(suffix)).toString();
+            if (const auto cover = localCover(original.dir().filePath(original.completeBaseName()), false);
+                !cover.isEmpty())
+                return cover;
         }
     }
     return m_offline ? QString() : cachedCover(trackId);

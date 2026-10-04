@@ -29,6 +29,14 @@ add_dependencies(nekotune_music_directory_test nekotune-backend)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     add_test(NAME nekotune_music_directory_test COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/with_test_keyring.sh $<TARGET_FILE:nekotune_music_directory_test>)
     set_tests_properties(nekotune_music_directory_test PROPERTIES SKIP_RETURN_CODE 77)
+else()
+    # Portable file-reference coverage does not require access to a native credential store.
+    add_test(NAME nekotune_audio_reference_test COMMAND nekotune_music_directory_test
+        nativeAudioLinksExposeRealBytes
+        referenceFallbackKeepsPlaybackAndAssetsSeparate
+        referencesScanAndRestoreWithoutAcceptingChangedAudio
+        referenceCleanupRollsBackAndNeverDeletesExternalAudio
+        referenceRegistrationFailureAndTamperingPreserveFiles)
 endif()
 
 add_executable(nekotune_lyrics_test lyrics_test.cpp)

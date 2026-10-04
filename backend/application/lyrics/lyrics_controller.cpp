@@ -79,9 +79,11 @@ void LyricsController::load(bool ready, bool force) {
         QMetaObject::invokeMethod(m_service, [service = m_service, revision] { service->clear(revision); });
         return;
     }
+    // Resolve SQL-owned resource paths before crossing to the lyrics worker.
+    const auto managedBase = m_managedBase ? m_managedBase(request.trackId) : QString();
     QMetaObject::invokeMethod(
-        m_service, [service = m_service, request, item = *current.song, revision, ready, force] {
-            service->load(request, item.path, item.metadata.lyrics, revision, ready, force);
+        m_service, [service = m_service, request, item = *current.song, revision, ready, force, managedBase] {
+            service->load(request, item.path, item.metadata.lyrics, revision, ready, force, managedBase);
         });
 }
 Result<void> LyricsController::refresh(const QString &trackId) {

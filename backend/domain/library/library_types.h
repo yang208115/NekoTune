@@ -48,6 +48,8 @@ struct ImportedFile {
     QString hash;
     QString sourceName;
     qint64 durationMs = 0;
+    /// Optional discovery origin; playback still uses path, never the reference document.
+    QString managedReferencePath;
 };
 
 /// Persisted membership contains a song ID plus the chosen path.

@@ -241,7 +241,7 @@ NekoTune 使用基于换行分隔的 JSON 协议，通过 Unix domain socket 进
 {"id":26,"method":"playlist.play","params":{"id":2,"song_ids":[9,7],"song_id":9}}
 ```
 
-`library.delete` 接收非空、无重复的 `song_ids` 整数数组和可选布尔值 `clean_files`（默认 `false`）。成功时在同一数据库事务中移除对应的曲库记录、标签关联、所有歌单关联及队列项，返回 `data.deleted_count`，并广播曲库、歌单和队列变化。默认保留本地文件；`clean_files: true` 同时清理已登记的编号目录中的音频或软链接和同名 `.krc`、`.lrc`、`.jpg`、`.jpeg`、`.png`、`.webp`，保留外部原文件和目录中的其他文件，只删除清理后的空目录。目录软链接或越界路径会拒绝清理。
+`library.delete` 接收非空、无重复的 `song_ids` 整数数组和可选布尔值 `clean_files`（默认 `false`）。成功时在同一数据库事务中移除对应的曲库记录、标签关联、所有歌单关联及队列项，返回 `data.deleted_count`，并广播曲库、歌单和队列变化。默认保留本地文件；`clean_files: true` 同时清理已登记的编号目录中的音频、软链接或 `.audio.json` 引用和同名 `.krc`、`.lrc`、`.jpg`、`.jpeg`、`.png`、`.webp`，保留外部原文件和目录中的其他文件，只删除清理后的空目录。目录软链接或越界路径会拒绝清理。
 
 清理先暂存文件，再提交数据库删除；任何 ID 无效、暂存失败或数据库写入失败时整批回滚。数据库提交后删除暂存文件，未能删除的路径通过 `data.cleanup_errors` 返回，界面明确提示已移除歌曲但仍有文件待清理。扩展下载正在进行时暂不允许清理。若正在播放的歌曲被删除，尝试继续播放后续队列项；没有后续项则停止。
 
@@ -346,14 +346,14 @@ AI 操作失败沿用 `status: "error"` 和 `message`，后者为可翻译的 `a
 
 - `library.scan`：无参数，异步扫描音乐目录，返回 `data.started`。`true` 表示启动新任务，`false` 表示已有扫描正在进行。后端启动及独立前端首次连接自动发起扫描。
 - 扫描同时为已有曲库中可访问但缺少时长的歌曲补齐记录，包括音乐目录之外的旧导入路径；不改动歌曲文件、标签或队列顺序。读取失败或文件丢失时保留未知时长，后续扫描可重试。
-- `library.scan_finished`：事件包含 `imported`、`skipped`、`failed` 和 `errors`（路径与安全错误信息数组）。扫描按内容 SHA-256 去重，不修改队列或自动联网获取配套文件；忽略 `config`、临时文件、目录软链接和曾删除的歌曲。
-- `library.import`、`playlist.add` 的路径导入、`queue.add`、带路径的 `player.play`：参数结构保持原样，外部音频统一建立编号软链接。`library.import` 返回的 `data.path`，以及歌单、队列和播放器的歌曲 `path`，均为管理后的音频路径。
+- `library.scan_finished`：事件包含 `imported`、`skipped`、`failed` 和 `errors`（路径与安全错误信息数组）。扫描支持编号 `.audio.json` 引用，并验证实际音频内容 SHA-256；损坏引用、不可读音频或内容不匹配通过 `errors` 报告。扫描按内容 SHA-256 去重，不修改队列或自动联网获取配套文件；忽略 `config`、临时文件、目录软链接和曾删除的歌曲。
+- `library.import`、`playlist.add` 的路径导入、`queue.add`、带路径的 `player.play`：参数结构保持原样，外部音频优先建立编号原生软链接，链接创建失败时保存编号 `.audio.json` 引用。`library.import` 返回的 `data.path`，以及歌单、队列和播放器的歌曲 `path`，均为可供解码的音频路径：软链接模式返回编号音频路径，引用模式返回外部原音频的绝对路径，不返回 JSON 路径。
 - `library.delete`：默认保留音频及配套文件；`clean_files: true` 清理托管文件。两种操作都会在事务内记录内容 hash 的扫描忽略状态。手动导入或下载可恢复；扫描不会恢复。
 - `library.assets_failed`：配套文件保存或封面下载失败事件，包含 `song_hash` 和 `message`；不会中断音频播放。
 
 歌曲对象（曲库、队列、歌单和 `song.metadata`）包含持久化的 `duration_ms`，单位为毫秒，`0` 表示未知。导入和扫描在后台读取本地音频时长；旧数据库自动新增字段，已知时长不会被读取失败的结果清空。
 
-每首歌曲使用独立的递增编号目录，例如 `000001/000001.flac`。下载音频为真实文件，外部音频为绝对软链接；程序获取的同编号 KRC、LRC 和封面始终为真实文件。成功在线匹配或手动选定后更新配套文件；结果受歌曲 hash 和歌词 revision 约束，过期请求不能覆盖新选择。音频断链后保留歌曲资料和配套文件，曲库 `available` 为 `false`。
+每首歌曲使用独立的递增编号目录，例如 `000001/000001.flac`。下载音频为真实文件，外部音频为绝对软链接或 `.audio.json` 引用；程序获取的同编号 KRC、LRC 和封面始终为真实文件。成功在线匹配或手动选定后更新配套文件；结果受歌曲 hash 和歌词 revision 约束，过期请求不能覆盖新选择。原音频离线或断链后保留歌曲资料和配套文件，曲库 `available` 为 `false`。
 
 设置和缓存集中在 `config`；首次默认目录迁移保留旧数据库和缓存，不覆盖已有目标。账号密钥和会话迁入系统密钥环，回读校验成功后删除旧明文凭据；失败保留原文件并返回 `credential_error`。设置页保存的语言优先于系统语言，`NEKOTUNE_LANGUAGE` 优先于保存语言；`lyrics.set_offline` 持久保存到 `config/settings.json`。
 

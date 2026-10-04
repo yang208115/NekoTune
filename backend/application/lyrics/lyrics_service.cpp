@@ -68,7 +68,7 @@ void LyricsService::clear(quint64 revision) {
 }
 
 void LyricsService::load(const LyricsQuery &query, const QString &path, const QString &customLyrics,
-                         quint64 revision, bool metadataReady, bool force) {
+                         quint64 revision, bool metadataReady, bool force, const QString &managedBase) {
     cancel();
     m_provider = m_defaultProvider;
     m_revision = revision;
@@ -78,7 +78,11 @@ void LyricsService::load(const LyricsQuery &query, const QString &path, const QS
     m_snapshot = {};
     publish(QStringLiteral("loading"));
     // Refresh must not bypass a user's local file, and a local read error must stay visible.
-    const auto local = m_storage->readLocal(query, path);
+    // A synthetic basename locates managed sidecars without pretending a reference is audio.
+    auto local = managedBase.isEmpty() ? m_storage->readLocal(query, path)
+                                      : m_storage->readLocal(query, managedBase + ".audio");
+    if (local && !local.value() && !managedBase.isEmpty())
+        local = m_storage->readLocal(query, path);
     if (!local) {
         publish(QStringLiteral("error"), local.error().message);
         return;

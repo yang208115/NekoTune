@@ -23,7 +23,7 @@ class ImportExecutor final : public IFileInspector {
     /// Use this when recovering legacy duration rather than registering a new managed resource.
     /// Completion still returns to the executor's owning thread.
     void inspectUnmanaged(const QString &path, Completion completion);
-    /// Discover supported local audio without traversing linked directories.
+    /// Discover supported local audio and numbered references without traversing linked directories.
     /// The callback receives paths to inspect, not registered library records.
     /// Discovery is off-thread and does not choose a playback context.
     void discover(const QString &directory, std::function<void(QStringList)> completion);

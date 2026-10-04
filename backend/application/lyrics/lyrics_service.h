@@ -27,9 +27,10 @@ class LyricsService final : public QObject {
     /// @param revision Request identity echoed in snapshots and asset notifications.
     /// @param metadataReady Whether automatic online matching has sufficient decoder metadata.
     /// @param force Bypass custom/cache content while retaining local-sidecar precedence.
+    /// @param managedBase Independent numbered basename checked before source-side files.
     /// Completion is published asynchronously; callers observe changed rather than a return value.
     void load(const LyricsQuery &query, const QString &path, const QString &customLyrics, quint64 revision,
-              bool metadataReady, bool force = false);
+              bool metadataReady, bool force = false, const QString &managedBase = {});
     /// @param source Registered provider ID, not its localized display name.
     /// @param revision Current controller request identity for the resulting candidate list.
     /// Manual search preserves the selected document while replacing search candidates.

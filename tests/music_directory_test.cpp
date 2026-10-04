@@ -3,6 +3,9 @@
 #include "i18n.h"
 #include "infrastructure/lyrics/lyrics_storage.h"
 #include "infrastructure/library/music_directory.h"
+#include "infrastructure/library/audio_reference.h"
+#include "infrastructure/library/import_executor.h"
+#include "application/lyrics/lyrics_service.h"
 #include "infrastructure/lyrics/sidecar_store.h"
 #include "runtime/backend_runtime.h"
 #include "support/store_fixture.h"
@@ -194,6 +197,236 @@ class MusicDirectoryTest final : public QObject {
         QCOMPARE(repaired.value().path, path);
         QCOMPARE(QFileInfo(path).symLinkTarget(), replacement);
         QVERIFY(music.reserveDownload("another-provider", "Other").value().endsWith("000003/000003"));
+    }
+    void nativeAudioLinksExposeRealBytes() {
+        const auto source = m_profile.filePath("native-links/原歌曲.flac");
+        const auto target = m_profile.filePath("native-links/linked.flac");
+        write(source, "native link audio bytes");
+        if (!createAudioSymlink(source, target))
+            QSKIP("Native file symlink creation is unavailable for this user/filesystem");
+        QVERIFY(QFileInfo(target).isSymbolicLink());
+        QCOMPARE(read(target), QByteArray("native link audio bytes"));
+        QVERIFY(QFile::remove(target));
+        QCOMPARE(read(source), QByteArray("native link audio bytes"));
+    }
+    void referenceFallbackKeepsPlaybackAndAssetsSeparate() {
+        const auto source = m_profile.filePath("外部音乐/歌曲.flac");
+        write(source, "referenced audio");
+        write(m_profile.filePath("外部音乐/歌曲.lrc"), "[00:00.00]Source lyrics");
+        StoreFixture store(qEnvironmentVariable("NEKOTUNE_DB_PATH"));
+        MusicDirectory music(store.db, {}, [](const QString &, const QString &) { return false; });
+        const auto audioHash = hash("referenced audio");
+        const auto imported = music.manage({source, audioHash, "External title"});
+        QVERIFY(imported);
+        QCOMPARE(imported.value().path, source);
+        QVERIFY(store.library.importFile(imported.value()));
+        const auto base = music.baseFor(audioHash);
+        QVERIFY(base.endsWith("000001/000001"));
+        QVERIFY(!QFileInfo::exists(base + ".flac"));
+        const auto reference = readAudioReference(base + ".audio.json");
+        QVERIFY(reference);
+        QCOMPARE(reference.value().path, source);
+        QCOMPARE(reference.value().hash, audioHash);
+        write(base + ".lrc", "[00:00.00]Managed lyrics");
+        write(base + ".png", "managed cover");
+        CoverService covers(std::make_unique<LyricsStorage>());
+        covers.setManagedBaseResolver([&](const QString &key) { return music.baseFor(key); });
+        QCOMPARE(QUrl(covers.resolve(source, audioHash)).toLocalFile(), base + ".png");
+        LyricsService lyrics({}, std::make_unique<LyricsStorage>());
+        lyrics.setOffline(true);
+        QString selected;
+        connect(&lyrics, &LyricsService::changed, this, [&](const LyricsSnapshot &state) {
+            if (state.document)
+                selected = state.document->syncedLyrics;
+        });
+        LyricsQuery query;
+        query.trackId = audioHash;
+        lyrics.load(query, source, {}, 1, false, false, base);
+        QCOMPARE(selected, QString("[00:00.00]Managed lyrics"));
+        QVERIFY(QFile::remove(base + ".lrc"));
+        lyrics.load(query, source, {}, 2, false, false, base);
+        QCOMPARE(selected, QString("[00:00.00]Source lyrics"));
+        QVERIFY(QFile::remove(source));
+        QVERIFY(store.library.snapshot().songs.first().path.isEmpty());
+        QCOMPARE(QUrl(covers.resolve({}, audioHash)).toLocalFile(), base + ".png");
+        const auto replacement = m_profile.filePath("新位置/歌曲.flac");
+        write(replacement, "referenced audio");
+        QSqlQuery sql(store.db.database());
+        QVERIFY(sql.exec("CREATE TRIGGER reject_repair BEFORE UPDATE ON managed_resources "
+                         "BEGIN SELECT RAISE(ABORT, 'reject repair'); END"));
+        QVERIFY(!music.manage({replacement, audioHash, "Replacement"}));
+        QCOMPARE(readAudioReference(base + ".audio.json").value().path, source);
+        QVERIFY(sql.exec("DROP TRIGGER reject_repair"));
+        auto repaired = music.manage({replacement, audioHash, "Replacement"});
+        QVERIFY(repaired);
+        QVERIFY(store.library.importFile(repaired.value()));
+        QCOMPARE(store.library.snapshot().songs.first().path, replacement);
+        QCOMPARE(music.baseFor(audioHash), base);
+        QCOMPARE(readAudioReference(base + ".audio.json").value().path, replacement);
+        QVERIFY(QFile::remove(replacement));
+        const auto downloaded = base + ".flac";
+        write(downloaded, "referenced audio");
+        QVERIFY(sql.exec("CREATE TRIGGER reject_owned_audio BEFORE UPDATE ON managed_resources "
+                         "BEGIN SELECT RAISE(ABORT, 'reject owned audio'); END"));
+        QVERIFY(!music.manage({downloaded, audioHash, "Downloaded"}));
+        QCOMPARE(readAudioReference(base + ".audio.json").value().path, replacement);
+        QCOMPARE(read(downloaded), QByteArray("referenced audio"));
+        QVERIFY(sql.exec("DROP TRIGGER reject_owned_audio"));
+        auto owned = music.manage({downloaded, audioHash, "Downloaded"});
+        QVERIFY(owned);
+        QCOMPARE(owned.value().path, downloaded);
+        QVERIFY(!QFileInfo::exists(base + ".audio.json"));
+        QVERIFY(store.db.begin());
+        {
+            auto removal = music.stageRemoval({audioHash});
+            QVERIFY(removal);
+            store.db.rollback();
+        }
+        QCOMPARE(read(downloaded), QByteArray("referenced audio"));
+    }
+    void referencesScanAndRestoreWithoutAcceptingChangedAudio() {
+        const auto source = m_profile.filePath("reference-scan/song.wav");
+        write(source, "original referenced bytes");
+        QString referencePath;
+        {
+            StoreFixture store(qEnvironmentVariable("NEKOTUNE_DB_PATH"));
+            MusicDirectory music(store.db, {}, [](const QString &, const QString &) { return false; });
+            QVERIFY(music.manage({source, hash("original referenced bytes"), "Recovered title"}));
+            referencePath = music.baseFor(hash("original referenced bytes")) + ".audio.json";
+        }
+        ImportExecutor imports;
+        bool discovered = false;
+        QStringList paths;
+        imports.discover(AppPaths::musicDirectory(), [&](QStringList found) {
+            paths = std::move(found);
+            discovered = true;
+        });
+        QTRY_VERIFY(discovered);
+        QCOMPARE(paths, QStringList{referencePath});
+        std::optional<Result<ImportedFile>> inspected;
+        imports.inspectUnmanaged(referencePath, [&](Result<ImportedFile> file) { inspected = std::move(file); });
+        QTRY_VERIFY(inspected.has_value());
+        QVERIFY(*inspected);
+        QCOMPARE(inspected->value().path, source);
+        QCOMPARE(inspected->value().managedReferencePath, referencePath);
+        StoreFixture restored(m_profile.filePath("restored-reference.sqlite3"));
+        MusicDirectory music(restored.db);
+        const auto registered = music.manage(inspected->value());
+        QVERIFY(registered);
+        QCOMPARE(registered.value().path, source);
+        QCOMPARE(music.baseFor(registered.value().hash) + ".audio.json", referencePath);
+        QVERIFY(music.reserveDownload("new-provider", "New").value().endsWith("000002/000002"));
+        write(source, "different audio at the same path");
+        inspected.reset();
+        imports.inspectUnmanaged(referencePath, [&](Result<ImportedFile> file) { inspected = std::move(file); });
+        QTRY_VERIFY(inspected.has_value());
+        QVERIFY(!*inspected);
+        QCOMPARE(inspected->error().message, QString("Referenced audio content has changed"));
+        write(referencePath, "not JSON");
+        inspected.reset();
+        imports.inspectUnmanaged(referencePath, [&](Result<ImportedFile> file) { inspected = std::move(file); });
+        QTRY_VERIFY(inspected.has_value());
+        QVERIFY(!*inspected);
+        write(referencePath, QByteArray(64 * 1024 + 1, 'x'));
+        QVERIFY(!readAudioReference(referencePath));
+    }
+    void referenceCleanupRollsBackAndNeverDeletesExternalAudio() {
+        const auto source = m_profile.filePath("reference-cleanup/song.mp3");
+        write(source, "preserve external audio");
+        StoreFixture store(qEnvironmentVariable("NEKOTUNE_DB_PATH"));
+        MusicDirectory music(store.db, {}, [](const QString &, const QString &) { return false; });
+        const auto audioHash = hash("preserve external audio");
+        const auto file = music.manage({source, audioHash, "External"});
+        QVERIFY(file);
+        QVERIFY(store.library.importFile(file.value()));
+        const auto base = music.baseFor(audioHash);
+        write(base + ".lrc", "managed lyrics");
+        write(QFileInfo(base).dir().filePath("notes.txt"), "retain unrelated file");
+        QVERIFY(store.db.begin());
+        {
+            auto staged = music.stageRemoval({audioHash});
+            QVERIFY(staged);
+            QVERIFY(!QFileInfo::exists(base + ".audio.json"));
+            QCOMPARE(read(source), QByteArray("preserve external audio"));
+            store.db.rollback();
+        }
+        QVERIFY(QFileInfo::exists(base + ".audio.json"));
+        QCOMPARE(read(base + ".lrc"), QByteArray("managed lyrics"));
+        QVERIFY(store.db.begin());
+        auto staged = music.stageRemoval({audioHash});
+        QVERIFY(staged);
+        QVERIFY(store.db.commit());
+        QVERIFY(staged.value()->commit().isEmpty());
+        QVERIFY(!QFileInfo::exists(base + ".audio.json"));
+        QVERIFY(!QFileInfo::exists(base + ".lrc"));
+        QCOMPARE(read(source), QByteArray("preserve external audio"));
+        QCOMPARE(read(QFileInfo(base).dir().filePath("notes.txt")), QByteArray("retain unrelated file"));
+    }
+    void referenceRegistrationFailureAndTamperingPreserveFiles() {
+        const auto source = m_profile.filePath("reference-errors/song.mp3");
+        write(source, "external bytes");
+        StoreFixture store(qEnvironmentVariable("NEKOTUNE_DB_PATH"));
+        MusicDirectory music(store.db, {}, [](const QString &, const QString &) { return false; });
+        QSqlQuery sql(store.db.database());
+        QVERIFY(sql.exec("CREATE TRIGGER reject_reference BEFORE UPDATE ON managed_resources "
+                         "BEGIN SELECT RAISE(ABORT, 'reject reference'); END"));
+        QVERIFY(!music.manage({source, hash("external bytes"), "External"}));
+        QVERIFY(!QFileInfo::exists(AppPaths::musicDirectory() + "/000001/000001.audio.json"));
+        QCOMPARE(read(source), QByteArray("external bytes"));
+        QVERIFY(sql.exec("DROP TRIGGER reject_reference"));
+        const auto file = music.manage({source, hash("external bytes"), "External"});
+        QVERIFY(file);
+        const auto base = music.baseFor(file.value().hash);
+        const auto other = m_profile.filePath("other.mp3");
+        write(other, "unrelated audio");
+        QVERIFY(writeAudioReference(base + ".audio.json", {other, file.value().hash, "Tampered"}));
+        QVERIFY(!music.stageRemoval({file.value().hash}));
+        QVERIFY(QFileInfo::exists(base + ".audio.json"));
+        QCOMPARE(read(source), QByteArray("external bytes"));
+        QCOMPARE(read(other), QByteArray("unrelated audio"));
+    }
+    void referenceStartupScanRespectsDeletionAndIpcCleanup() {
+        const auto source = m_profile.filePath("reference-runtime/song.mp3");
+        write(source, "runtime referenced audio");
+        const auto audioHash = hash("runtime referenced audio");
+        QString base;
+        {
+            StoreFixture store(qEnvironmentVariable("NEKOTUNE_DB_PATH"));
+            MusicDirectory music(store.db, {}, [](const QString &, const QString &) { return false; });
+            QVERIFY(music.manage({source, audioHash, "Runtime reference"}));
+            base = music.baseFor(audioHash);
+        }
+        BackendRuntime runtime;
+        QVERIFY(runtime.start());
+        Rpc peer;
+        QVERIFY(peer.connect(qEnvironmentVariable("NEKOTUNE_SOCKET")));
+        auto songs = [&] {
+            return peer.call("library.list").value("data").toObject()
+                .value("library").toObject().value("songs").toArray();
+        };
+        QTRY_COMPARE(songs().size(), 1);
+        const auto id = songs().first().toObject().value("song_id").toInt();
+        QCOMPARE(songs().first().toObject().value("path").toString(), source);
+        QCOMPARE(peer.call("library.delete", {{"song_ids", QJsonArray{id}}})
+                     .value("status").toString(), QString("ok"));
+        QVERIFY(QFileInfo::exists(base + ".audio.json"));
+        runtime.stop();
+        QVERIFY(runtime.start());
+        Rpc restarted;
+        QVERIFY(restarted.connect(qEnvironmentVariable("NEKOTUNE_SOCKET")));
+        QTest::qWait(150);
+        QVERIFY(restarted.call("library.list").value("data").toObject()
+                    .value("library").toObject().value("songs").toArray().isEmpty());
+        const auto imported = restarted.call("library.import", {{"path", source}});
+        QCOMPARE(imported.value("status").toString(), QString("ok"));
+        const auto newId = imported.value("data").toObject().value("song_id").toInt();
+        write(base + ".lrc", "managed lyrics");
+        QCOMPARE(restarted.call("library.delete", {{"song_ids", QJsonArray{newId}}, {"clean_files", true}})
+                     .value("status").toString(), QString("ok"));
+        QVERIFY(!QFileInfo::exists(base + ".audio.json"));
+        QVERIFY(!QFileInfo::exists(base + ".lrc"));
+        QCOMPARE(read(source), QByteArray("runtime referenced audio"));
+        runtime.stop();
     }
     // Only validated lyric and image content should become app-owned sidecars.
     // Delayed replies simulate a request whose track revision is no longer current.

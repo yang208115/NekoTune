@@ -35,6 +35,7 @@ add_library(nekotune_infrastructure STATIC
     infrastructure/credentials/credential_store.cpp
     infrastructure/kugou/kugou_account_session.cpp
     infrastructure/library/audio_duration.cpp
+    infrastructure/library/audio_reference.cpp
     infrastructure/library/import_executor.cpp
     infrastructure/library/music_directory.cpp
     infrastructure/lyrics/lyrics_cache.cpp

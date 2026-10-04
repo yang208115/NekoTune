@@ -1,5 +1,6 @@
 #include "infrastructure/library/import_executor.h"
 #include "infrastructure/library/audio_duration.h"
+#include "infrastructure/library/audio_reference.h"
 #include <QCryptographicHash>
 #include <QDateTime>
 #include <QDir>
@@ -60,7 +61,8 @@ void ImportExecutor::discover(const QString &directory, std::function<void(QStri
                     // Do not follow directory links outside the tree or scan app-owned configuration.
                     if (!entry.isSymLink() && entry.fileName() != "config")
                         folders.append(entry.absoluteFilePath());
-                } else if (suffixes.contains(entry.suffix().toLower()))
+                } else if (suffixes.contains(entry.suffix().toLower()) ||
+                           entry.fileName().endsWith(".audio.json", Qt::CaseInsensitive))
                     paths.append(entry.absoluteFilePath());
             }
         }
@@ -90,7 +92,14 @@ void ImportExecutor::inspectUnmanaged(const QString &path, Completion completion
     m_pending.insert(id, std::move(completion));
     QMetaObject::invokeMethod(m_worker, [guard, cancelled, path, id]() {
         auto inspect = [&]() -> Result<ImportedFile> {
-            QFileInfo info(path);
+            std::optional<AudioReference> reference;
+            if (path.endsWith(".audio.json", Qt::CaseInsensitive)) {
+                auto result = readAudioReference(path);
+                if (!result)
+                    return result.error();
+                reference = result.value();
+            }
+            QFileInfo info(reference ? reference->path : path);
             if (!info.isFile())
                 return failure(QStringLiteral("File does not exist: %1").arg(path), ErrorCode::Io);
             auto size = info.size();
@@ -114,10 +123,14 @@ void ImportExecutor::inspectUnmanaged(const QString &path, Completion completion
             // Reject a hash/duration pair collected while the input was being replaced or written.
             if (info.size() != size || info.lastModified() != modified)
                 return failure(QStringLiteral("File changed during import"), ErrorCode::Io);
-            return ImportedFile{info.absoluteFilePath(), QString::fromLatin1(hash.result().toHex()),
-                                info.isSymLink() ? QFileInfo(info.symLinkTarget()).completeBaseName()
-                                                 : info.completeBaseName(),
-                                duration};
+            const auto audioHash = QString::fromLatin1(hash.result().toHex());
+            if (reference && reference->hash != audioHash)
+                return failure("Referenced audio content has changed", ErrorCode::Io);
+            return ImportedFile{info.absoluteFilePath(), audioHash,
+                                reference ? reference->sourceName
+                                          : info.isSymLink() ? QFileInfo(info.symLinkTarget()).completeBaseName()
+                                                             : info.completeBaseName(),
+                                duration, reference ? QFileInfo(path).absoluteFilePath() : QString()};
         };
         auto result = inspect();
         if (!guard || cancelled->load())

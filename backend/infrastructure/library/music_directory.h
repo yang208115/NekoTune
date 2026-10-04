@@ -3,16 +3,19 @@
 #include "domain/library/managed_files.h"
 #include "domain/result.h"
 #include "storage/database_session.h"
+#include <functional>
 
 namespace nekotune {
-/// Maps audio hashes to numbered resources; external audio is linked, while sidecars are app-owned.
+/// Maps audio hashes to numbered resources; external audio is linked or referenced, never copied.
 /// Database access stays on the supplied session's owning backend thread.
 class MusicDirectory final : public IManagedFiles {
   public:
-    explicit MusicDirectory(DatabaseSession &database, const QString &directory = {});
+    using LinkCreator = std::function<bool(const QString &, const QString &)>;
+    explicit MusicDirectory(DatabaseSession &database, const QString &directory = {},
+                            LinkCreator createLink = {});
     /// @param file Hashed source inspection result to register under its audio identity.
-    /// @return Inspection metadata with the managed audio path and original source name.
-    /// External audio is linked rather than copied or renamed into app ownership.
+    /// @return Inspection metadata with a decoder-readable audio path and original source name.
+    /// External audio uses a native symlink or a reference document on link creation failure.
     /// Known hashes reuse their persistent resource number across restarts.
     Result<ImportedFile> manage(const ImportedFile &file);
     /// Reserves a basename before audio SHA-256 is known; provider hashes are a separate identity.
@@ -39,5 +42,6 @@ class MusicDirectory final : public IManagedFiles {
     QString base(qint64 id) const;
     DatabaseSession &m_database;
     QString m_directory;
+    LinkCreator m_createLink;
 };
 } // namespace nekotune

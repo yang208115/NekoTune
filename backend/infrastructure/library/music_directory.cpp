@@ -1,4 +1,5 @@
 #include "infrastructure/library/music_directory.h"
+#include "infrastructure/library/audio_reference.h"
 #include "app_paths.h"
 #include <QDir>
 #include <QFile>
@@ -42,9 +43,10 @@ class ManagedFileRemoval final : public IManagedFileRemoval {
     bool m_committed = false;
 };
 }
-MusicDirectory::MusicDirectory(DatabaseSession &database, const QString &directory)
+MusicDirectory::MusicDirectory(DatabaseSession &database, const QString &directory, LinkCreator createLink)
     : m_database(database), m_directory(directory.isEmpty() ? AppPaths::musicDirectory()
-                                                            : QFileInfo(directory).absoluteFilePath()) {}
+                                                            : QFileInfo(directory).absoluteFilePath()),
+      m_createLink(createLink ? std::move(createLink) : createAudioSymlink) {}
 QString MusicDirectory::base(qint64 id) const {
     const auto number = QString::number(id).rightJustified(6, '0');
     return QDir(m_directory).filePath(number + '/' + number);
@@ -126,6 +128,12 @@ Result<ImportedFile> MusicDirectory::manage(const ImportedFile &file) {
         id = query.value(0).toLongLong();
         path = query.value(1).toString();
         name = query.value(2).toString();
+        const auto referencePath = base(id) + ".audio.json";
+        if (QFileInfo::exists(referencePath) || QFileInfo(referencePath).isSymLink()) {
+            const auto reference = readAudioReference(referencePath);
+            if (!reference || reference.value().hash != file.hash || reference.value().path != path)
+                return failure("Managed audio reference does not match registration", ErrorCode::Io);
+        }
         if (QFileInfo(path).isFile()) {
             // A provider may download identical audio into another reservation; reuse the audio identity
             // and retarget that provider's reservation without replacing the existing managed file.
@@ -150,14 +158,22 @@ Result<ImportedFile> MusicDirectory::manage(const ImportedFile &file) {
         return failure("Song file is unavailable", ErrorCode::Io);
     if (name.isEmpty())
         name = file.sourceName.isEmpty() ? input.completeBaseName() : file.sourceName;
-    const auto parent = input.dir().dirName();
+    const QFileInfo origin(file.managedReferencePath.isEmpty() ? file.path : file.managedReferencePath);
+    const auto parent = origin.dir().dirName();
     // A numeric-looking filename alone does not prove that a file is app-owned.
     // Adoption also requires the expected basename, exact root location and an unlinked directory.
     // Otherwise import creates a new managed audio link using the normal ownership boundary.
-    const bool numbered = !QFileInfo(input.absolutePath()).isSymLink() &&
+    const bool numbered = !QFileInfo(origin.absolutePath()).isSymLink() &&
                           QRegularExpression("^[0-9]{6,}$").match(parent).hasMatch() &&
-                          input.completeBaseName() == parent &&
-                          input.dir().absolutePath() == QDir(m_directory).filePath(parent);
+                          (file.managedReferencePath.isEmpty() ? input.completeBaseName() == parent
+                                                             : origin.fileName() == parent + ".audio.json") &&
+                          origin.dir().absolutePath() == QDir(m_directory).filePath(parent);
+    if (!file.managedReferencePath.isEmpty()) {
+        const auto reference = readAudioReference(file.managedReferencePath);
+        if (!numbered || !reference || reference.value().hash != file.hash ||
+            reference.value().path != input.absoluteFilePath())
+            return failure("Invalid discovered audio reference", ErrorCode::Io);
+    }
     if (!id && numbered) {
         query.prepare("SELECT id,hash,source_name FROM managed_resources WHERE id=:id");
         query.bindValue(":id", parent.toLongLong());
@@ -187,20 +203,49 @@ Result<ImportedFile> MusicDirectory::manage(const ImportedFile &file) {
             return allocated.error();
         id = allocated.value();
     }
+    const QFileInfo folder(QFileInfo(base(id)).absolutePath());
+    const auto root = QFileInfo(m_directory).canonicalFilePath();
+    if (root.isEmpty() || folder.isSymLink() ||
+        folder.canonicalFilePath() != QDir(root).filePath(folder.fileName()))
+        return failure("Invalid managed song directory", ErrorCode::Io);
     path = base(id) + '.' + input.suffix().toLower();
     const bool alreadyManaged = input.absoluteFilePath() == path;
     bool linked = false;
-    if (!alreadyManaged) {
+    const auto referencePath = base(id) + ".audio.json";
+    std::optional<AudioReference> previousReference;
+    if (QFileInfo::exists(referencePath) || QFileInfo(referencePath).isSymLink()) {
+        const auto reference = readAudioReference(referencePath);
+        if (!reference || reference.value().hash != file.hash)
+            return failure("Refusing to replace an unrelated audio reference", ErrorCode::Io);
+        previousReference = reference.value();
+    }
+    bool referenceChanged = false;
+    if (alreadyManaged && previousReference) {
+        // A recovered/downloaded owned file replaces an unavailable external reference.
+        // Do not leave a stale reference that would make later cleanup reject the registration.
+        if (!QFile::remove(referencePath))
+            return failure("Cannot replace managed audio reference", ErrorCode::Io);
+        referenceChanged = true;
+    } else if (!alreadyManaged) {
         // Link the canonical source so importing an existing symlink does not create a fragile chain.
         const QFileInfo target(path);
         // A dangling managed link is repairable because its target no longer exists.
         // Remove only that broken entry before linking the newly inspected source.
         // An existing usable file still blocks creation rather than being overwritten.
-        if (target.isSymLink() && !target.exists())
-            QFile::remove(path);
-        if (QFileInfo::exists(path) || !QFile::link(input.canonicalFilePath(), path))
+        if (target.isSymLink() && !target.exists() && !QFile::remove(path))
+            return failure("Cannot replace broken managed song symlink", ErrorCode::Io);
+        if (QFileInfo::exists(path))
             return failure("Cannot create managed song symlink", ErrorCode::Io);
-        linked = true;
+        if (!previousReference && file.managedReferencePath.isEmpty() &&
+            m_createLink(input.canonicalFilePath(), path)) {
+            linked = true;
+        } else {
+            // Keep a real playback path even when the platform cannot create a native link.
+            path = input.canonicalFilePath();
+            if (!writeAudioReference(referencePath, {path, file.hash, name}))
+                return failure("Cannot save managed audio reference", ErrorCode::Io);
+            referenceChanged = true;
+        }
     }
     query.prepare("UPDATE managed_resources SET "
                   "hash=:hash,path=:path,original_path=:original,"
@@ -213,6 +258,12 @@ Result<ImportedFile> MusicDirectory::manage(const ImportedFile &file) {
     if (!query.exec()) {
         if (linked)
             QFile::remove(path);
+        if (referenceChanged) {
+            const bool restored = previousReference ? writeAudioReference(referencePath, *previousReference)
+                                                    : QFile::remove(referencePath);
+            if (!restored)
+                qCritical() << "Cannot restore managed audio reference:" << referencePath;
+        }
         return failure(query.lastError().text(), ErrorCode::Storage);
     }
     if (numbered && parent.toLongLong() != id) {
@@ -240,12 +291,11 @@ bool MusicDirectory::containsSong(const QString &hash) const {
 }
 QString MusicDirectory::baseFor(const QString &hash) const {
     QSqlQuery query(m_database.database());
-    query.prepare("SELECT path FROM managed_resources WHERE hash=:hash");
+    query.prepare("SELECT id FROM managed_resources WHERE hash=:hash");
     query.bindValue(":hash", hash);
     if (!query.exec() || !query.next())
         return {};
-    const QFileInfo path(query.value(0).toString());
-    return path.dir().filePath(path.completeBaseName());
+    return base(query.value(0).toLongLong());
 }
 Result<std::unique_ptr<IManagedFileRemoval>> MusicDirectory::stageRemoval(const QStringList &hashes) {
     auto removal = std::make_unique<ManagedFileRemoval>();
@@ -264,14 +314,22 @@ Result<std::unique_ptr<IManagedFileRemoval>> MusicDirectory::stageRemoval(const 
         const auto folder = QFileInfo(expected).absolutePath();
         const QFileInfo folderInfo(folder);
         const QFileInfo audio(query.value(1).toString());
+        const auto referencePath = expected + ".audio.json";
+        const bool referenced = QFileInfo::exists(referencePath) || QFileInfo(referencePath).isSymLink();
+        if (referenced) {
+            const auto reference = readAudioReference(referencePath);
+            if (!reference || reference.value().hash != hash ||
+                reference.value().path != audio.absoluteFilePath())
+                return failure("Refusing to clean an invalid audio reference", ErrorCode::Io);
+        }
         // Stored paths alone are not authority to delete: verify the numbered layout and root,
         // rejecting directory symlinks that could redirect cleanup outside the managed tree.
         if (root.isEmpty() || id <= 0 || folderInfo.isSymLink() ||
-            audio.absoluteFilePath() != expected + '.' + audio.suffix() ||
+            (!referenced && audio.absoluteFilePath() != expected + '.' + audio.suffix()) ||
             (folderInfo.exists() && folderInfo.canonicalFilePath() !=
                                        QDir(root).filePath(folderInfo.fileName())))
             return failure("Refusing to clean an invalid managed song directory", ErrorCode::Io);
-        QStringList paths{audio.absoluteFilePath()};
+        QStringList paths{referenced ? referencePath : audio.absoluteFilePath()};
         for (const auto &suffix : {".krc", ".lrc", ".jpg", ".jpeg", ".png", ".webp"})
             paths.append(expected + QLatin1String(suffix));
         for (const auto &path : paths) {
