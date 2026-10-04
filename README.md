@@ -29,9 +29,9 @@ NekoTune 是一款本地优先的 Linux 音乐播放器，使用 C++20、Qt6 和
 - Zlib 和 FFmpeg 开发库：`libavformat`、`libavutil`。
 - QtKeychain 0.17+ 的 Qt6 开发包，CMake 包名为 `Qt6Keychain`。
 - Linux 还需 `libsecret-1` 开发库，用于读取并迁移旧版系统密钥库条目。
-- JS 构建工具需要 pnpm；CMake 下载并校验固定的 Node.js 24.21.0，发行运行不依赖系统 Node.js。扩展运行时目前支持 Linux x86_64。
+- JS 构建工具需要 pnpm；CMake 下载并校验固定的 Node.js 24.21.0，发行运行不依赖系统 Node.js。扩展运行时支持 Linux 和 Windows x86_64。
 
-仓库面向 Linux 桌面使用。凭据适配器包含 Windows/macOS 支持，完整应用在这些平台的构建和运行仍需对应平台验收。
+Linux 构建使用系统开发包或官方 Qt SDK；Windows 构建使用 MSYS2 UCRT64 的 GCC、CMake、Ninja、pkgconf、Qt6、QtKeychain、FFmpeg 和 Zlib。macOS 尚无完整构建工作流。
 
 在仓库根目录执行：
 
@@ -44,6 +44,14 @@ cmake --build build --parallel
 启动后默认打开「首页」。QML、图片与翻译文件嵌入可执行文件，Qt、QtKeychain 和其他动态库仍需安装；当前构建产物不是包含所有运行依赖的分发包。
 
 通过 `cmake --install build --prefix /absolute/install/path` 安装应用与捆绑 Node 运行时。离线构建可指定 `-DNEKOTUNE_NODE_ARCHIVE=/absolute/path/node-v24.21.0-linux-x64.tar.xz` 并预先准备 pnpm 缓存。
+
+### 自动构建与 Release
+
+GitHub Actions 的 `Build and Release` 工作流在推送 `main`、提交 PR、推送 `v*` 标签或手动运行时构建并测试 Linux、Windows x64。每个平台运行 CTest、扩展 TypeScript 检查，以及隔离用户目录的分发包启动检查，验证 QML、SQLite、IPC 和捆绑 Node 扩展运行时。成功的普通构建可在 Actions 页面下载 Artifact。
+
+推送与 `CMakeLists.txt` 中版本一致的标签（例如 `v0.1.0`），或在 `main` 上手动运行并勾选 `release`，会在两个平台都通过后创建 GitHub Release。发布包含 Windows ZIP、Linux TAR.GZ 和各自的 SHA-256 校验文件；附件上传和校验完成后才公开 Release。更新版本时先修改 CMake 项目版本，再创建对应标签。已公开版本不可通过重跑覆盖，应使用新版本发布。
+
+解压 Windows 包后运行 `bin/nekotune.exe`；解压 Linux 包后运行根目录的 `./NekoTune`。包中包含 Qt、FFmpeg、QtKeychain、QML 模块和 Node，无需另装 Node 或 Qt。Linux 包在 Ubuntu 24.04 构建，面向 glibc 2.39+ 的 x64 桌面系统，仍需系统图形驱动、音频服务和 Secret Service 密钥库。Windows 包面向 Windows 10/11 x64。CI 启动检查使用离屏渲染；真实桌面的显示、音频设备和原生密钥库仍需设备验收。
 
 ### 分离运行
 

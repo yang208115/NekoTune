@@ -1,0 +1,208 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: 'Publish v<CMake project version> after both platforms pass'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-release-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  metadata:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      publish: ${{ steps.version.outputs.publish }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - id: version
+        env:
+          REQUEST_RELEASE: ${{ inputs.release }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(sed -nE 's/^    VERSION ([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' CMakeLists.txt)
+          test -n "$version"
+          tag="v$version"
+          publish=false
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            test "$GITHUB_REF_NAME" = "$tag"
+            publish=true
+          elif [[ "$REQUEST_RELEASE" == true ]]; then
+            test "$GITHUB_REF" = refs/heads/main
+            publish=true
+          fi
+          printf 'version=%s\ntag=%s\npublish=%s\n' "$version" "$tag" "$publish" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build, test and package (${{ matrix.platform }})
+    needs: metadata
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux
+          - os: windows-2022
+            platform: windows
+    env:
+      QT_QPA_PLATFORM: offscreen
+      QT_QUICK_BACKEND: software
+      QT_QUICK_CONTROLS_STYLE: Fusion
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '24.21.0'
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          package_json_file: extensions/package.json
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          enable-cache: false
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build pkg-config libavformat-dev libavutil-dev zlib1g-dev \
+            libsecret-1-dev libssl-dev libgl1-mesa-dev libxkbcommon-x11-0 libxcb-cursor0 \
+            libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 libxcb-xinerama0 \
+            libxcb-xkb1 gnome-keyring dbus-x11 libglib2.0-bin
+      - name: Install Linux Qt
+        if: runner.os == 'Linux'
+        uses: jurplel/install-qt-action@a9c63c7c123f3069cff414e7e482d95dfa9d8125 # v4
+        with:
+          version: '6.8.3'
+          modules: 'qtmultimedia qtshadertools'
+          cache: true
+      - name: Build Linux QtKeychain 0.17.0
+        if: runner.os == 'Linux'
+        run: |
+          git clone https://github.com/frankosterfeld/qtkeychain.git .ci-qtkeychain
+          git -C .ci-qtkeychain checkout 875f77d9f61bd97fd84cca47ce3bc71186dfbd09
+          cmake -S .ci-qtkeychain -B .ci-qtkeychain/build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DBUILD_WITH_QT6=ON -DBUILD_TEST_APPLICATION=OFF \
+            -DBUILD_TRANSLATIONS=OFF -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/qtkeychain"
+          cmake --build .ci-qtkeychain/build --parallel 2
+          cmake --install .ci-qtkeychain/build
+      - name: Install Windows dependencies (UCRT64)
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2
+        with:
+          msystem: UCRT64
+          update: true
+          path-type: inherit
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-qt6-base
+            mingw-w64-ucrt-x86_64-qt6-declarative
+            mingw-w64-ucrt-x86_64-qt6-multimedia
+            mingw-w64-ucrt-x86_64-qtkeychain
+            mingw-w64-ucrt-x86_64-ffmpeg
+            mingw-w64-ucrt-x86_64-zlib
+
+      - name: Configure, build and test Linux
+        if: runner.os == 'Linux'
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR;$RUNNER_TEMP/qtkeychain"
+          cmake --build build --parallel 2
+          ctest --test-dir build --output-on-failure --timeout 180
+          pnpm --dir extensions check
+      - name: Configure, build and test Windows
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel 2
+          ctest --test-dir build --output-on-failure --timeout 180
+          pnpm --dir extensions check
+
+      - name: Bundle and smoke test Linux distribution
+        if: runner.os == 'Linux'
+        env:
+          VERSION: ${{ needs.metadata.outputs.version }}
+        run: |
+          cmake --install build --prefix "$PWD/stage"
+          uv run --no-project --python 3.12 scripts/ci/package_release.py \
+            --stage stage --qt-prefix "$QT_ROOT_DIR" --platform linux --version "$VERSION"
+          node scripts/ci/smoke_release.mjs stage
+      - name: Bundle and smoke test Windows distribution
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        env:
+          VERSION: ${{ needs.metadata.outputs.version }}
+        run: |
+          set -euo pipefail
+          cmake --install build --prefix "$(cygpath -m "$PWD/stage")"
+          uv run --no-project --python 3.12 scripts/ci/package_release.py \
+            --stage stage --qt-prefix "$(cygpath -m /ucrt64)" --platform windows --version "$VERSION"
+          node scripts/ci/smoke_release.mjs stage
+      - name: Upload executable distribution
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: NekoTune-${{ matrix.platform }}-x64
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Publish GitHub Release
+    needs: [metadata, build]
+    if: needs.metadata.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          pattern: NekoTune-*-x64
+          merge-multiple: true
+          path: dist
+      - name: Verify archives and publish atomically
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.metadata.outputs.tag }}
+          VERSION: ${{ needs.metadata.outputs.version }}
+        run: |
+          set -euo pipefail
+          test "$(find dist -maxdepth 1 -type f | wc -l)" -eq 4
+          test -s "dist/NekoTune-$VERSION-windows-x64.zip"
+          test -s "dist/NekoTune-$VERSION-linux-x64.tar.gz"
+          (cd dist && sha256sum -c ./*.sha256)
+          if git show-ref --verify --quiet "refs/tags/$TAG"; then
+            test "$(git rev-parse "$TAG^{commit}")" = "$GITHUB_SHA"
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            test "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = true
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* --target "$GITHUB_SHA" \
+              --title "NekoTune $TAG" --generate-notes --draft
+          fi
+          test "$(gh release view "$TAG" --json assets --jq '.assets | length')" -eq 4
+          gh release edit "$TAG" --draft=false
+          gh release view "$TAG" --json url,isDraft,assets

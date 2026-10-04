@@ -2,6 +2,9 @@
 /build/
 /cmake-build-*/
 /out/
+/stage/
+/dist/
+/.ci-qtkeychain/
 
 # CMake generated files
 CMakeCache.txt

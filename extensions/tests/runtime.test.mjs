@@ -34,7 +34,9 @@ async function runtime(t, safeMode = false) {
         });
     });
   });
-  const socket = path.join(root, 'host');
+  const socket = process.platform === 'win32'
+    ? '\\\\.\\pipe\\' + path.basename(root)
+    : path.join(root, 'host');
   await new Promise((resolve) => server.listen(socket, resolve));
   const child = spawn(process.execPath, [path.resolve('dist/supervisor.cjs')], {
     env: {

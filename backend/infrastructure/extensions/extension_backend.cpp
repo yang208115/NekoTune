@@ -9,7 +9,9 @@
 #include <QJsonObject>
 #include <QPointer>
 #include <QUuid>
+#ifndef Q_OS_WIN
 #include <signal.h>
+#endif
 
 namespace nekotune {
 ExtensionBackend::ExtensionBackend(QObject *parent) : IExtensionBackend(parent) {
@@ -62,7 +64,11 @@ void ExtensionBackend::start(HostCall hostCall) {
         return;
     }
     const QDir appDirectory(QCoreApplication::applicationDirPath());
+#ifdef Q_OS_WIN
+    QString node = appDirectory.filePath("../libexec/nekotune/node.exe");
+#else
     QString node = appDirectory.filePath("../libexec/nekotune/node");
+#endif
     QString script = appDirectory.filePath("../libexec/nekotune/supervisor.cjs");
     if (!QFileInfo::exists(node)) {
         node = QStringLiteral(NEKOTUNE_NODE_BINARY);
@@ -292,8 +298,13 @@ void ExtensionBackend::fail(const QString &message) {
 }
 void ExtensionBackend::killWorkers() {
     for (const auto pid : std::exchange(m_workerPids, {}))
-        if (pid > 1)
+        if (pid > 1) {
+#ifdef Q_OS_WIN
+            QProcess::execute("taskkill.exe", {"/PID", QString::number(pid), "/T", "/F"});
+#else
             ::kill(-static_cast<pid_t>(pid), SIGKILL);
+#endif
+        }
 }
 void ExtensionBackend::shutdown() {
     if (m_stopping)

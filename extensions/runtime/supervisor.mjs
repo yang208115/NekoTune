@@ -48,7 +48,9 @@ async function main() {
   });
   const socketDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'nekotune-ext-'));
   await fs.chmod(socketDirectory, 0o700);
-  const socketPath = path.join(socketDirectory, 'rpc');
+  const socketPath = process.platform === 'win32'
+    ? '\\\\.\\pipe\\nekotune-ext-' + randomUUID()
+    : path.join(socketDirectory, 'rpc');
   const server = net.createServer((socket) => {
     const wire = new Wire(socket);
     let run;
@@ -348,7 +350,8 @@ async function main() {
     runs.set(id, run);
     run.process = spawn(process.execPath, [path.join(runtimeDirectory, 'worker.cjs')], {
       cwd: entry.directory,
-      detached: true,
+      detached: process.platform !== 'win32',
+      windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe'],
       env: {
         ...process.env,
