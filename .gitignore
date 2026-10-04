@@ -5,6 +5,7 @@
 /stage/
 /dist/
 /.ci-qtkeychain/
+/.ccache/
 
 # CMake generated files
 CMakeCache.txt

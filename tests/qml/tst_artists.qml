@@ -18,6 +18,7 @@ Rectangle {
         x: 24; y: 120; width: 560
         fallbackText: "Unknown artist"
     }
+    FontMetrics { id: summaryMetrics; font: artists.font }
     TestCase {
         name: "Artists"
         when: windowShown
@@ -118,7 +119,9 @@ Rectangle {
             artists.summarizeOverflow = true
             artists.remainingTextTemplate = "+%1位"
             artists.artist = "初音ミク、星乃一歌、小豆沢こはね、天馬司、宵崎奏、花里みのり"
-            artists.width = 120
+            // Use the actual font's width budget so Linux and Windows exercise the same fit.
+            artists.width = Math.ceil(summaryMetrics.advanceWidth("初音ミク"))
+                + artists.spacing + Math.ceil(summaryMetrics.advanceWidth("+5位")) + 2
             waitForRendering(artists)
             const summary = findChild(artists, "artistSummary")
             const remaining = findChild(artists, "artistRemainingCount")
@@ -127,12 +130,13 @@ Rectangle {
             verify(!summary.truncated)
             verify(remaining.mapToItem(artists, remaining.width, 0).x <= artists.width)
             compare(artists.Accessible.name, artists.names.join(", "))
-            artists.width = 200
+            artists.width = Math.ceil(summaryMetrics.advanceWidth("初音ミク · 星乃一歌"))
+                + artists.spacing + Math.ceil(summaryMetrics.advanceWidth("+4位")) + 2
             waitForRendering(artists)
             compare(summary.text, "初音ミク · 星乃一歌")
             compare(remaining.text, "+4位")
             verify(!summary.truncated)
-            artists.width = 560
+            artists.width = Math.ceil(summaryMetrics.advanceWidth(artists.names.join(" · "))) + 2
             waitForRendering(artists)
             compare(summary.text, artists.names.join(" · "))
             verify(!remaining.visible)

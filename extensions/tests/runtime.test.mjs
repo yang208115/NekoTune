@@ -88,12 +88,13 @@ async function fixture(root, id, body, extra = {}) {
 }
 async function until(read, accept, timeout = 6000) {
   const end = Date.now() + timeout;
+  let result;
   while (Date.now() < end) {
-    const result = await read();
+    result = await read();
     if (accept(result)) return result;
     await new Promise((resolve) => setTimeout(resolve, 40));
   }
-  throw new Error('Expected state did not arrive');
+  throw new Error('Expected state did not arrive; last result: ' + JSON.stringify(result));
 }
 test('lifecycle, nested calls, storage, reload and rollback', { timeout: 45_000 }, async (t) => {
   const { root, call } = await runtime(t);

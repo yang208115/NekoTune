@@ -14,6 +14,7 @@
 #include <QTcpSocket>
 #include <QTemporaryDir>
 #include <QtTest>
+#include <algorithm>
 using namespace nekotune;
 namespace {
 class MemoryCredentials final : public CredentialStore {
@@ -273,7 +274,12 @@ class AiTest final : public QObject {
         QCOMPARE(result.value().tags, QStringList({"中文", "pop"}));
         QCOMPARE(server.requests.size(), 1);
         QVERIFY(server.headers.first().startsWith("POST /gateway/v1/chat/completions HTTP/1.1"));
-        QVERIFY(server.headers.first().contains("Authorization: Bearer unit-test-secret"));
+        const auto headers = server.headers.first().split('\n');
+        QVERIFY(std::any_of(headers.cbegin(), headers.cend(), [](const QByteArray &line) {
+            const auto colon = line.indexOf(':');
+            return colon >= 0 && line.left(colon).toLower() == "authorization" &&
+                   line.mid(colon + 1).trimmed() == "Bearer unit-test-secret";
+        }));
         const auto body = server.requests.first();
         QCOMPARE(body.value("model").toString(), QString("test-model"));
         QCOMPARE(body.value("response_format").toObject().value("type").toString(), QString("json_object"));
