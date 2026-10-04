@@ -17,6 +17,7 @@ class KugouAccountSession final {
     QString saveAccountKey(const QString &key);
     QString clearAccountKey();
     bool saveSession();
+    QString clearSession();
     void loadSession();
     void loadKey();
     QString key;

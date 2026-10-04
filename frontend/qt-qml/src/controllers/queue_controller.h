@@ -15,6 +15,16 @@ class QueueController final : public FeatureController {
     Q_INVOKABLE void addPath(const QString &path) {
         send("queue.add", {{"path", IpcClient::normalizePath(path)}});
     }
+    Q_INVOKABLE void addSourceSong(const QVariantMap &song) {
+        const auto source = song.value("source").toMap();
+        send("music.enqueue",
+             {{"source", source.value("provider_id").toString()},
+              {"track", QJsonObject{{"id", source.value("track_id").toString()},
+                                    {"title", song.value("title").toString()},
+                                    {"artist", song.value("artist").toString()},
+                                    {"album", song.value("album").toString()},
+                                    {"duration_ms", song.value("duration_ms").toLongLong()}}}});
+    }
     Q_INVOKABLE void playQueueItem(int id) { send("queue.play", {{"id", id}}); }
     Q_INVOKABLE void removeQueueItem(int id) { send("queue.remove", {{"id", id}}); }
     Q_INVOKABLE void clearQueue() { send("queue.clear"); }

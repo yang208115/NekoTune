@@ -1,11 +1,14 @@
 #include "controllers/app_controllers.h"
+#include "extensions/extension_view.h"
 AppControllers::AppControllers(IpcClient &client)
     : playback(new PlaybackController(client)), queue(new QueueController(client)),
       playlists(new PlaylistController(client)), library(new LibraryController(client)),
       tags(new TagController(client)), lyrics(new LyricsController(client)),
-      kugou(new KugouController(client)), settings(new SettingsController(client)), ai(new AiController(client)) {
+      settings(new SettingsController(client)),
+      ai(new AiController(client)), extensions(new ExtensionsController(client)) {
+    registerExtensionQmlTypes();
     for (QObject *object : QList<QObject *>{static_cast<QObject *>(playback), queue, playlists, library, tags,
-                                            lyrics, kugou, settings, ai})
+                                            lyrics, settings, ai, extensions})
         object->setParent(this);
     connect(&client, &IpcClient::eventReceived, this, [this](const QJsonObject &event) {
         if (event.value("event") != "server.connected")

@@ -19,6 +19,7 @@
 #include <QQmlNetworkAccessManagerFactory>
 #include <QQuickStyle>
 #include <QStandardPaths>
+#include <QWindow>
 
 // The QML engine owns its image network manager separately from backend HTTP.
 // Prefer disk cache only for the trusted provider image host.
@@ -33,8 +34,7 @@ class CoverNetworkManager final : public QNetworkAccessManager {
     QNetworkReply *createRequest(Operation operation, const QNetworkRequest &request,
                                  QIODevice *outgoingData = nullptr) override {
         QNetworkRequest cachedRequest(request);
-        if (operation == GetOperation &&
-            request.url().host().compare(QStringLiteral("imge.kugou.com"), Qt::CaseInsensitive) == 0)
+        if (operation == GetOperation && request.url().scheme() == "https")
             cachedRequest.setAttribute(QNetworkRequest::CacheLoadControlAttribute,
                                        QNetworkRequest::PreferCache);
         return QNetworkAccessManager::createRequest(operation, cachedRequest, outgoingData);
@@ -67,6 +67,18 @@ int main(int argc, char *argv[]) {
     QString directoryError;
     if (!nekotune::AppPaths::prepare(&directoryError)) { qCritical() << directoryError; return 1; }
     QQuickStyle::setStyle(QStringLiteral("Fusion"));
+    if (app.arguments().contains("--safe-mode"))
+        qputenv("NEKOTUNE_SAFE_MODE", "1");
+
+    QCommandLineParser commandLine;
+    commandLine.setApplicationDescription(QStringLiteral("NekoTune Qt/QML client"));
+    commandLine.addHelpOption();
+    commandLine.addOption(
+        QCommandLineOption(QStringLiteral("safe-mode"), QStringLiteral("Start with extensions disabled.")));
+    commandLine.addOption(
+        QCommandLineOption({QStringLiteral("lyrics-debug"), QStringLiteral("debug-lyrics")},
+                           QStringLiteral("Enable the lyrics diagnostics page in the sidebar.")));
+    commandLine.process(app);
 
 #ifdef NEKOTUNE_EMBED_BACKEND
     nekotune::BackendRuntime runtime;
@@ -77,14 +89,6 @@ int main(int argc, char *argv[]) {
     QObject::connect(&app, &QCoreApplication::aboutToQuit, &runtime, &nekotune::BackendRuntime::stop);
     qInfo() << "NekoTune backend listening on" << runtime.serverName();
 #endif
-
-    QCommandLineParser commandLine;
-    commandLine.setApplicationDescription(QStringLiteral("NekoTune Qt/QML client"));
-    commandLine.addHelpOption();
-    commandLine.addOption(
-        QCommandLineOption({QStringLiteral("lyrics-debug"), QStringLiteral("debug-lyrics")},
-                           QStringLiteral("Enable the lyrics diagnostics page in the sidebar.")));
-    commandLine.process(app);
 
     IpcClient ipcClient;
     I18n i18n;
@@ -99,6 +103,21 @@ int main(int argc, char *argv[]) {
                                              commandLine.isSet(QStringLiteral("lyrics-debug")) ||
                                                  commandLine.isSet(QStringLiteral("debug-lyrics")));
     engine.load(QUrl(QStringLiteral("qrc:/qml/Main.qml")));
+    QQmlApplicationEngine recoveryEngine;
+    recoveryEngine.rootContext()->setContextProperty(QStringLiteral("controllers"), &controllers);
+    recoveryEngine.rootContext()->setContextProperty(QStringLiteral("i18n"), &i18n);
+    recoveryEngine.rootContext()->setContextProperty(QStringLiteral("ignoreExtensionTheme"), true);
+    recoveryEngine.load(QUrl(QStringLiteral("qrc:/qml/ExtensionsWindow.qml")));
+    QObject::connect(controllers.extensions, &ExtensionsController::managerRequested, &app,
+                     [&recoveryEngine] {
+                         if (recoveryEngine.rootObjects().isEmpty())
+                             return;
+                         if (auto *window = qobject_cast<QWindow *>(recoveryEngine.rootObjects().first())) {
+                             window->show();
+                             window->raise();
+                             window->requestActivate();
+                         }
+                     });
 
     if (engine.rootObjects().isEmpty()) {
         return 1;

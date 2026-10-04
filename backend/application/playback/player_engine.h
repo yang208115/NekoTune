@@ -1,7 +1,9 @@
 #pragma once
-#include "application/playback/queue_service.h"
 #include "application/playback/playback_order_service.h"
+#include "application/playback/queue_service.h"
 #include "domain/playback/playback_types.h"
+#include "domain/playback/source_resolver.h"
+#include <QSet>
 #include <QTimer>
 namespace nekotune {
 /// Coordinates persisted queue selection and playback; storage and decoding stay in adapters.
@@ -62,6 +64,9 @@ class PlayerEngine final : public QObject {
     /// It must not be substituted for the adapter's actual decoded-audio state.
     bool playing() const { return m_state == PlayerState::Playing || m_state == PlayerState::Loading; }
     void shutdown();
+    void setSourceResolver(ISourceResolver *resolver) { m_sourceResolver = resolver; }
+    void sourceUnavailable(const QString &provider);
+    void sourcesReloading(const QStringList &extensionIds, bool active);
     void cancelPendingMetadataRefresh() { m_metadataTimer.stop(); }
   signals:
     void stateChanged(nekotune::PlayerState state);
@@ -86,5 +91,12 @@ class PlayerEngine final : public QObject {
     AudioMetadata m_metadata;
     PlayerState m_state = PlayerState::Stopped;
     bool m_metadataReady = false;
+    ISourceResolver *m_sourceResolver = nullptr;
+    QUrl m_resolvedSource;
+    quint64 m_sourceGeneration = 0;
+    bool m_resolving = false;
+    bool m_playIntent = false;
+    bool m_waitingForReload = false;
+    QSet<QString> m_reloadingExtensions;
 };
 } // namespace nekotune

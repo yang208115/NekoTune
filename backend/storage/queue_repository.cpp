@@ -23,7 +23,7 @@ bool QueueRepository::saveQueue(const QueueSnapshot &snapshot) {
     for (int index = 0; index < snapshot.items.size(); ++index) {
         const auto &item = snapshot.items.at(index);
         query.bindValue(QStringLiteral(":position"), index);
-        query.bindValue(QStringLiteral(":path"), item.path);
+        query.bindValue(QStringLiteral(":path"), item.path.isNull() ? QStringLiteral("") : item.path);
         query.bindValue(QStringLiteral(":song_id"), item.songId);
         query.bindValue(QStringLiteral(":current_index"), snapshot.currentIndex);
         if (!query.exec()) {

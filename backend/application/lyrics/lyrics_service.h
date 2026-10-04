@@ -15,6 +15,8 @@ class LyricsService final : public QObject {
     explicit LyricsService(const QVector<LyricsProvider *> &providers,
                            std::unique_ptr<ILyricsStorage> storage, QObject *parent = nullptr);
     QVector<LyricsSource> sources() const;
+    void addProvider(LyricsProvider *provider, bool takeOwnership = true);
+    void removeProvider(const QString &id);
     bool offline() const { return m_offline; }
     void shutdown() { cancel(); }
     /// force skips custom lyrics and cache, but still respects authoritative local sidecars.
@@ -54,6 +56,7 @@ class LyricsService final : public QObject {
     static bool confident(const LyricsQuery &query, const QVector<LyricsCandidate> &ranked);
 
   signals:
+    void sourcesChanged(const QVector<nekotune::LyricsSource> &sources);
     void changed(const nekotune::LyricsSnapshot &snapshot);
     void assetsReady(const nekotune::LyricsQuery &query, const nekotune::LyricsDocument &document,
                      quint64 revision);

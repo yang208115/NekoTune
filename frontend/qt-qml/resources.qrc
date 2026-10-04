@@ -5,6 +5,15 @@
         <file>i18n/en.json</file>
         <file>i18n/zh.json</file>
         <file>qml/Main.qml</file>
+        <file>qml/ExtensionsWindow.qml</file>
+        <file>qml/shell/PageHost.qml</file>
+        <file>qml/pages/ExtensionsPage.qml</file>
+        <file>qml/pages/MusicSourcesPage.qml</file>
+        <file>qml/components/ExtensionsPanel.qml</file>
+        <file>qml/components/ChoiceField.qml</file>
+        <file alias="qt/qml/NekoTune/qmldir">qml/sdk/qmldir</file>
+        <file alias="qt/qml/NekoTune/plugins.qmltypes">qml/sdk/plugins.qmltypes</file>
+        <file alias="qt/qml/NekoTune/ExtensionApi.qml">qml/sdk/ExtensionApi.qml</file>
         <file>qml/components/AlbumArt.qml</file>
         <file>qml/components/InputField.qml</file>
         <file>qml/components/ActionMenu.qml</file>
@@ -17,8 +26,6 @@
         <file>qml/components/LyricsDebugPanel.qml</file>
         <file>qml/components/LyricsPanel.qml</file>
         <file>qml/components/LibraryPanel.qml</file>
-        <file>qml/components/KugouPanel.qml</file>
-        <file>qml/components/KugouResultRow.qml</file>
         <file>qml/components/PlayerPanel.qml</file>
         <file>qml/components/PlayerSlider.qml</file>
         <file>qml/components/SeekSlider.qml</file>
@@ -28,7 +35,6 @@
         <file>qml/components/TextButton.qml</file>
         <file>qml/components/Theme.qml</file>
         <file>qml/components/qmldir</file>
-        <file>qml/pages/KugouPage.qml</file>
         <file>qml/pages/HomePage.qml</file>
         <file>qml/pages/LibraryPage.qml</file>
         <file>qml/pages/LyricsDebugPage.qml</file>

@@ -9,20 +9,37 @@ namespace nekotune {
 LyricsService::LyricsService(const QVector<LyricsProvider *> &providers,
                              std::unique_ptr<ILyricsStorage> storage, QObject *parent)
     : QObject(parent), m_storage(std::move(storage)), m_provider(nullptr) {
-    for (auto *source : providers) {
-        const auto id = source->descriptor().id;
-        Q_ASSERT(!id.isEmpty() && !m_providers.contains(id));
-        m_providers.insert(id, source);
-        connect(source, &LyricsProvider::completed, this, &LyricsService::completed);
-        connect(source, &LyricsProvider::failed, this, &LyricsService::failed);
-        connect(source, &LyricsProvider::resolved, this,
-                [this](quint64 token, const LyricsDocument &document) {
-                    if (token == m_token)
-                        apply(document, true);
-                });
-    }
+    for (auto *source : providers)
+        addProvider(source, false);
     m_defaultProvider = m_providers.value(QStringLiteral("lrclib"));
     m_provider = m_defaultProvider;
+}
+void LyricsService::addProvider(LyricsProvider *source, bool takeOwnership) {
+    if (takeOwnership)
+        source->setParent(this);
+    const auto id = source->descriptor().id;
+    Q_ASSERT(!id.isEmpty() && !m_providers.contains(id));
+    m_providers.insert(id, source);
+    connect(source, &LyricsProvider::completed, this, &LyricsService::completed);
+    connect(source, &LyricsProvider::failed, this, &LyricsService::failed);
+    connect(source, &LyricsProvider::resolved, this, [this](quint64 token, const LyricsDocument &document) {
+        if (token == m_token)
+            apply(document, true);
+    });
+    emit sourcesChanged(sources());
+}
+void LyricsService::removeProvider(const QString &id) {
+    auto *source = m_providers.take(id);
+    if (!source)
+        return;
+    if (source == m_provider) {
+        cancel();
+        m_provider = m_defaultProvider;
+        publish("error", "Lyrics source unavailable");
+    }
+    source->cancel();
+    source->deleteLater();
+    emit sourcesChanged(sources());
 }
 QVector<LyricsSource> LyricsService::sources() const {
     QVector<LyricsSource> result;

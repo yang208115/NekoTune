@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QCryptographicHash>
 #include <QString>
 #include <QStringList>
 #include <QVector>
@@ -17,6 +18,19 @@ struct SongMetadata {
     QString lyrics;
     QString sourceName;
     qint64 durationMs = 0;
+    QString providerId;
+    QString providerTrackId;
+    QString album;
+    QString coverUrl;
+    bool isRemote() const { return !providerId.isEmpty(); }
+    QString resourceKey() const {
+        return isRemote() ? QStringLiteral("remote-") +
+                                QString::fromLatin1(QCryptographicHash::hash(providerId.toUtf8() + '\0' +
+                                                                                 providerTrackId.toUtf8(),
+                                                                             QCryptographicHash::Sha256)
+                                                        .toHex())
+                          : hash;
+    }
 };
 
 /// Missing fields preserve stored values; present empty strings/lists explicitly clear them.

@@ -10,6 +10,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QProcessEnvironment>
+#include <QRegularExpression>
 #include <QSet>
 #include <QSqlError>
 #include <QSqlQuery>
@@ -200,6 +201,20 @@ bool DatabaseSession::migrate() {
         setError(query.lastError().text());
         return false;
     }
+    bool needsSources = true;
+    if (!query.exec("PRAGMA table_info(songs)")) {
+        setError(query.lastError().text());
+        return false;
+    }
+    while (query.next())
+        if (query.value(1).toString() == "source_provider")
+            needsSources = false;
+    query.finish();
+    if (needsSources && QFileInfo::exists(m_databasePath) &&
+        !QFileInfo::exists(m_databasePath + ".pre-extensions")) {
+        if (!snapshotDatabase(m_databasePath, m_databasePath + ".pre-extensions", m_error))
+            return false;
+    }
     if (!m_db.transaction()) {
         setError(m_db.lastError().text());
         return false;
@@ -209,6 +224,63 @@ bool DatabaseSession::migrate() {
         setError(query.lastError().text());
         m_db.rollback();
         return false;
+    }
+    if (needsSources) {
+        qint64 songSequence = 0;
+        const bool hasSongSequence = query.exec("SELECT seq FROM sqlite_sequence WHERE name='songs'") && query.next();
+        if (hasSongSequence)
+            songSequence = query.value(0).toLongLong();
+        query.finish();
+        // Rebuild from the existing DDL so legacy/third-party columns are preserved as well.
+        QString ddl;
+        if (query.exec("SELECT sql FROM sqlite_master WHERE type='table' AND name='songs'") && query.next())
+            ddl = query.value(0).toString();
+        query.finish();
+        QStringList auxiliary;
+        if (!query.exec("SELECT sql FROM sqlite_master WHERE tbl_name='songs' AND type IN "
+                        "('index','trigger') AND sql IS NOT NULL")) {
+            setError(query.lastError().text());
+            m_db.rollback();
+            return false;
+        }
+        while (query.next())
+            auxiliary.append(query.value(0).toString());
+        query.finish();
+        ddl.replace(QRegularExpression(R"re(^CREATE TABLE(?: IF NOT EXISTS)? ["`\[]?songs["`\]]?)re",
+                                       QRegularExpression::CaseInsensitiveOption),
+                    "CREATE TABLE songs_extension_migration");
+        const auto hashColumn = QRegularExpression(R"re(\bhash["`\]]?\s+TEXT\b[^,)]*)re",
+                                                   QRegularExpression::CaseInsensitiveOption).match(ddl);
+        if (hashColumn.hasMatch()) {
+            auto nullable = hashColumn.captured();
+            nullable.remove(QRegularExpression(R"(\bNOT\s+NULL\b)", QRegularExpression::CaseInsensitiveOption));
+            ddl.replace(hashColumn.capturedStart(), hashColumn.capturedLength(), nullable);
+        }
+        const QStringList migration{ddl,
+                                    "INSERT INTO songs_extension_migration SELECT * FROM songs",
+                                    "DROP TABLE songs",
+                                    "ALTER TABLE songs_extension_migration RENAME TO songs",
+                                    "ALTER TABLE songs ADD COLUMN source_provider TEXT NOT NULL DEFAULT ''",
+                                    "ALTER TABLE songs ADD COLUMN source_track_id TEXT NOT NULL DEFAULT ''",
+                                    "ALTER TABLE songs ADD COLUMN album TEXT NOT NULL DEFAULT ''",
+                                    "ALTER TABLE songs ADD COLUMN cover_url TEXT NOT NULL DEFAULT ''",
+                                    "CREATE UNIQUE INDEX songs_by_remote_source ON "
+                                    "songs(source_provider,source_track_id) WHERE source_provider<>''"};
+        for (const auto &statement : migration + auxiliary)
+            if (!query.exec(statement)) {
+                setError(query.lastError().text());
+                m_db.rollback();
+                return false;
+            }
+        if (hasSongSequence) {
+            query.prepare("UPDATE sqlite_sequence SET seq=max(seq,:sequence) WHERE name='songs'");
+            query.bindValue(":sequence", songSequence);
+            if (!query.exec()) {
+                setError(query.lastError().text());
+                m_db.rollback();
+                return false;
+            }
+        }
     }
     const QStringList statements{
         QStringLiteral("CREATE TABLE IF NOT EXISTS managed_resources (id INTEGER PRIMARY KEY AUTOINCREMENT, "
@@ -243,6 +315,12 @@ bool DatabaseSession::migrate() {
         m_db.rollback();
         return false;
     }
+    if (!query.exec("PRAGMA foreign_key_check") || query.next()) {
+        setError("Foreign key validation failed");
+        m_db.rollback();
+        return false;
+    }
+    query.finish();
     if (!m_db.commit()) {
         setError(m_db.lastError().text());
         m_db.rollback();

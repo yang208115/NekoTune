@@ -1,0 +1,10 @@
+{
+  "id": "example.automation",
+  "name": "Playback automation",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "main": "dist/main.mjs",
+  "config": {
+    "sleepSeconds": 30
+  }
+}

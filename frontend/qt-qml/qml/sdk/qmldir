@@ -1,0 +1,4 @@
+module NekoTune
+typeinfo plugins.qmltypes
+depends QtQuick 6.0
+ExtensionApi 1.0 ExtensionApi.qml

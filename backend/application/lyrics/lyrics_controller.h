@@ -28,11 +28,14 @@ class LyricsController final : public QObject {
     /// Validate here and again on the worker because queued execution can race a later request.
     Result<void> select(const QString &trackId, quint64 revision, int index);
     void setOffline(bool offline);
+    void addProvider(LyricsProvider *provider);
+    void removeProvider(const QString &id);
     /// Disconnect player-triggered loads before cancelling the worker's active request.
     /// Cancellation is invoked while the worker event loop is still running.
     /// Join before destruction so queued network work cannot outlive its owning service.
     void shutdown();
   signals:
+    void sourcesChanged();
     void changed(const nekotune::LyricsSnapshot &snapshot);
     void assetsReady(const QString &trackId, const nekotune::LyricsDocument &document, quint64 revision);
 

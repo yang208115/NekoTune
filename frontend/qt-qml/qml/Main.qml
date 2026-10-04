@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Dialogs
 import QtQuick.Layouts
+import NekoTune 1.0
 import "components"
 import "dialogs"
 import "shell"
@@ -28,10 +29,13 @@ ApplicationWindow {
     property var translator: i18n
     property bool debugEnabled: Boolean(lyricsDebugEnabled)
     property string viewMode: "home"
+    property string settingsSection: ""
     property bool nowPlayingOpen: false
     property bool queueOpen: false
     property int currentPlaylist: 0
-    property var pages: PageRegistry.pages
+    property var extensions: root.app.extensions || null
+    readonly property bool hasBrowserSources: extensions !== null && extensions.browserSources.length > 0
+    property var pages: PageRegistry.pages.concat(extensions ? extensions.pages : [])
     readonly property var theme: Theme
     readonly property var song: app.playback.song
     readonly property var queue: app.queue.model.items
@@ -42,8 +46,6 @@ ApplicationWindow {
     readonly property real volume: app.playback.volume
     readonly property string playbackState: app.playback.state
     readonly property string databasePath: app.databasePath
-    readonly property bool kugouEnabled: Boolean(app.kugou.account.enabled)
-    onKugouEnabledChanged: if (!kugouEnabled && viewMode === "kugou") navigate("settings")
     readonly property bool isPlaying: playbackState === "playing"
     readonly property bool hasSong: Boolean(song.song_id)
     readonly property int currentIndex: queue.findIndex(item => item.state === "current")
@@ -73,17 +75,17 @@ ApplicationWindow {
     TagEditor { id: tagEditor; shell: root; controller: root.app.tags; translator: root.translator }
     function pageStatus(id) {
         const index = root.pages.findIndex(page => page.id === id)
-        const loader = pageRepeater.itemAt(index) as Loader
+        const loader = pageRepeater.itemAt(index)
         return loader ? loader.status : -1
     }
     function pageItem(id) {
         const index = root.pages.findIndex(page => page.id === id)
-        const loader = pageRepeater.itemAt(index) as Loader
+        const loader = pageRepeater.itemAt(index)
         return loader ? loader.item : null
     }
     function queuePage() {
         const index = root.pages.findIndex(page => page.id === "queue")
-        const loader = pageRepeater.itemAt(index) as Loader
+        const loader = pageRepeater.itemAt(index)
         return loader ? loader.item : null
     }
     // Navigation closes temporary playback surfaces before changing browse state.
@@ -91,9 +93,15 @@ ApplicationWindow {
     // Playlist identity is set before selecting that page so bindings agree.
     // No navigation action itself starts or replaces playback.
     function navigate(id, playlistId) {
-        if (id === "kugou" && !kugouEnabled) id = "settings"
         nowPlayingOpen = false
         queueOpen = false
+        if (id === "music_sources" && !hasBrowserSources) id = "home"
+        if (root.extensions && root.extensions.settingsPages.some(page => page.id === id)) {
+            settingsSection = id
+            viewMode = "settings"
+            return
+        }
+        if (id === "settings") settingsSection = ""
         if (id === "queue") currentPlaylist = Number(playlistId || 0)
         viewMode = id
     }
@@ -138,10 +146,48 @@ ApplicationWindow {
         function onPlaylistCreated(id) { root.navigate("queue", id) }
     }
     onViewModeChanged: queueOpen = false
+    Connections {
+        target: root.extensions
+        function onChanged() {
+            Qt.callLater(() => {
+                if (!root.pages.some(page => page.id === root.viewMode)
+                    || root.viewMode === "music_sources" && !root.hasBrowserSources)
+                    root.navigate("home")
+            })
+        }
+    }
     onCurrentPlaylistChanged: if (!currentPlaylist && viewMode === "queue") viewMode = "library"
+    Shortcut { sequence: "Ctrl+Shift+E"; onActivated: if (root.extensions) root.extensions.openManager() }
+    Repeater {
+        model: root.extensions ? root.extensions.commands : []
+        delegate: Item {
+            id: commandItem
+            required property var modelData
+            Shortcut { sequence: commandItem.modelData.shortcut || ""; enabled: sequence !== "" && !root.editingText && !root.popupActive; onActivated: root.extensions.execute(commandItem.modelData.id) }
+        }
+    }
+    ExtensionView {
+        id: fullShell; objectName: "shellExtension"; anchors.fill: parent
+        descriptor: root.extensions ? root.extensions.activeSlots.shell || ({}) : ({})
+        controllers: root.app; translator: root.translator; hostWindow: root; visible: ready
+    }
     ColumnLayout {
+        visible: !fullShell.ready
         anchors.fill: parent
         spacing: 0
+        RowLayout {
+            Layout.fillWidth: true
+            visible: toolbarRepeater.count > 0
+            Repeater {
+                id: toolbarRepeater
+                model: root.extensions ? root.extensions.toolbars : []
+                delegate: ExtensionView {
+                    required property var modelData
+                    Layout.fillWidth: true; Layout.preferredHeight: modelData.height || 48
+                    descriptor: modelData; controllers: root.app; translator: root.translator; hostWindow: root
+                }
+            }
+        }
         Item {
             id: workspace
             Layout.fillWidth: true
@@ -151,7 +197,7 @@ ApplicationWindow {
                 spacing: 0
                 Sidebar {
                     shell: root; controllers: root.app; transport: root.transport; translator: root.translator
-                    pages: root.pages
+                    pages: root.pages.filter(page => page.id !== "music_sources" || root.hasBrowserSources)
                     currentPlaylist: root.currentPlaylist
                     visible: !root.nowPlayingOpen && root.viewMode !== "lyrics"
                     onPlaylistRequested: id => root.navigate("queue", id)
@@ -181,15 +227,14 @@ ApplicationWindow {
                             Repeater {
                                 id: pageRepeater
                                 model: root.pages
-                                delegate: Loader {
+                                delegate: PageHost {
                                     id: pageLoader
-                                    required property var modelData
                                     anchors.fill: parent
                                     active: !modelData.debug || root.debugEnabled
                                     visible: modelData.id === "lyrics" ? root.nowPlayingOpen || root.viewMode === "lyrics"
                                              : !root.nowPlayingOpen && root.viewMode === modelData.id
                                     objectName: modelData.id === "lyrics_debug" ? "lyricsDebugPageLoader" : modelData.id + "PageLoader"
-                                    Component.onCompleted: if (active) setSource(Qt.resolvedUrl(modelData.source), {shell: root, controllers: root.app, transport: root.transport, translator: root.translator})
+                                    shell: root; controllers: root.app; transport: root.transport; translator: root.translator
                                     Connections {
                                         target: pageLoader.item
                                         ignoreUnknownSignals: true
@@ -256,6 +301,10 @@ ApplicationWindow {
                 }
             }
         }
-        BottomPlayer { shell: root; controller: root.app.playback; translator: root.translator; onEditRequested: song => metadataEditor.openForSong(song) }
+        Item {
+            Layout.fillWidth: true; Layout.preferredHeight: Theme.bottomBarHeight
+            BottomPlayer { anchors.fill: parent; visible: !customPlayer.ready; shell: root; controller: root.app.playback; translator: root.translator; onEditRequested: song => metadataEditor.openForSong(song) }
+            ExtensionView { id: customPlayer; anchors.fill: parent; descriptor: root.extensions ? root.extensions.activeSlots.bottomPlayer || ({}) : ({}); controllers: root.app; translator: root.translator; hostWindow: root; visible: ready }
+        }
     }
 }

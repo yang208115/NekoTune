@@ -160,7 +160,7 @@ Rectangle {
             Layout.preferredWidth: 44
             horizontalAlignment: Text.AlignRight
         }
-        TextButton { text: i18n.text("kugou_download", i18n.language); visible: row.downloadRow; enabled: row.downloadEnabled; subtle: true; onClicked: row.downloadRequested() }
+        TextButton { text: i18n.text("extension_download", i18n.language); visible: row.downloadRow; enabled: row.downloadEnabled; subtle: true; onClicked: row.downloadRequested() }
         IconButton {
             visible: row.menuActions.length > 0
             id: more
@@ -170,5 +170,5 @@ Rectangle {
             onClicked: row.openMenu(more)
         }
     }
-    ActionMenu { id: contextMenu; actions: row.menuActions; onChosen: action => row.actionRequested(action) }
+    ActionMenu { id: contextMenu; actions: row.menuActions; extensionContext: "song"; contextData: ({song: row.song}); onChosen: action => row.actionRequested(action) }
 }

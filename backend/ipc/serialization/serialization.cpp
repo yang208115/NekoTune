@@ -2,10 +2,19 @@
 #include <QFileInfo>
 namespace nekotune {
 QJsonObject toJson(const SongMetadata &song) {
-    return {{"song_id", song.id},           {"song_hash", song.hash},
-            {"first_path", song.firstPath}, {"custom_title", song.customTitle},
-            {"artist", song.artist},        {"lyrics", song.lyrics},
-            {"duration_ms", song.durationMs}};
+    return {{"song_id", song.id},
+            {"song_hash", song.hash},
+            {"first_path", song.firstPath},
+            {"custom_title", song.customTitle},
+            {"artist", song.artist},
+            {"lyrics", song.lyrics},
+            {"duration_ms", song.durationMs},
+            {"resource_key", song.resourceKey()},
+            {"album", song.album},
+            {"cover_url", song.coverUrl},
+            {"source", QJsonObject{{"kind", song.isRemote() ? "extension" : "local"},
+                                   {"provider_id", song.providerId},
+                                   {"track_id", song.providerTrackId}}}};
 }
 // Queue and song identities coexist in the public row shape.
 // id/queue_id address an occurrence; song_id addresses library metadata.

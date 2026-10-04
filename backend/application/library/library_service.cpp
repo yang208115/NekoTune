@@ -14,6 +14,8 @@ LibrarySnapshot LibraryService::snapshot() const {
     const auto paths = m_songs.songPaths();
     const auto memberships = m_tags.songTags();
     for (const auto &song : m_songs.songs()) {
+        if (song.isRemote())
+            continue;
         QString path;
         for (const auto &candidate : paths.value(song.id))
             if (QFileInfo(candidate).isFile()) {

@@ -1,0 +1,20 @@
+import QtQuick.tooling 1.2
+
+Module {
+    Component {
+        name: "ExtensionView"
+        prototype: "QQuickItem"
+        exports: ["NekoTune/ExtensionView 1.0"]
+        exportMetaObjectRevisions: [256]
+        Property { name: "descriptor"; type: "QVariantMap"; isReadonly: false }
+        Property { name: "controllers"; type: "QObject"; isPointer: true }
+        Property { name: "translator"; type: "QObject"; isPointer: true }
+        Property { name: "hostWindow"; type: "QObject"; isPointer: true }
+        Property { name: "ready"; type: "bool"; isReadonly: true }
+        Property { name: "error"; type: "QString"; isReadonly: true }
+        Property { name: "item"; type: "QQuickItem"; isPointer: true; isReadonly: true }
+        Signal { name: "descriptorChanged" }
+        Signal { name: "contextChanged" }
+        Signal { name: "readyChanged" }
+    }
+}

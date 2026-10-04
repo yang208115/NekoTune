@@ -47,12 +47,16 @@ NekoTune 使用基于换行分隔的 JSON 协议，通过 Unix domain socket 进
 
 队列项的 `id` 仍表示本次入队产生的队列项 ID，用于 `queue.play` 和 `queue.remove`。后端现在还会为每首歌返回：
 
-- `song_hash`：文件内容的 SHA-256 hash，用于区分真实歌曲内容
+- `song_hash`：本地文件内容的 SHA-256；在线曲目为空
 - `song_id`：SQLite 中的持久歌曲 ID；同一份音频内容重复入队会复用同一个 `song_id`
 - `custom_title`：用户自定义歌名
 - `artist`：用户自定义作者/歌手名
 - `lyrics`：用户自定义歌词，当前播放歌曲对象会返回该字段
-- `cover_url`：当前歌曲存在同名本地封面时返回其 `file:` URL，否则为空；仅当前播放歌曲对象提供
+- `cover_url`：统一解析的本地优先封面 URL，各歌曲列表与播放状态均可提供
+- `source`：`{kind:"local"|"extension",provider_id,track_id}`，在线曲目以来源及来源曲目 ID 标识
+- `resource_key`：歌词和封面使用的稳定资源身份，本地为音频 hash，在线为独立命名空间中的缓存键
+
+在线曲目沿用数字 `song_id`，`path`/`first_path` 为空；客户端不得用空路径推断在线曲目记录应被删除。`lyrics.*` 请求的 `track_id` 使用 `resource_key`，本地歌曲原有 hash 调用保持兼容。播放地址和鉴权头不包含在歌曲状态中。
 
 当前播放歌曲对象还会返回 `queue_id`，它与队列项的 `id` 相同。
 
@@ -239,7 +243,7 @@ NekoTune 使用基于换行分隔的 JSON 协议，通过 Unix domain socket 进
 
 `library.delete` 接收非空、无重复的 `song_ids` 整数数组和可选布尔值 `clean_files`（默认 `false`）。成功时在同一数据库事务中移除对应的曲库记录、标签关联、所有歌单关联及队列项，返回 `data.deleted_count`，并广播曲库、歌单和队列变化。默认保留本地文件；`clean_files: true` 同时清理已登记的编号目录中的音频或软链接和同名 `.krc`、`.lrc`、`.jpg`、`.jpeg`、`.png`、`.webp`，保留外部原文件和目录中的其他文件，只删除清理后的空目录。目录软链接或越界路径会拒绝清理。
 
-清理先暂存文件，再提交数据库删除；任何 ID 无效、暂存失败或数据库写入失败时整批回滚。数据库提交后删除暂存文件，未能删除的路径通过 `data.cleanup_errors` 返回，界面明确提示已移除歌曲但仍有文件待清理。酷狗下载正在进行时暂不允许清理。若正在播放的歌曲被删除，尝试继续播放后续队列项；没有后续项则停止。
+清理先暂存文件，再提交数据库删除；任何 ID 无效、暂存失败或数据库写入失败时整批回滚。数据库提交后删除暂存文件，未能删除的路径通过 `data.cleanup_errors` 返回，界面明确提示已移除歌曲但仍有文件待清理。扩展下载正在进行时暂不允许清理。若正在播放的歌曲被删除，尝试继续播放后续队列项；没有后续项则停止。
 
 ```json
 {"id":22,"method":"library.list","params":{}}
@@ -247,23 +251,18 @@ NekoTune 使用基于换行分隔的 JSON 协议，通过 Unix domain socket 进
 {"id":24,"method":"library.play","params":{"tag_ids":[1,2],"song_id":7}}
 ```
 
-### 酷狗音乐下载
+### 酷狗插件
 
-账号与下载由后端异步处理；以下耗时方法先返回操作受理结果，完成情况通过事件广播。`kugou.status` 返回 `data.kugou`，含 `enabled`、`worker_url`、`configured`、`key_saved`、`logged_in`、`busy`、`download_active` 和 `credential_error`，不返回 Cookie 或密钥。`kugou.search` 可匿名使用，其余账号操作需要在设置页保存密钥，或配置 `KUGOU_ACCOUNT_API_KEY` / `KUGOU_ACCOUNT_API_KEY_FILE`。设置页密钥优先，存于系统密钥环；清除后回退到环境配置。
+酷狗专属方法已从内置 IPC 移到扩展服务；旧 `kugou.*` 方法不再注册。
 
-- `kugou.config.set`：必须传入布尔值 `enabled` 和字符串 `worker_url`；默认关闭、地址为空。启用时必须有有效地址，仅支持 HTTPS origin（回环地址允许 HTTP）。配置原子保存至 `settings.json` 的 `kugou` 对象并立即生效；忙碌或保存失败时保留原配置。关闭后拦截酷狗网络操作并从 `lyrics.sources` 隐藏酷狗，保留凭据。成功广播 `kugou.config_changed`，客户端据此刷新状态和歌词来源。
-  `worker_url` 只填写服务根地址（如 `https://luy-music-api.lyuy.workers.dev`），客户端自动追加 `/api/music/kugou/v1`，含该路径的配置会被拒绝。读取或保存已知旧根地址 `https://kugou-lyrics-api.lyuy.workers.dev` 时自动映射到新域名；读取不改写配置文件，保存时才持久化新地址，状态返回生效地址。自定义域名不变，须支持新前缀。酷狗密钥、Cookie、请求方法及业务响应结构不变。
-- `kugou.save_key`：传入 `key` 字符串，保存到系统密钥环并回读校验后立即生效；响应仅返回密钥配置状态。
-- `kugou.clear_key`：删除设置页保存的密钥，并重新读取启动环境配置；响应仅返回密钥配置状态。
-- `kugou.send_code`：传入 `mobile`，必要时先注册设备，再发送短信验证码。
-- `kugou.login`：传入 `mobile`、`code`；成功后将会话保存到系统密钥环。
-- `kugou.search`：传入 `keywords` 和可选 `page`（默认 1），每页请求 30 条搜索结果。
-- `kugou.download`：传入当前搜索结果的歌曲 `hash`；后端获取音频地址、下载文件、尝试保存可靠匹配的同名 KRC 与 LRC，并导入曲库。已有歌曲不自动补取 KRC。
-- `kugou.cancel`：取消当前下载或歌词请求；已完成的音频文件保留。
+```json
+{"id":1,"method":"extensions.call","params":{"id":"nekotune.kugou","service":"status"}}
+{"id":2,"method":"extensions.call","params":{"id":"nekotune.kugou","service":"config.set","params":{"enabled":true,"worker_url":"https://worker.example"}}}
+```
 
-事件为 `kugou.code_sent`、`kugou.logged_in`、`kugou.search_results`（含 `songs`、`page`）、`kugou.download_progress`（含 `received`、`total`）、`kugou.download_stage`（`stage` 为 `lyrics` 或 `cover`）、`kugou.download_finished`（含 `path`、`song_id`、`lyric_status`、`cover_status`）、`kugou.download_cancelled` 和 `kugou.operation_failed`（含安全的 `message`）。`lyric_status` 可为 `saved`、`existing`、`none`、`uncertain`、`error` 或 `skipped`；`cover_status` 可为 `saved`、`existing`、`none`、`error` 或 `skipped`。本地封面通过 `player.status` 与 `player.track_changed` 的 `song.cover_url` 返回。账号信息和临时播放地址不会出现在事件中。
+插件服务名为 `status`、`config.set`、`save_key`、`clear_key`、`send_code`、`login`、`search`、`play`、`download`、`cancel`。服务参数保留旧方法对应字段；状态直接位于 `data`，不包含 Cookie、密钥或临时播放地址。插件事件使用 `extension.nekotune.kugou.<事件名>`，载荷位于 `data`；登录、搜索和短信操作先返回 `{started:true}`，完成后发布事件。
 
-搜索结果中的歌曲包含 `hash`、`title`、`artist`、`album`、`duration_ms` 和 `cover_url`。封面地址来自该版本的 `Image`，缺失时沿用主结果的 `Image`，规范为 HTTPS 的 `imge.kugou.com` 地址和 240 像素尺寸；无有效地址时 `cover_url` 为空字符串，界面显示默认封面。
+统一音乐来源为 `nekotune.kugou/music`，歌词来源为 `nekotune.kugou/lyrics`。推荐通用客户端使用 `music.*` 与 `lyrics.*`，避免绑定插件的专属界面协议。详细服务与迁移说明见 [酷狗插件](../extensions/builtin/kugou/README.md)。
 
 ### `song.metadata`
 
@@ -322,7 +321,7 @@ AI 操作失败沿用 `status: "error"` 和 `message`，后者为可翻译的 `a
 歌词请求携带当前歌曲的 `track_id`（音频内容 hash）：
 
 - `lyrics.refresh`：忽略缓存和自定义歌词，重新获取当前歌曲歌词。
-- `lyrics.search`：按 `title`、`artist`、`album` 手动搜索；`source` 为 `lrclib`（默认）或 `kugou`。
+- `lyrics.search`：按 `title`、`artist`、`album` 手动搜索；`source` 从 `lyrics.sources` 读取，包括 `lrclib`（默认）和启用扩展的来源 ID。
 - `lyrics.select`：按当前字符串 `revision` 和候选 `index` 选择结果。酷狗先选歌曲版本，再选歌词；第二次选择后优先下载 KRC，失败时回退 LRC。
 - `lyrics.set_offline`：设置离线模式；仍可读取同名 KRC/LRC、缓存和自定义歌词，不发起歌词网络请求。
 
@@ -332,12 +331,14 @@ AI 操作失败沿用 `status: "error"` 和 `message`，后者为可翻译的 `a
 
 返回当前注册的手动歌词搜索来源。客户端应从此方法生成来源菜单，避免硬编码提供方列表。
 
+歌词操作的 `track_id` 使用歌曲的 `resource_key`：本地曲目等于音频 SHA-256，在线曲目使用稳定的来源身份摘要。扩展启停时通过 `lyrics.sources_changed` 通知客户端刷新来源。
+
 ```json
 {"id":20,"method":"lyrics.sources","params":{}}
 ```
 
 ```json
-{"id":20,"status":"ok","data":{"sources":[{"id":"lrclib","name":"LRCLIB","supports_search":true},{"id":"kugou","name":"酷狗音乐","supports_search":true}]}}
+{"id":20,"status":"ok","data":{"sources":[{"id":"lrclib","name":"LRCLIB","supports_search":true},{"id":"nekotune.kugou/lyrics","name":"酷狗 / Kugou","supports_search":true}]}}
 ```
 
 ### 异步完成与元数据补丁
@@ -365,4 +366,52 @@ AI 操作失败沿用 `status: "error"` 和 `message`，后者为可翻译的 `a
 
 设置和缓存集中在 `config`；首次默认目录迁移保留旧数据库和缓存，不覆盖已有目标。账号密钥和会话迁入系统密钥环，回读校验成功后删除旧明文凭据；失败保留原文件并返回 `credential_error`。设置页保存的语言优先于系统语言，`NEKOTUNE_LANGUAGE` 优先于保存语言；`lyrics.set_offline` 持久保存到 `config/settings.json`。
 
-酷狗状态 `kugou.status` 的 `credential_error` 字段在系统密钥环访问或旧凭据迁移失败时返回错误说明，正常时为空字符串；不包含凭据内容。`key_saved` 表示密钥已通过 QtKeychain 保存到系统安全存储（Windows 凭据管理器、macOS Keychain 或 Linux Secret Service / KWallet）。保存失败不会回退为明文存储。Linux 升级时会回读校验并迁移旧 libsecret 条目，成功后清理旧条目。
+酷狗插件服务 `status` 的 `credential_error` 字段在系统密钥环访问或旧凭据迁移失败时返回错误说明，正常时为空字符串；不包含凭据内容。`key_saved` 表示密钥已通过 QtKeychain 保存到系统安全存储（Windows 凭据管理器、macOS Keychain 或 Linux Secret Service / KWallet）。保存失败不会回退为明文存储。Linux 升级时会回读校验并迁移旧 libsecret 条目，成功后清理旧条目。
+
+## 动态扩展接口
+
+扩展使用方式和 SDK 见 [扩展开发文档](extensions.md)。以下方法保持原有 `{id,method,params}` / `{status,data}` 响应约定。管理操作只访问本地安装包，安装本身不会启用代码。
+
+| 方法 | 参数 | data / 行为 |
+| --- | --- | --- |
+| `extensions.list` | 无 | `extensions` 注册状态数组、`selections` 界面选择、`runtimeReady` 表示管理进程已连接且扩展发现已完成 |
+| `extensions.install` | `path` 本地 ZIP；开发目录传 `development:true`；覆盖已有版本需 `replace:true` | `extension` 安装记录；更新启动失败回滚旧程序版本 |
+| `extensions.enable` | `id`；首次信任需 `trusted:true` | 依赖按序启动，返回注册快照 |
+| `extensions.disable` | `id` | 撤销能力，依赖该扩展的其他扩展进入 blocked 状态 |
+| `extensions.reload` | `id` | 重新读取 manifest 并重建相关进程和界面贡献 |
+| `extensions.uninstall` | `id,clearData?` | 默认保留数据；不删除挂载的开发目录 |
+| `extensions.get_config` | `id` | `config` 对象 |
+| `extensions.set_config` | `id,config` | 原子替换配置，通知运行中的扩展 |
+| `extensions.logs` | `id` | 最近最多 500 条 `logs`，字段为 `time,level,message` |
+| `extensions.call` | `id,service,params?` | 调用扩展注册的服务或命令 |
+| `extensions.select` | `slot,contribution` | 选择命名空间贡献 ID，空字符串恢复默认 |
+
+扩展记录包含 `id,name,version,directory,development,trusted,enabled,state,error,generation,contributes,registrations`。`enabled` 表示持久启用意图，`state` 为实际运行状态；可为 `disabled,starting,running,stopping,failed,blocked`。来源和 UI 贡献只有在运行状态下公开。
+
+后台广播 `extensions.changed`，其字段与注册快照一致。`extensions.error` 表示管理进程级别错误。扩展主动发布的事件使用 `extension.<扩展ID>.<事件名>`，附带 `extensionId` 与 `data`。私有运行时调用、密钥读取和原始音频解析结果不作为通用管理 API 暴露。
+
+## 扩展音乐来源
+
+| 方法 | 参数 | data / 行为 |
+| --- | --- | --- |
+| `music.sources` | 无 | `sources` 数组，来源 ID 形如 `example.test-source/tones` |
+| `music.search` | `source,query,cursor?` | `tracks` 与可选下一页 `cursor`，不写入曲库 |
+| `music.track` | `source,id` | 扩展提供的曲目详情 |
+| `music.enqueue` | `source,track,play?` | 保存在线身份并追加队列，返回 `queue_id`；默认不切歌 |
+| `music.add_to_playlist` | `source,track,playlist_id` | 将在线曲目加入歌单，不更改播放队列 |
+| `music.download` | `source,track` | 立即返回 `task`，完成结果通过事件报告 |
+| `music.cancel` | `task` | 请求取消尚未结束的下载；最终状态通过 `music.download` 事件报告 |
+
+`track` 必须包含字符串 `id,title`，可包含 `artist,album,duration_ms,cover_url`；时长单位为毫秒且不可为负。搜索、解析和下载在扩展进程中异步执行，不占用数据库写队列。在线身份以来源和曲目 ID 去重，队列仍允许同一歌曲重复出现。
+
+```json
+{"id":20,"method":"music.enqueue","params":{"source":"example.test-source/tones","track":{"id":"one","title":"Test tone","artist":"NekoTune","duration_ms":8000},"play":true}}
+```
+
+`music.sources_changed` 通知客户端重新获取可用音源。下载状态事件：
+
+```json
+{"event":"music.download","task":"...","state":"finished","song_id":42,"message":""}
+```
+
+`state` 为 `running,finished,failed,cancelled`。传输进度可包含 `received,total`（字节数，未知总量为 `0`）；完成结果包含 `song_id,path`，可附带来源提供的资源状态或 `asset_warning`。只有文件已校验并成功入库后才发出 `finished`；配套资源失败不撤销音频入库，下载不改变队列或歌单。取消不会删除已成功入库的音频。传输期间不允许同时执行托管文件清理，避免下载与删除竞争。来源失效、解析失败和网络错误保留在线队列项，用户可重新启用来源或重试播放。

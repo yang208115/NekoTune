@@ -12,7 +12,7 @@ QueueService::QueueService(IQueueRepository &repository, ISongRepository &songs,
     for (int i = 0; i < snapshot.items.size(); ++i) {
         const auto &record = snapshot.items[i];
         auto song = songs.songById(record.songId);
-        if (!song || record.path.isEmpty())
+        if (!song || (!song->isRemote() && record.path.isEmpty()))
             continue;
         // Dropped stale records shift indices; restore selection in the filtered in-memory queue.
         if (i == snapshot.currentIndex)

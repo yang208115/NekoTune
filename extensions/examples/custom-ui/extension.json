@@ -1,0 +1,104 @@
+{
+  "id": "example.custom-ui",
+  "name": "Ocean interface",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "main": "main.mjs",
+  "contributes": {
+    "pages": [
+      {
+        "id": "hello",
+        "title": {
+          "zh": "扩展示例",
+          "en": "Extension demo"
+        },
+        "source": "Page.qml"
+      }
+    ],
+    "settings": [
+      {
+        "id": "settings",
+        "title": {
+          "zh": "示例设置",
+          "en": "Demo settings"
+        },
+        "source": "Page.qml"
+      }
+    ],
+    "slots": [
+      {
+        "id": "shell",
+        "slot": "shell",
+        "title": {
+          "zh": "海洋界面",
+          "en": "Ocean shell"
+        },
+        "source": "Shell.qml"
+      },
+      {
+        "id": "home",
+        "slot": "page:home",
+        "title": {
+          "zh": "自定义首页",
+          "en": "Custom home"
+        },
+        "source": "Page.qml"
+      },
+      {
+        "id": "player",
+        "slot": "bottomPlayer",
+        "title": {
+          "zh": "简洁播放栏",
+          "en": "Minimal player"
+        },
+        "source": "Player.qml"
+      }
+    ],
+    "themes": [
+      {
+        "id": "ocean",
+        "title": {
+          "zh": "深海",
+          "en": "Deep ocean"
+        },
+        "tokens": {
+          "bgCanvas": "#091923",
+          "bgSidebar": "#0D2330",
+          "bgSurface": "#112B3B",
+          "bgRaised": "#183747",
+          "bgSelected": "#214459",
+          "accentPrimary": "#8BD5EC",
+          "textPrimary": "#ECF7FC"
+        }
+      }
+    ],
+    "menus": [
+      {
+        "id": "inspect",
+        "context": "song",
+        "title": {
+          "zh": "在扩展中检查",
+          "en": "Inspect in extension"
+        },
+        "command": "inspect-song"
+      },
+      {
+        "id": "inspect-playlist",
+        "context": "playlist",
+        "title": {
+          "zh": "检查歌单",
+          "en": "Inspect playlist"
+        },
+        "command": "inspect-song"
+      }
+    ],
+    "toolbars": [
+      {
+        "id": "toolbar",
+        "title": "Demo toolbar",
+        "source": "Toolbar.qml",
+        "height": 44
+      }
+    ]
+  }
+}

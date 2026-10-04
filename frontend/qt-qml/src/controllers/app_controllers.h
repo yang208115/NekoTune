@@ -1,6 +1,7 @@
 #pragma once
 #include "controllers/ai_controller.h"
-#include "controllers/kugou_controller.h"
+#include "controllers/extensions_controller.h"
+#include "controllers/settings_controller.h"
 #include "controllers/library_controller.h"
 #include "controllers/lyrics_controller.h"
 #include "controllers/playback_controller.h"
@@ -21,9 +22,9 @@ class AppControllers final : public QObject {
     Q_PROPERTY(LibraryController *library MEMBER library CONSTANT)
     Q_PROPERTY(TagController *tags MEMBER tags CONSTANT)
     Q_PROPERTY(LyricsController *lyrics MEMBER lyrics CONSTANT)
-    Q_PROPERTY(KugouController *kugou MEMBER kugou CONSTANT)
     Q_PROPERTY(SettingsController *settings MEMBER settings CONSTANT)
     Q_PROPERTY(AiController *ai MEMBER ai CONSTANT)
+    Q_PROPERTY(ExtensionsController *extensions MEMBER extensions CONSTANT)
     Q_PROPERTY(QString databasePath READ databasePath NOTIFY databasePathChanged)
   public:
     explicit AppControllers(IpcClient &client);
@@ -34,9 +35,9 @@ class AppControllers final : public QObject {
     LibraryController *library;
     TagController *tags;
     LyricsController *lyrics;
-    KugouController *kugou;
     SettingsController *settings;
     AiController *ai;
+    ExtensionsController *extensions;
   signals:
     void databasePathChanged();
 

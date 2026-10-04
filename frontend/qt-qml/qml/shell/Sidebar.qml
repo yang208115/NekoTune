@@ -32,13 +32,13 @@ Rectangle {
         ColumnLayout {
             Layout.fillWidth: true; spacing: 6
             Repeater {
-                model: sidebar.pages.filter(page => page.group === "primary" && (page.id !== "kugou" || Boolean(sidebar.controllers.kugou.account.enabled)))
+                model: sidebar.pages.filter(page => page.group === "primary")
                 delegate: TextButton {
                     id: primaryNav
                     required property var modelData
                     Layout.fillWidth: true
                     objectName: "nav_" + modelData.id
-                    text: sidebar.t(modelData.title)
+                    text: modelData.extensionId && sidebar.controllers.extensions ? sidebar.controllers.extensions.label(modelData.title || modelData.id, sidebar.translator.language) : sidebar.t(modelData.title)
                     readonly property bool isCurrent: sidebar.shell.viewMode === modelData.id
                     subtle: true
                     subtleBg: isCurrent ? Theme.bgSelected : "transparent"
@@ -112,7 +112,7 @@ Rectangle {
                     required property var modelData
                     Layout.fillWidth: true
                     objectName: modelData.debug ? "lyricsDebugNavigation" : "nav_" + modelData.id
-                    text: sidebar.t(modelData.title)
+                    text: modelData.extensionId && sidebar.controllers.extensions ? sidebar.controllers.extensions.label(modelData.title || modelData.id, sidebar.translator.language) : sidebar.t(modelData.title)
                     readonly property bool isCurrent: sidebar.shell.viewMode === modelData.id
                     subtle: true
                     subtleBg: isCurrent ? Theme.bgSelected : "transparent"

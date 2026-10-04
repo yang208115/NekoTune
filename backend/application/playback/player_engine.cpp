@@ -1,5 +1,6 @@
 #include "application/playback/player_engine.h"
 #include <QFileInfo>
+#include <QPointer>
 #include <cmath>
 namespace nekotune {
 PlayerEngine::PlayerEngine(IPlaybackBackend &backend, QueueService &queue,
@@ -25,6 +26,19 @@ PlayerEngine::PlayerEngine(IPlaybackBackend &backend, QueueService &queue,
             emit errorOccurred(result.error().message);
     });
     connect(&backend, &IPlaybackBackend::failed, this, [this](const QString &message) {
+        const auto &current = m_queue.queue();
+        if (current.currentIndex() >= 0 && current.at(current.currentIndex()).metadata.isRemote()) {
+            ++m_sourceGeneration;
+            m_resolving = false;
+            m_playIntent = false;
+            m_backend.setSource({});
+            if (m_sourceResolver)
+                m_sourceResolver->release(m_resolvedSource);
+            m_resolvedSource = QUrl{};
+            setState(PlayerState::Error);
+            emit errorOccurred(message);
+            return;
+        }
         setState(PlayerState::Error);
         m_backend.setSource({});
         auto next = m_queue.queue();
@@ -67,6 +81,8 @@ PlaybackSnapshot PlayerEngine::snapshot() const {
         result.metadata.title = song.metadata.sourceName.isEmpty() ? QFileInfo(song.path).completeBaseName() : song.metadata.sourceName;
     if (!song.metadata.artist.isEmpty())
         result.metadata.artist = song.metadata.artist;
+    if (!song.metadata.album.isEmpty())
+        result.metadata.album = song.metadata.album;
     return result;
 }
 void PlayerEngine::setState(PlayerState state) {
@@ -76,6 +92,13 @@ void PlayerEngine::setState(PlayerState state) {
     emit stateChanged(state);
 }
 void PlayerEngine::loadCurrent(bool play) {
+    const auto generation = ++m_sourceGeneration;
+    m_resolving = false;
+    m_waitingForReload = false;
+    m_playIntent = play;
+    if (m_sourceResolver)
+        m_sourceResolver->release(m_resolvedSource);
+    m_resolvedSource = QUrl{};
     const auto &queue = m_queue.queue();
     if (queue.currentIndex() < 0) {
         clearSource();
@@ -86,12 +109,60 @@ void PlayerEngine::loadCurrent(bool play) {
     m_metadataReady = false;
     // Local lyrics can load before decoder tags arrive; online matching waits for the timer.
     emit lyricsNeeded(false);
+    const auto &item = queue.at(queue.currentIndex());
+    if (item.metadata.isRemote()) {
+        m_backend.setSource({});
+        m_resolving = true;
+        setState(play ? PlayerState::Loading : PlayerState::Paused);
+        emit trackChanged();
+        if (m_reloadingExtensions.contains(item.metadata.providerId.section('/', 0, 0))) {
+            m_resolving = false;
+            m_waitingForReload = true;
+            return;
+        }
+        if (!m_sourceResolver) {
+            m_resolving = false;
+            setState(PlayerState::Error);
+            emit errorOccurred("Music source resolver unavailable");
+            return;
+        }
+        QPointer<PlayerEngine> guard(this);
+        auto *resolver = m_sourceResolver;
+        resolver->resolve(item.metadata, [guard, generation, resolver](Result<QUrl> result) {
+            if (!guard || generation != guard->m_sourceGeneration) {
+                if (result)
+                    resolver->release(result.value());
+                return;
+            }
+            guard->m_resolving = false;
+            if (!result) {
+                guard->m_playIntent = false;
+                guard->setState(PlayerState::Error);
+                emit guard->errorOccurred(result.error().message);
+                return;
+            }
+            guard->m_resolvedSource = result.value();
+            guard->m_backend.setSource(result.value());
+            if (guard->m_playIntent)
+                guard->m_backend.play();
+            else
+                guard->setState(PlayerState::Paused);
+        });
+        return;
+    }
     m_backend.setSource(QUrl::fromLocalFile(queue.at(queue.currentIndex()).path));
     emit trackChanged();
     if (play)
         m_backend.play();
 }
 void PlayerEngine::clearSource() {
+    ++m_sourceGeneration;
+    m_resolving = false;
+    m_waitingForReload = false;
+    m_playIntent = false;
+    if (m_sourceResolver)
+        m_sourceResolver->release(m_resolvedSource);
+    m_resolvedSource = QUrl{};
     m_metadataTimer.stop();
     m_backend.stop();
     // stop() alone leaves the old source loaded, allowing play() to revive a removed track.
@@ -108,6 +179,11 @@ void PlayerEngine::clearSource() {
 // An already loaded source resumes through the playback adapter.
 // An empty queue fails instead of reviving the last cleared source.
 Result<void> PlayerEngine::play() {
+    if (m_resolving || m_waitingForReload) {
+        m_playIntent = true;
+        setState(PlayerState::Loading);
+        return {};
+    }
     auto queue = m_queue.queue();
     if (queue.isEmpty())
         return failure(QStringLiteral("No song loaded"));
@@ -123,10 +199,21 @@ Result<void> PlayerEngine::play() {
 }
 Result<void> PlayerEngine::toggle() { return playing() ? pause() : play(); }
 Result<void> PlayerEngine::pause() {
+    m_playIntent = false;
+    if (m_resolving || m_waitingForReload) {
+        setState(PlayerState::Paused);
+        return {};
+    }
     m_backend.pause();
     return {};
 }
 Result<void> PlayerEngine::stop() {
+    const auto &current = m_queue.queue();
+    if (m_resolving ||
+        current.currentIndex() >= 0 && current.at(current.currentIndex()).metadata.isRemote()) {
+        clearSource();
+        return {};
+    }
     m_backend.stop();
     return {};
 }
@@ -136,6 +223,35 @@ Result<void> PlayerEngine::setPlaybackMode(PlaybackMode mode) {
     if (result && previous != mode)
         emit playbackModeChanged(mode);
     return result;
+}
+void PlayerEngine::sourceUnavailable(const QString &provider) {
+    const auto &current = m_queue.queue();
+    if (current.currentIndex() < 0 || current.at(current.currentIndex()).metadata.providerId != provider)
+        return;
+    if (m_waitingForReload || (!m_resolving && m_backend.source().isEmpty()))
+        return;
+    clearSource();
+    setState(PlayerState::Error);
+    emit errorOccurred("Music source unavailable: " + provider);
+}
+void PlayerEngine::sourcesReloading(const QStringList &extensionIds, bool active) {
+    for (const auto &id : extensionIds) {
+        if (active)
+            m_reloadingExtensions.insert(id);
+        else
+            m_reloadingExtensions.remove(id);
+    }
+    const auto &queue = m_queue.queue();
+    if (queue.currentIndex() < 0)
+        return;
+    const auto &song = queue.at(queue.currentIndex()).metadata;
+    if (!song.isRemote() || !extensionIds.contains(song.providerId.section('/', 0, 0)))
+        return;
+    if (active && (m_resolving || !m_backend.source().isEmpty()))
+        loadCurrent(playing());
+    else if (!active && m_waitingForReload &&
+             !m_reloadingExtensions.contains(song.providerId.section('/', 0, 0)))
+        loadCurrent(m_playIntent);
 }
 Result<void> PlayerEngine::next() { return advance(PlaybackAdvance::Next); }
 Result<void> PlayerEngine::previous() { return advance(PlaybackAdvance::Previous); }
@@ -248,6 +364,14 @@ void PlayerEngine::metadataUpdated(const SongMetadata &metadata) {
     }
 }
 void PlayerEngine::shutdown() {
+    ++m_sourceGeneration;
+    m_resolving = false;
+    m_waitingForReload = false;
+    m_reloadingExtensions.clear();
+    m_playIntent = false;
+    if (m_sourceResolver)
+        m_sourceResolver->release(m_resolvedSource);
+    m_resolvedSource = QUrl{};
     m_metadataTimer.stop();
     m_backend.stop();
     m_backend.setSource({});

@@ -21,6 +21,8 @@ class IpcServer final : public QObject {
     void stopAccepting();
     void shutdown();
     void broadcastEvent(const QJsonObject &event);
+  signals:
+    void eventPublished(const QJsonObject &event);
 
   private:
     void acceptConnection();

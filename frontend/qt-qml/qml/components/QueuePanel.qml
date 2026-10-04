@@ -92,7 +92,10 @@ Item {
     function songAction(action, song) {
         if (action === "play") playSong(song)
         else if (action === "playlist") addToPlaylist(song)
-        else if (action === "queue") queueAddRequested(String(song.path))
+        else if (action === "queue") {
+            if (song.source && song.source.kind === "extension" && root.queueController) root.queueController.addSourceSong(song)
+            else queueAddRequested(String(song.path))
+        }
         else if (action === "edit") editRequested(song)
         else if (action === "remove") removeSong(song)
     }
@@ -190,6 +193,8 @@ Item {
     }
     ActionMenu {
         id: collectionMenu
+        extensionContext: "playlist"
+        contextData: ({playlist_id: root.currentPlaylist})
         actions: [
             {key: "rename", label: i18n.text("rename_playlist", i18n.language), enabled: root.connected},
             {key: "delete", label: i18n.text("delete_playlist", i18n.language), destructive: true, enabled: root.connected}

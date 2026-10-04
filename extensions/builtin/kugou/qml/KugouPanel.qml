@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import "qrc:/qml/components"
 import QtQuick.Controls
 import QtQuick.Layouts
 
@@ -204,7 +205,7 @@ Item {
                     Label { objectName: "kugouArtistColumn"; Layout.preferredWidth: root.artistColumnWidth; visible: !root.compactResults; text: root.t("artist_author"); color: Theme.textMuted; font.pixelSize: 12 }
                     Label { objectName: "kugouAlbumColumn"; Layout.preferredWidth: root.albumColumnWidth; visible: !root.compactResults; text: root.t("album"); color: Theme.textMuted; font.pixelSize: 12 }
                     Label { Layout.preferredWidth: 48; text: root.t("duration"); color: Theme.textMuted; font.pixelSize: 12; horizontalAlignment: Text.AlignRight }
-                    Label { Layout.preferredWidth: 124; text: root.t("kugou_action_column"); color: Theme.textMuted; font.pixelSize: 12; horizontalAlignment: Text.AlignHCenter }
+                    Label { Layout.preferredWidth: 186; text: root.t("kugou_action_column"); color: Theme.textMuted; font.pixelSize: 12; horizontalAlignment: Text.AlignHCenter }
                 }
                 ListView {
                     id: resultList
@@ -226,6 +227,7 @@ Item {
                         downloadEnabled: root.account.logged_in && !root.waiting && !root.account.busy && !root.activeDownload
                         onSelectedRequested: root.selectedHash = String(modelData.hash)
                         onDownloadRequested: root.downloadSong(String(modelData.hash))
+                        onPlayRequested: root.client.kugouPlay(String(modelData.hash))
                     }
                     Label {
                         anchors.centerIn: parent

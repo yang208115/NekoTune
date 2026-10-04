@@ -1,5 +1,4 @@
 #include "infrastructure/lyrics/sidecar_store.h"
-#include "infrastructure/kugou/kugou_download_job.h"
 #include <QBuffer>
 #include <QDir>
 #include <QFile>
@@ -10,6 +9,16 @@
 
 namespace nekotune {
 namespace {
+QUrl coverUrl(QString value) {
+    QUrl url(value.replace("{size}", "240"));
+    // Normalize artwork URLs in older cached documents; providers now own vendor-specific validation.
+    if (url.scheme() == "http" && url.host() == "imge.kugou.com")
+        url.setScheme("https");
+    if (!url.isValid() || url.scheme() != "https" || url.host().isEmpty() || !url.userInfo().isEmpty())
+        return {};
+    url.setFragment({});
+    return url;
+}
 bool atomicWrite(const QString &path, const QByteArray &bytes) {
     // Sidecars are owned files; never follow a link or fall back to truncating the destination in place.
     if (QFileInfo(path).isSymLink())
@@ -73,7 +82,7 @@ void SidecarStore::save(const QString &hash, quint64 revision, const QString &ba
             if (!removeSidecar(base + QLatin1String(suffix)))
                 emit failed(hash, "Cannot replace song artwork");
     emit saved(hash);
-    const auto url = KugouDownloadJob::trustedCoverUrl(document.coverUrl);
+    const auto url = coverUrl(document.coverUrl);
     if (!m_offline && !url.isEmpty())
         fetchCover(hash, revision, m_generation, base, url);
 }
@@ -113,7 +122,7 @@ void SidecarStore::fetchCover(const QString &hash, quint64 revision, quint64 gen
                 if (http >= 300 && http < 400 && redirects < 3) {
                     const auto next = reply->url().resolved(
                         reply->attribute(QNetworkRequest::RedirectionTargetAttribute).toUrl());
-                    const auto trusted = KugouDownloadJob::trustedCoverUrl(next.toString());
+                    const auto trusted = coverUrl(next.toString());
                     if (next.scheme() == "https" && next == trusted) {
                         fetchCover(hash, revision, generation, base, next, redirects + 1);
                         return;

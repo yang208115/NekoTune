@@ -5,7 +5,11 @@ QJsonObject ApiContext::withCover(QJsonObject song) const {
     if (!song.isEmpty()) {
         const auto path = song.value("path").toString().isEmpty() ? song.value("first_path").toString()
                                                                   : song.value("path").toString();
-        song.insert("cover_url", covers.resolve(path, song.value("song_hash").toString()));
+        const auto resolved =
+            covers.resolve(path, song.value("resource_key").toString(song.value("song_hash").toString()));
+        if (song.value("source").toObject().value("kind") != "extension" ||
+            song.value("cover_url").toString().isEmpty() || !resolved.isEmpty())
+            song.insert("cover_url", resolved);
     }
     return song;
 }
@@ -36,7 +40,6 @@ QJsonObject ApiContext::status() const {
     state.insert("music_directory", musicDirectory);
     state.insert("config_directory", configDirectory);
     state.insert("lyrics", toJson(lyrics.snapshot()));
-    state.insert("kugou", toJson(kugou.status()));
     return state;
 }
 QJsonObject ApiContext::queueStatus() const {

@@ -109,6 +109,7 @@ void IpcServer::removeClient(QLocalSocket *client) {
 }
 
 void IpcServer::broadcastEvent(const QJsonObject &event) {
+    emit eventPublished(event);
     for (auto *client : m_buffers.keys()) {
         send(client, event);
     }

@@ -1,3 +1,4 @@
+import "../../extensions/builtin/kugou/qml" as KugouPlugin
 import QtQuick
 import QtQuick.Controls
 import QtTest
@@ -37,7 +38,7 @@ Rectangle {
     }
     Component {
         id: component
-        PlayerComponents.KugouPanel {
+        KugouPlugin.KugouPanel {
             x: 24; y: 24; width: scene.width - 48; height: scene.height - 48
             client: fakeClient
             translator: fakeTranslator

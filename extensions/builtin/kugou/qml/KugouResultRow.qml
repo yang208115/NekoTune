@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import "qrc:/qml/components"
 import QtQuick.Controls
 import QtQuick.Layouts
 
@@ -21,6 +22,7 @@ Rectangle {
     property bool downloadEnabled: false
     signal selectedRequested()
     signal downloadRequested()
+    signal playRequested()
     function t(key) { return translator.text(key, translator.language) }
     height: 72
     radius: 10
@@ -134,6 +136,13 @@ Rectangle {
             }
             horizontalAlignment: Text.AlignRight
             color: Theme.textMuted; font.pixelSize: 12
+        }
+        TextButton {
+            objectName: "kugouPlayButton"
+            Layout.preferredWidth: 48; implicitHeight: 36; text: "▶"
+            enabled: row.downloadEnabled; subtle: true
+            Accessible.name: row.t("extension_play")
+            onClicked: row.playRequested()
         }
         TextButton {
             objectName: "kugouDownloadButton"

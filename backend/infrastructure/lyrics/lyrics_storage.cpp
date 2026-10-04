@@ -7,6 +7,8 @@
 namespace nekotune {
 Result<std::optional<LyricsDocument>> LyricsStorage::readLocal(const LyricsQuery &query,
                                                                const QString &path) const {
+    if (path.isEmpty())
+        return std::optional<LyricsDocument>{};
     const QFileInfo audio(path);
     // Managed sidecars take precedence; consult the original audio directory only when they are absent.
     if (audio.isSymLink() && audio.exists() &&

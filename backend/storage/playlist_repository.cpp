@@ -101,8 +101,13 @@ bool PlaylistRepository::addPlaylistSong(int id, const QueueRecord &song) {
     if (!m_session.isReady())
         return false;
     if (song.path.isEmpty()) {
-        setError(QStringLiteral("Song path is required"));
-        return false;
+        QSqlQuery source(m_db);
+        source.prepare("SELECT 1 FROM songs WHERE id=:id AND source_provider<>''");
+        source.bindValue(":id", song.songId);
+        if (!source.exec() || !source.next()) {
+            setError(QStringLiteral("Song path is required"));
+            return false;
+        }
     }
     QSqlQuery query(m_db);
     // A song can belong to several playlists, but occurs only once within each.
@@ -112,7 +117,7 @@ bool PlaylistRepository::addPlaylistSong(int id, const QueueRecord &song) {
                                  "ON CONFLICT (playlist_id, song_id) DO UPDATE SET path = excluded.path"));
     query.bindValue(QStringLiteral(":id"), id);
     query.bindValue(QStringLiteral(":song_id"), song.songId);
-    query.bindValue(QStringLiteral(":path"), song.path);
+    query.bindValue(QStringLiteral(":path"), song.path.isNull() ? QStringLiteral("") : song.path);
     if (!query.exec()) {
         setError(query.lastError().text());
         return false;

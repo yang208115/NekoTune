@@ -4,6 +4,11 @@ import QtQuick.Controls
 Popup {
     id: menu
     property var actions: []
+    property string extensionContext: ""
+    property var contextData: ({})
+    property var extensions: typeof controllers !== "undefined" ? controllers.extensions || null : null
+    readonly property var extensionActions: extensions && extensionContext ? extensions.menus.filter(item => item.context === extensionContext).map(item => Object.assign({}, item, {key: item.id, label: extensions.label(item.title, i18n.language)})) : []
+    readonly property var displayedActions: actions.concat(extensionActions)
     signal chosen(string action)
     parent: Overlay.overlay
     width: 260
@@ -38,7 +43,7 @@ Popup {
         id: menuContent
         spacing: 2
         Repeater {
-            model: menu.actions
+            model: menu.displayedActions
             delegate: TextButton {
                 required property var modelData
                 width: parent.width
@@ -49,7 +54,7 @@ Popup {
                 subtleBg: "transparent"
                 subtleBorder: "transparent"
                 subtleText: modelData.destructive ? Theme.statusError : Theme.textSecondary
-                onClicked: { menu.close(); menu.chosen(modelData.key) }
+                onClicked: { menu.close(); if (modelData.extensionId) menu.extensions.execute(modelData.extensionId + "/" + modelData.command, menu.contextData); else menu.chosen(modelData.key) }
             }
         }
     }

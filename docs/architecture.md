@@ -2,7 +2,7 @@
 
 本文说明当前源码的职责、依赖和扩展约定。构建与使用见 [README](../README.md)，协议字段和方法见 [API 文档](API.md)。
 
-NekoTune 使用分层模块化架构：QML 展示界面，前端 C++ 控制器拥有功能状态，应用服务组织业务，领域类型与接口隔离存储、播放和网络实现。后端服务由构造函数显式注入，装配集中在 `BackendSession`；功能扩展采用编译期模块注册。
+NekoTune 使用分层模块化架构：QML 展示界面，前端 C++ 控制器拥有功能状态，应用服务组织业务，领域类型与接口隔离存储、播放和网络实现。后端服务由构造函数显式注入，装配集中在 `BackendSession`；内置功能采用编译期模块注册，用户扩展通过独立 Node.js 进程和动态 QML 注册接入。
 
 ## 1. 运行方式与启动入口
 
@@ -72,7 +72,7 @@ backend/
 │   ├── library/                # 文件检查、时长读取与托管资源目录
 │   ├── playback/               # Qt Multimedia 播放实现
 │   ├── lyrics/                 # 网络来源、缓存、存储与配套文件
-│   ├── kugou/                  # 账号会话、API 与下载任务
+│   ├── kugou/                  # 仅旧凭据迁移和兼容密钥存储
 │   ├── ai/                     # AI 设置、请求与工作线程
 │   └── credentials/            # 系统密钥库与旧凭据迁移
 ├── ipc/
@@ -80,10 +80,10 @@ backend/
 │   └── serialization/          # 领域结果与 JSON 的转换
 └── runtime/                    # 服务装配、后端线程与扫描协调
 frontend/qt-qml/
-├── src/controllers/            # 播放、曲库、队列、歌单、歌词、酷狗、AI 等
+├── src/controllers/            # 播放、曲库、队列、歌单、歌词、扩展、AI 等
 ├── src/models/                 # RecordModel
 ├── qml/shell/                  # 导航、底栏与页面注册表
-├── qml/pages/                  # 首页、曲库、歌单、酷狗、歌词、设置、诊断页
+├── qml/pages/                  # 首页、曲库、歌单、扩展音源、歌词、设置、诊断页
 ├── qml/components/             # 可复用界面组件
 ├── qml/dialogs/                # 元数据和标签编辑器
 ├── i18n/                       # 中文、英文翻译
@@ -135,11 +135,11 @@ tests/                          # 服务、存储、协议、QML 和依赖边界
 
 `LyricsService` 通过 `ILyricsStorage` 读取本地歌词和缓存，通过 `LyricsProvider` 请求候选。普通自动加载顺序为本地 KRC → 本地 LRC → 自定义歌词 → 缓存 → LRCLIB；强制刷新跳过自定义歌词和缓存，本地文件仍优先。低置信度候选交由用户选择。
 
-LRCLIB 和酷狗来源在后端装配处注册。酷狗支持歌曲版本、歌词候选、下载的分阶段选择。`SidecarStore` 保存接受的歌词和配套封面；`CoverService` 统一解析本地优先的封面，`ApiContext::withCover()` 在歌曲 JSON 中补充 `cover_url`，各界面消费同一字段。
+LRCLIB 在后端装配处注册，扩展歌词来源随运行时动态注册。酷狗插件支持歌曲版本、歌词候选、下载的分阶段选择。`SidecarStore` 保存接受的歌词和配套封面；`CoverService` 统一解析本地优先的封面，`ApiContext::withCover()` 在歌曲 JSON 中补充 `cover_url`，各界面消费同一字段。
 
 ### 酷狗与 AI
 
-`KugouService` 通过 `IKugouBackend` 提供类型化操作和事件。具体 `KugouMusicService` 协调 `KugouAccountSession`、`KugouApiClient` 和 `KugouDownloadJob`；下载完成通过 `audioReady` 交给 `DownloadService`，复用导入流程入库，不改变播放队列。
+酷狗位于 `extensions/builtin/kugou`：独立 Node 进程处理账号和网络，QML 通过扩展贡献注册页面与设置。音乐下载统一由 `MusicService` 完成受限代理传输、文件检查和入库，再在写队列外调用来源的 `downloaded` 钩子保存配套资源。宿主仅保留旧凭据迁移兼容代码。原网络适配器移入 `tests/legacy`，只用于协议迁移回归，不链接进应用。
 
 `AiService` 在数据库所属线程读取歌曲与标签快照，通过 `IAiBackend` 交给独立 AI 线程。`AiBackend`／`AiSettings` 处理歌词文本、配置、凭据和网络请求，工作线程不持有数据库连接。`song.suggest_metadata` 只返回建议，不进入结构性写队列；用户保存时复用元数据事务。
 
@@ -157,9 +157,9 @@ LRCLIB 和酷狗来源在后端装配处注册。酷狗支持歌曲版本、歌�
 {"event":"library.changed"}
 ```
 
-`IpcRouter::registerMethod()` 注册处理器并拒绝重复方法名；`dispatch()` 校验方法与参数，关联请求 ID，并保证响应完成入口只生效一次。播放、曲库、歌词、酷狗和 AI 在独立 API 文件中注册。
+`IpcRouter::registerMethod()` 注册处理器并拒绝重复方法名；`dispatch()` 校验方法与参数，关联请求 ID，并保证响应完成入口只生效一次。播放、曲库、歌词、音乐来源、扩展和 AI 在独立 API 文件中注册。
 
-需要串行的操作在注册时指定 `serialized = true`，交给 `CommandScheduler`。导入等异步操作只有实际完成入库或入队后才响应；查询、暂停、停止、跳转和音量无需等待结构性写任务。酷狗登录、搜索、下载等接口返回受理结果，后续完成通过事件报告，应分别理解这两种完成语义。
+需要串行的操作在注册时指定 `serialized = true`，交给 `CommandScheduler`。导入等异步操作只有实际完成入库或入队后才响应；查询、暂停、停止、跳转和音量无需等待结构性写任务。酷狗插件的登录、搜索等服务返回受理结果，后续完成通过事件报告，应分别理解这两种完成语义。
 
 客户端断连时清理等待中的请求，重连重新接收快照，不自动重放修改命令。已接受的后端任务可能在客户端断连后继续完成。
 
@@ -171,7 +171,7 @@ LRCLIB 和酷狗来源在后端装配处注册。酷狗支持歌曲版本、歌�
 
 元数据编辑器先通过 `song.metadata` 加载完整资料，再允许保存修改字段。列表省略歌词不代表歌词为空。AI 建议只更新草稿，编辑器关闭或切换歌曲后忽略迟到结果。
 
-`Main.qml` 装配窗口、导航、快捷键、弹窗、队列抽屉和底栏。`PageRegistry.js` 定义首页、曲库、酷狗、歌单、正在播放、设置与诊断页；页面通过属性接收控制器、传输状态和翻译器，业务状态由控制器或页面拥有。
+`Main.qml` 装配窗口、导航、快捷键、弹窗、队列抽屉和底栏。`PageRegistry.js` 定义首页、曲库、扩展音源、歌单、正在播放、设置与诊断页；页面通过属性接收控制器、传输状态和翻译器，业务状态由控制器或页面拥有。
 
 当前非调试页面会在启动时创建，通过可见性切换保留页面状态；诊断页由启动参数启用。页面注册目前不提供按首次访问延迟加载。
 
@@ -180,7 +180,7 @@ LRCLIB 和酷狗来源在后端装配处注册。酷狗支持歌曲版本、歌�
 | 执行环境 | 对象与任务 |
 | --- | --- |
 | GUI 主线程 | IpcClient、前端控制器、列表模型和 QML 对象 |
-| 后端线程 | BackendSession、SQLite 会话、业务协调、IPC、播放器适配器和酷狗网络对象 |
+| 后端线程 | BackendSession、SQLite 会话、业务协调、IPC、播放器适配器和扩展进程通信对象 |
 | 导入线程 | ImportExecutor 的目录遍历、SHA-256、音频时长读取 |
 | 歌词线程 | LyricsService、歌词来源、解析与歌词存储 |
 | AI 线程 | AI 配置、歌词输入准备及模型网络请求 |
@@ -190,7 +190,7 @@ SQLite 连接只能在创建它的线程使用。导入线程返回 `ImportedFil
 
 `LyricsService` 和它的 provider 子对象一起移入歌词线程，新增网络对象必须保持正确线程归属。线程退出前先取消任务和网络请求，完成等待回调，再释放对象。
 
-当前 `BackendSession::shutdown()` 依次停止扫描和配套文件任务、停止接收连接、关闭命令调度、停止 AI 与导入任务、断开客户端、停止酷狗与歌词任务，最后停止播放。`BackendRuntime` 在后端线程销毁 session 后才退出线程并等待结束。每个模块的关闭应可重复调用。
+当前 `BackendSession::shutdown()` 依次停止扩展进程、扫描和配套文件任务、停止接收连接、关闭命令调度、停止 AI 与导入任务、断开客户端、停止歌词任务，最后停止播放。`BackendRuntime` 在后端线程销毁 session 后才退出线程并等待结束。每个模块的关闭应可重复调用。
 
 ## 7. 持久化、托管文件与一致性
 
@@ -225,6 +225,16 @@ API 默认不清理文件，界面删除确认框默认勾选清理；前端必�
 默认目录的升级迁移保留旧数据库与缓存，已有目标数据优先。旧明文凭据或旧 libsecret 条目在新密钥库写入并回读成功后才删除，失败保留原数据。QtKeychain 明文回退关闭，凭据不会出现在状态快照或事件中。
 
 ## 8. 扩展约定
+
+### 用户动态扩展
+
+完整使用与开发契约见 [扩展文档](extensions.md)。`IExtensionBackend` 是领域侧的异步调用与事件边界，`ExtensionService` 和 `MusicService` 在应用层编排注册来源和业务操作。基础设施中的 `ExtensionBackend` 启动捆绑 Node 管理进程；管理进程再为每个扩展启动独立进程。两级通信都使用独立本地 Socket，日志与协议分离。普通扩展调用不会占住 `CommandScheduler`，只有短暂的数据库变更和已有文件导入流程进入串行队列。
+
+音乐来源以来源 ID 和来源曲目 ID 保存稳定身份，`songs.hash` 对在线记录为空。`ISourceResolver` 将在线引用异步解析成宿主管理的本地代理 URL，再交给现有 Qt Multimedia 适配器；网络地址、鉴权头和有效期只存在于运行时。解析代次与播放意图隔离迟到结果。下载复用托管资源分配、文件校验与曲库入库。远程资源的歌词、封面使用独立资源键，不进行本地配套文件探测或清理。
+
+前端 `ExtensionsController` 消费后台注册快照。`PageHost` 保留原页面，并按用户选择加载替代项；`ExtensionView` 使用独立 QML 引擎管理视图和重载生命周期。默认 Shell 仍由 `Main.qml` 组织，完整 Shell 扩展接管窗口内容。恢复窗口由宿主独立加载，并强制使用内置主题。QML 故障不能实现进程级隔离，安全模式用于重启恢复。
+
+### 内置功能扩展
 
 ### 新增业务功能
 

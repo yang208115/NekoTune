@@ -1,4 +1,5 @@
 #include "controllers/library_controller.h"
+#include "extensions/extension_view.h"
 #include "i18n.h"
 #include <QQmlContext>
 #include <QQmlEngine>
@@ -18,6 +19,7 @@ class ComponentTestSetup : public QObject {
         return directory.isEmpty() ? QString() : directory + "/" + name + ".png";
     }
     ComponentTestSetup() {
+        registerExtensionQmlTypes();
         qputenv("NEKOTUNE_SOCKET", m_directory.filePath("unused.sock").toUtf8());
         qputenv("NEKOTUNE_HOME", m_directory.filePath("music").toUtf8());
     }

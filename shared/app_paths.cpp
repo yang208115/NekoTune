@@ -17,6 +17,7 @@ QString musicDirectory() {
 QString configDirectory() { return QDir(musicDirectory()).filePath("config"); }
 QString configFile(const QString &name) { return QDir(configDirectory()).filePath(name); }
 QString databasePath() { return configFile("nekotune.sqlite3"); }
+QString extensionsDirectory() { return configFile("extensions"); }
 namespace {
 bool copyMissing(const QString &source, const QString &target) {
     const QFileInfo info(source);

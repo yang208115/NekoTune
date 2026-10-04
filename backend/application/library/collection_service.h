@@ -25,6 +25,8 @@ class CollectionService final : public QObject {
     /// @return Runtime queue occurrence ID; it is not the persistent song ID.
     /// With play=false, the existing selection and decoder source remain in use.
     Result<int> enqueue(const ImportedFile &file, bool play);
+    Result<int> enqueueRemote(const SongMetadata &song, bool play);
+    Result<void> addRemoteToPlaylist(int id, const SongMetadata &song);
     /// Register inspected audio and add membership under one transaction.
     /// @param id Existing destination playlist; a missing playlist rejects the import.
     /// @param file Value snapshot from the file inspector.

@@ -1,14 +1,16 @@
 #pragma once
+#include "application/extensions/extension_service.h"
+#include "application/extensions/music_service.h"
 #include "application/library/download_service.h"
 #include "infrastructure/ai/ai_backend.h"
+#include "infrastructure/extensions/extension_backend.h"
 #include "infrastructure/library/import_executor.h"
 #include "infrastructure/library/music_directory.h"
 #include "infrastructure/lyrics/sidecar_store.h"
-#include "runtime/library_scanner.h"
 #include "infrastructure/playback/qt_playback_backend.h"
 #include "ipc/api/api_context.h"
 #include "ipc/ipc_server.h"
-#include "infrastructure/kugou/kugou_music_service.h"
+#include "runtime/library_scanner.h"
 #include "storage/database_session.h"
 #include "storage/playlist_repository.h"
 #include "storage/queue_repository.h"
@@ -49,14 +51,15 @@ class BackendSession final : public QObject {
     CoverService m_covers;
     SidecarStore m_sidecars;
     ImportExecutor m_imports;
-    KugouMusicService m_kugouBackend;
-    KugouService m_kugou{m_kugouBackend};
     CollectionService m_collections;
     ApiContext m_api;
     IpcRouter m_router;
     LibraryScanner m_scanner;
-    DownloadService m_downloads;
     IpcServer m_server;
+    ExtensionBackend m_extensionBackend;
+    ExtensionService m_extensions{m_extensionBackend};
+    MusicService m_musicSources;
+    QSet<QString> m_extensionLyrics;
     bool m_stopped = false;
 };
 } // namespace nekotune

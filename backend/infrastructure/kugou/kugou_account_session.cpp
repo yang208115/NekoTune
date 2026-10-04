@@ -193,4 +193,15 @@ bool KugouAccountSession::saveSession() {
     sessionError = saved ? QString() : saved.error().message;
     return bool(saved);
 }
+QString KugouAccountSession::clearSession() {
+    const auto cleanup = removeLegacy(m_sessionPath);
+    if (!cleanup)
+        return cleanup.error().message;
+    const auto removed = m_store->remove(m_sessionPath);
+    if (!removed)
+        return removed.error().message;
+    cookies.clear();
+    sessionError.clear();
+    return {};
+}
 } // namespace nekotune

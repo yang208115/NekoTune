@@ -31,6 +31,7 @@ class LibraryService final : public QObject {
     /// @return Full metadata including custom lyrics, or NotFound for a missing song.
     /// Use this lookup for editing instead of the lightweight IPC list representation.
     Result<SongMetadata> metadata(int id) const;
+    bool containsAudioHash(const QString &hash) const { return m_songs.songByHash(hash).has_value(); }
     QVector<SongTag> tagsFor(int id) const;
     /// @param file A completed inspection result with audio hash and registered source path.
     /// @param title Initial custom title for a newly registered hash.

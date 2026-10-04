@@ -1,3 +1,4 @@
+#include "application/extensions/music_service.h"
 #include "ipc/api/api_context.h"
 namespace nekotune {
 namespace {
@@ -129,7 +130,8 @@ void registerLibraryApi(IpcRouter &router, ApiContext &api) {
             // Cleanup must not remove that managed reservation during active work.
             // Logical deletion without file cleanup can use its existing transaction.
             // The UI is told to retry cleanup once the active download settles.
-            if (cleanFiles && api.kugou.status().downloadActive) {
+            if (cleanFiles &&
+                (api.music && api.music->downloadActive())) {
                 done(error(failure("Wait for the active music download before cleaning files")));
                 return;
             }

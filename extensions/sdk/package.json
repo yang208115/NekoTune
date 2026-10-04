@@ -1,0 +1,11 @@
+{
+  "name": "@nekotune/sdk",
+  "version": "1.0.0",
+  "type": "module",
+  "types": "index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts"
+    }
+  }
+}

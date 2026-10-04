@@ -32,6 +32,38 @@ Result<int> CollectionService::enqueue(const ImportedFile &file, bool play) {
     emit libraryChanged();
     return id;
 }
+Result<int> CollectionService::enqueueRemote(const SongMetadata &metadata, bool play) {
+    Transaction tx(m_transaction);
+    if (!tx)
+        return failure(m_transaction.errorString(), ErrorCode::Storage);
+    auto song = m_songs.getOrCreateRemote(metadata);
+    if (!song)
+        return failure(m_songs.errorString(), ErrorCode::Storage);
+    auto next = m_queue.queue();
+    const int id = next.add(QStringLiteral(""), *song);
+    if (play)
+        next.setCurrentIndex(next.size() - 1);
+    next.markCurrent();
+    if (!m_queueRepo.saveQueue({next.records(), next.currentIndex()}) || !tx.commit())
+        return failure(m_transaction.errorString(), ErrorCode::Storage);
+    if (play)
+        m_player.applyCommittedQueue(next, true, true, true);
+    else
+        m_queue.adoptCommitted(next);
+    return id;
+}
+Result<void> CollectionService::addRemoteToPlaylist(int id, const SongMetadata &metadata) {
+    if (!m_playlists.playlistById(id))
+        return failure("Playlist does not exist");
+    Transaction tx(m_transaction);
+    if (!tx)
+        return failure(m_transaction.errorString(), ErrorCode::Storage);
+    auto song = m_songs.getOrCreateRemote(metadata);
+    if (!song || !m_playlists.addPlaylistSong(id, {QStringLiteral(""), song->id}) || !tx.commit())
+        return failure(m_transaction.errorString(), ErrorCode::Storage);
+    emit playlistsChanged();
+    return {};
+}
 // Importing into a playlist spans song registration and membership.
 // Validate the destination before opening the database transaction.
 // Commit both writes together so a failed membership save cannot
@@ -59,7 +91,7 @@ Result<void> CollectionService::addSongToPlaylist(int id, int songId) {
     if (!song)
         return song.error();
     auto path = m_library.availablePath(songId);
-    if (path.isEmpty())
+    if (path.isEmpty() && !song.value().isRemote())
         return failure(QStringLiteral("Song file is unavailable"));
     if (!m_playlists.playlistById(id))
         return failure(QStringLiteral("Playlist does not exist"));
@@ -109,7 +141,7 @@ Result<void> CollectionService::playPlaylist(int id, int songId,
     for (const auto &record : records) {
         auto song = m_songs.songById(record.songId);
         // A playlist is an explicit sequence: one unavailable entry rejects the replacement.
-        if (!song || !QFileInfo(record.path).isFile())
+        if (!song || (!song->isRemote() && !QFileInfo(record.path).isFile()))
             return failure(QStringLiteral("Playlist file is unavailable: %1").arg(record.path));
         if (record.songId == songId)
             start = next.size();
@@ -202,7 +234,8 @@ Result<CollectionDeleteResult> CollectionService::deleteSongs(const QVector<int>
         if (id <= 0 || selected.contains(id) || !song)
             return failure(QStringLiteral("Invalid or missing song id"));
         selected.insert(id);
-        hashes.append(song->hash);
+        if (!song->isRemote())
+            hashes.append(song->hash);
     }
     if (ids.isEmpty())
         return failure(QStringLiteral("No songs selected"));
@@ -231,7 +264,7 @@ Result<CollectionDeleteResult> CollectionService::deleteSongs(const QVector<int>
     if (!tx || !m_queueRepo.saveQueue({next.records(), next.currentIndex()}))
         return failure(m_transaction.errorString(), ErrorCode::Storage);
     std::unique_ptr<IManagedFileRemoval> removal;
-    if (cleanFiles) {
+    if (cleanFiles && !hashes.isEmpty()) {
         // Rename assets first; the handle restores them on any subsequent database failure.
         auto staged = m_managedFiles->stageRemoval(hashes);
         if (!staged)

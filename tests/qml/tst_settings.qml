@@ -1,3 +1,4 @@
+import "../../extensions/builtin/kugou/qml" as KugouPlugin
 import QtQuick
 import QtTest
 import "../../frontend/qt-qml/qml/components" as PlayerComponents
@@ -30,7 +31,7 @@ Rectangle {
 
     Component {
         id: panelComponent
-        PlayerComponents.SettingsPanel {
+        KugouPlugin.SettingsPanel {
             width: scene.width
             height: scene.height
             client: fakeClient

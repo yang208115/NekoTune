@@ -36,7 +36,14 @@ class ISongRepository {
                                                         const QString &sourceName = {},
                                                         qint64 durationMs = 0) = 0;
     virtual QVector<SongMetadata> songs() const = 0;
+    virtual std::optional<SongMetadata> getOrCreateRemote(const SongMetadata &) { return std::nullopt; }
     virtual std::optional<SongMetadata> songById(int songId) const = 0;
+    virtual std::optional<SongMetadata> songByHash(const QString &hash) const {
+        for (const auto &song : songs())
+            if (song.hash == hash)
+                return song;
+        return std::nullopt;
+    }
     virtual std::optional<SongMetadata> updateMetadata(int songId, const QString &customTitle,
                                                        const QString &artist, const QString &lyrics) = 0;
     /// Paths are candidates rather than a promise of file availability.

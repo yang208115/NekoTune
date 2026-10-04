@@ -1,7 +1,7 @@
 file(GLOB FRONTEND_CONTROLLERS CONFIGURE_DEPENDS src/controllers/*.cpp src/controllers/*.h src/models/*.cpp src/models/*.h)
-add_library(nekotune_frontend STATIC src/ipc_client.cpp src/ipc_client.h src/i18n.cpp src/i18n.h ${FRONTEND_CONTROLLERS})
+add_library(nekotune_frontend STATIC src/ipc_client.cpp src/ipc_client.h src/i18n.cpp src/i18n.h src/extensions/extension_view.cpp src/extensions/extension_view.h ${FRONTEND_CONTROLLERS})
 target_include_directories(nekotune_frontend PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(nekotune_frontend PUBLIC nekotune_paths Qt6::Core Qt6::Network)
+target_link_libraries(nekotune_frontend PUBLIC nekotune_paths Qt6::Core Qt6::Network Qt6::Quick Qt6::Qml)
 add_executable(nekotune-qt-qml
     src/main.cpp
     resources.qrc
@@ -49,3 +49,4 @@ target_link_libraries(nekotune
 set_target_properties(nekotune PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
 )
+install(TARGETS nekotune nekotune-qt-qml RUNTIME DESTINATION bin)

@@ -12,7 +12,9 @@ class SongRepository final : public ISongRepository {
                                                 const QString &artist = {},
                                                 const QString &sourceName = {}, qint64 durationMs = 0) override;
     QVector<SongMetadata> songs() const override;
+    std::optional<SongMetadata> getOrCreateRemote(const SongMetadata &) override;
     std::optional<SongMetadata> songById(int songId) const override;
+    std::optional<SongMetadata> songByHash(const QString &hash) const override;
     std::optional<SongMetadata> updateMetadata(int songId, const QString &customTitle, const QString &artist,
                                                const QString &lyrics) override;
     QVector<QString> pathsForSong(int songId) const override;
@@ -22,7 +24,6 @@ class SongRepository final : public ISongRepository {
 
   private:
     void setError(const QString &message) { m_session.setError(message); }
-    std::optional<SongMetadata> songByHash(const QString &hash) const;
     bool rememberSongPath(int songId, const QString &path);
     std::optional<SongMetadata> readSongFromQuery(QSqlQuery &query) const;
     DatabaseSession &m_session;

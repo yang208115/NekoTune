@@ -19,13 +19,14 @@ Item {
 
     signal seekRequested(real positionMs)
 
-    readonly property var current: lyrics.track_id === song.song_hash ? lyrics : ({})
+    readonly property string songIdentity: String(song.resource_key || song.song_hash || "")
+    readonly property var current: lyrics.track_id === root.songIdentity ? lyrics : ({})
     readonly property var document: current.document || ({})
     readonly property var candidates: current.candidates || []
     readonly property bool busy: current.state === "loading" || current.state === "searching" || current.state === "waiting_metadata"
 
     onSongChanged: {
-        if (searchPopup.trackId !== String(song.song_hash || "")) searchPopup.close()
+        if (searchPopup.trackId !== String(root.songIdentity || "")) searchPopup.close()
     }
 
     ColumnLayout {
@@ -65,7 +66,7 @@ Item {
                 {key: "offline", label: i18n.text(root.current.offline ? "lyrics_online_mode" : "lyrics_offline_mode", i18n.language), enabled: root.connected}
             ]
             onChosen: action => {
-                if (action === "refresh") root.controller.refreshLyrics(String(root.song.song_hash || ""))
+                if (action === "refresh") root.controller.refreshLyrics(String(root.songIdentity || ""))
                 else root.controller.setLyricsOffline(!root.current.offline)
             }
         }
@@ -102,7 +103,7 @@ Item {
         objectName: "lyricsSearchPopup"
         property string trackId: ""
         function openForSong() {
-            trackId = String(root.song.song_hash || "")
+            trackId = String(root.songIdentity || "")
             titleField.text = root.song.title || ""
             artistField.text = root.song.artist || ""
             albumField.text = root.song.album || ""

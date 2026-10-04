@@ -1,8 +1,8 @@
 #include "runtime/backend_session.h"
 #include "app_paths.h"
-#include "infrastructure/lyrics/lyrics_storage.h"
-#include "infrastructure/lyrics/kugou_provider.h"
+#include "infrastructure/extensions/extension_lyrics_provider.h"
 #include "infrastructure/lyrics/lrclib_provider.h"
+#include "infrastructure/lyrics/lyrics_storage.h"
 namespace nekotune {
 namespace {
 // Providers are parented before the service is moved to its worker thread.
@@ -10,11 +10,9 @@ namespace {
 // The controller then owns service shutdown and thread joining as one lifetime unit.
 LyricsService *createLyrics() {
     auto *lrclib = new LrclibProvider;
-    auto *kugou = new KugouProvider;
-    auto *service = new LyricsService({lrclib, kugou}, std::make_unique<LyricsStorage>());
+    auto *service = new LyricsService({lrclib}, std::make_unique<LyricsStorage>());
     service->setOffline(AppPaths::setting("lyrics_offline").toBool());
     lrclib->setParent(service);
-    kugou->setParent(service);
     return service;
 }
 } // namespace
@@ -35,23 +33,62 @@ BackendSession::BackendSession()
                    .value_or(PlaybackMode::Sequential),
                [](PlaybackMode mode) { return AppPaths::saveSetting("playback_mode", toString(mode)); }),
       m_lyrics(m_player, createLyrics()), m_covers(std::make_unique<LyricsStorage>()),
-      m_kugouBackend(
-          nullptr, nullptr, {}, {}, {}, {},
-          [this](const QString &hash, const QString &title) { return m_music.reserveDownload(hash, title); }),
       m_collections(m_songs, m_queueRepository, m_playlistRepository, m_database, m_library, m_queue,
                     m_player, &m_music),
-      m_api{m_player,      m_queue,  m_library, m_playlists, m_tags,
-            m_collections, m_lyrics, m_imports, m_kugou,     m_database.databasePath(),
+      m_api{m_player,    m_queue,   m_library,
+            m_playlists, m_tags,    m_collections,
+            m_lyrics,    m_imports, m_database.databasePath(),
             m_covers},
       m_scanner(m_imports, m_music, m_library, m_router.commands()),
-      m_downloads(m_library, m_imports, m_router.commands()),
-      m_server(m_router, [this] { return m_api.status(); }) {
+      m_server(m_router, [this] { return m_api.status(); }),
+      m_musicSources(
+          m_extensions, m_library, m_imports, m_router.commands(),
+          [this](const QString &id, const QString &title) { return m_music.reserveDownload(id, title); }) {
     m_covers.updateLyrics(m_lyrics.snapshot());
     m_imports.setMapper([this](const ImportedFile &file) { return m_music.manage(file); });
     m_api.scan = [this] { return m_scanner.start(); };
     m_api.musicDirectory = m_music.directory();
     m_api.configDirectory = AppPaths::configDirectory();
     m_api.ai = &m_ai;
+    m_api.extensions = &m_extensions;
+    m_api.music = &m_musicSources;
+    m_player.setSourceResolver(&m_musicSources);
+    connect(&m_lyrics, &LyricsController::sourcesChanged, this,
+            [this] { m_server.broadcastEvent({{"event", "lyrics.sources_changed"}}); });
+    connect(&m_extensions, &ExtensionService::changed, this, [this] {
+        QSet<QString> next;
+        for (const auto &value : m_extensions.sources("lyrics")) {
+            const auto source = value.toMap();
+            const auto id = source.value("id").toString();
+            next.insert(id);
+            if (!m_extensionLyrics.contains(id))
+                m_lyrics.addProvider(
+                    new ExtensionLyricsProvider(m_extensionBackend, id, source.value("name", id).toString()));
+        }
+        for (const auto &id : m_extensionLyrics)
+            if (!next.contains(id))
+                m_lyrics.removeProvider(id);
+        m_extensionLyrics = next;
+    });
+    connect(&m_musicSources, &MusicService::taskChanged, this, [this](const QVariantMap &event) {
+        m_server.broadcastEvent(QJsonObject::fromVariantMap(event));
+    });
+    connect(&m_musicSources, &MusicService::sourcesChanged, this, [this] {
+        m_server.broadcastEvent({{"event", "music.sources_changed"}});
+        const auto current = m_player.snapshot().song;
+        if (current && current->metadata.isRemote() &&
+            !m_musicSources.available(current->metadata.providerId))
+            m_player.sourceUnavailable(current->metadata.providerId);
+    });
+    connect(&m_extensions, &ExtensionService::eventReady, this, [this](const QVariantMap &event) {
+        if (event.value("event") == "extensions.reloading")
+            m_player.sourcesReloading(event.value("ids").toStringList(), event.value("active").toBool());
+        m_server.broadcastEvent(QJsonObject::fromVariantMap(event));
+    });
+    connect(&m_server, &IpcServer::eventPublished, this, [this](const QJsonObject &event) {
+        if (!event.value("event").toString().startsWith("extension"))
+            m_extensionBackend.publish(event.toVariantMap());
+    });
     connect(&m_scanner, &LibraryScanner::finished, this,
             [this](int imported, int skipped, const QStringList &errors) {
                 m_server.broadcastEvent({{"event", "library.scan_finished"},
@@ -60,12 +97,12 @@ BackendSession::BackendSession()
                                          {"failed", errors.size()},
                                          {"errors", QJsonArray::fromStringList(errors)}});
             });
-    connect(&m_kugou, &KugouService::audioReady, &m_downloads, &DownloadService::importDownloaded);
     registerPlayerApi(m_router, m_api);
     registerLibraryApi(m_router, m_api);
     registerLyricsApi(m_router, m_api);
-    registerKugouApi(m_router, m_api);
     registerAiApi(m_router, m_api);
+    registerExtensionsApi(m_router, m_api);
+    registerMusicApi(m_router, m_api);
     auto libraryChanged = [this] { m_server.broadcastEvent({{"event", "library.changed"}}); };
     auto playlistsChanged = [this] {
         m_server.broadcastEvent({{"event", "playlist.changed"}, {"playlists", m_api.playlistList()}});
@@ -123,6 +160,8 @@ BackendSession::BackendSession()
     });
     connect(&m_lyrics, &LyricsController::assetsReady, this,
             [this](const QString &hash, const LyricsDocument &document, quint64 revision) {
+                if (hash.startsWith("remote-"))
+                    return;
                 m_sidecars.save(hash, revision, m_music.baseFor(hash), document);
             });
     connect(&m_sidecars, &SidecarStore::saved, &m_covers, &CoverService::assetsUpdated);
@@ -140,24 +179,6 @@ BackendSession::BackendSession()
                 playlistsChanged();
                 queueChanged();
             });
-    connect(&m_kugou, &KugouService::eventReady, this,
-            [this](const KugouEvent &event) { m_server.broadcastEvent(toJson(event)); });
-    // Publish download_finished only after the application import transaction has succeeded.
-    // The supplied path can be the managed/deduplicated path rather than the raw download target.
-    // Lyric and cover statuses preserve useful partial success from optional enrichment.
-    connect(&m_downloads, &DownloadService::finished, this,
-            [this](const QString &path, int id, const QString &lyric, const QString &cover) {
-                m_server.broadcastEvent({{"event", "kugou.download_finished"},
-                                         {"path", path},
-                                         {"song_id", id},
-                                         {"lyric_status", lyric},
-                                         {"cover_status", cover}});
-            });
-    connect(&m_downloads, &DownloadService::importFailed, this, [this](const QString &path) {
-        m_server.broadcastEvent({{"event", "kugou.operation_failed"},
-                                 {"message", "Audio saved but library import failed"},
-                                 {"path", path}});
-    });
 }
 BackendSession::~BackendSession() { shutdown(); }
 // Database readiness and socket ownership are startup prerequisites.
@@ -169,6 +190,16 @@ bool BackendSession::start() {
     if (!m_database.isReady() || !m_server.listen())
         return false;
     m_scanner.start();
+    m_extensionBackend.start(
+        [this](const QString &method, const QVariantMap &params, IExtensionBackend::Completion done) {
+            m_router.dispatch({{"method", method}, {"params", QJsonObject::fromVariantMap(params)}},
+                              [done](QJsonObject result) {
+                                  if (result.value("status") == "ok")
+                                      done(result.value("data").toObject().toVariantMap());
+                                  else
+                                      done(failure(result.value("message").toString()));
+                              });
+        });
     return true;
 }
 QString BackendSession::errorString() const {
@@ -178,6 +209,7 @@ void BackendSession::shutdown() {
     if (m_stopped)
         return;
     m_stopped = true;
+    m_extensionBackend.shutdown();
     m_scanner.shutdown();
     m_sidecars.shutdown();
     // Reject new work, then cancel queued commands before import shutdown completes active callbacks.
@@ -186,7 +218,6 @@ void BackendSession::shutdown() {
     m_aiBackend.shutdown();
     m_imports.shutdown();
     m_server.shutdown();
-    m_kugouBackend.shutdown();
     m_lyrics.shutdown();
     m_player.shutdown();
 }

@@ -13,6 +13,7 @@ QString musicDirectory();
 QString configDirectory();
 QString configFile(const QString &name);
 QString databasePath();
+QString extensionsDirectory();
 bool prepare(QString *error = nullptr);
 QJsonValue setting(const QString &key);
 bool saveSetting(const QString &key, const QJsonValue &value);

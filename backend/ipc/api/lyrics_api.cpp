@@ -10,8 +10,6 @@ void registerLyricsApi(IpcRouter &router, ApiContext &api) {
     router.registerMethod("lyrics.sources", [&api](const auto &, auto done) {
         QJsonArray result;
         for (const auto &source : api.lyrics.sources()) {
-            if (source.id == "kugou" && !api.kugou.status().enabled)
-                continue;
             result.append(QJsonObject{
                 {"id", source.id}, {"name", source.name}, {"supports_search", source.supportsSearch}});
         }

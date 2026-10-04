@@ -6,6 +6,11 @@ LyricsController::LyricsController(PlayerEngine &player, LyricsService *service)
     qRegisterMetaType<LyricsSnapshot>();
     qRegisterMetaType<LyricsQuery>();
     qRegisterMetaType<LyricsDocument>();
+    qRegisterMetaType<QVector<LyricsSource>>();
+    connect(m_service, &LyricsService::sourcesChanged, this, [this](const QVector<LyricsSource> &sources) {
+        m_sources = sources;
+        emit sourcesChanged();
+    });
     m_service->moveToThread(&m_thread);
     connect(m_service, &LyricsService::assetsReady, this,
             [this](const LyricsQuery &request, const LyricsDocument &document, quint64 revision) {
@@ -28,6 +33,15 @@ LyricsController::LyricsController(PlayerEngine &player, LyricsService *service)
     load(false);
 }
 LyricsController::~LyricsController() { shutdown(); }
+void LyricsController::addProvider(LyricsProvider *provider) {
+    provider->moveToThread(&m_thread);
+    QMetaObject::invokeMethod(
+        m_service, [service = m_service, provider] { service->addProvider(provider); }, Qt::QueuedConnection);
+}
+void LyricsController::removeProvider(const QString &id) {
+    QMetaObject::invokeMethod(
+        m_service, [service = m_service, id] { service->removeProvider(id); }, Qt::QueuedConnection);
+}
 void LyricsController::shutdown() {
     disconnect(&m_player, nullptr, this, nullptr);
     if (!m_thread.isRunning())
@@ -42,7 +56,7 @@ LyricsQuery LyricsController::query() const {
         return {};
     // The decoder may still expose the previous source's duration until metadata is ready.
     return {state.metadata.title, state.metadata.artist, state.metadata.album, m_ready ? state.duration : 0,
-            state.song->metadata.hash};
+            state.song->metadata.resourceKey()};
 }
 // Clear the presentation snapshot immediately for the new revision.
 // The worker receives a copied queue item, not live player references.
