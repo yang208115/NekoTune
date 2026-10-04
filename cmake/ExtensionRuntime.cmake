@@ -28,15 +28,21 @@ endif()
 set(NEKOTUNE_NODE_BINARY "${NEKOTUNE_RUNTIME_DIR}/node-v${NEKOTUNE_NODE_VERSION}-linux-x64/bin/node")
 find_program(PNPM_EXECUTABLE pnpm REQUIRED)
 file(GLOB_RECURSE EXTENSION_RUNTIME_SOURCES CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/extensions/runtime/*.mjs" "${CMAKE_SOURCE_DIR}/extensions/sdk/*.ts" "${CMAKE_SOURCE_DIR}/extensions/examples/*.ts")
-file(GLOB_RECURSE BUNDLED_EXTENSION_SOURCES CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/extensions/builtin/*")
-add_custom_command(OUTPUT "${CMAKE_SOURCE_DIR}/extensions/dist/supervisor.cjs" "${CMAKE_SOURCE_DIR}/extensions/dist/worker.cjs" "${CMAKE_SOURCE_DIR}/extensions/dist/builtin/nekotune.kugou.zip"
+add_custom_command(OUTPUT "${CMAKE_SOURCE_DIR}/extensions/dist/supervisor.cjs" "${CMAKE_SOURCE_DIR}/extensions/dist/worker.cjs"
     COMMAND "${CMAKE_COMMAND}" -E env CI=true "${PNPM_EXECUTABLE}" install --frozen-lockfile --store-dir "${CMAKE_BINARY_DIR}/pnpm-store"
     COMMAND "${PNPM_EXECUTABLE}" build
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/extensions"
-    DEPENDS ${EXTENSION_RUNTIME_SOURCES} ${BUNDLED_EXTENSION_SOURCES} "${CMAKE_SOURCE_DIR}/extensions/tools/build.mjs" "${CMAKE_SOURCE_DIR}/extensions/tools/cli.mjs" "${CMAKE_SOURCE_DIR}/extensions/package.json" "${CMAKE_SOURCE_DIR}/extensions/pnpm-lock.yaml" "${CMAKE_SOURCE_DIR}/extensions/pnpm-workspace.yaml"
+    DEPENDS ${EXTENSION_RUNTIME_SOURCES} "${CMAKE_SOURCE_DIR}/extensions/tools/build.mjs" "${CMAKE_SOURCE_DIR}/extensions/tools/cli.mjs" "${CMAKE_SOURCE_DIR}/extensions/package.json" "${CMAKE_SOURCE_DIR}/extensions/pnpm-lock.yaml" "${CMAKE_SOURCE_DIR}/extensions/pnpm-workspace.yaml"
     VERBATIM)
-add_custom_target(nekotune_extension_runtime ALL DEPENDS "${CMAKE_SOURCE_DIR}/extensions/dist/supervisor.cjs" "${CMAKE_SOURCE_DIR}/extensions/dist/worker.cjs" "${CMAKE_SOURCE_DIR}/extensions/dist/builtin/nekotune.kugou.zip")
+add_custom_target(nekotune_extension_runtime ALL DEPENDS "${CMAKE_SOURCE_DIR}/extensions/dist/supervisor.cjs" "${CMAKE_SOURCE_DIR}/extensions/dist/worker.cjs")
 include(GNUInstallDirs)
 install(PROGRAMS "${NEKOTUNE_NODE_BINARY}" DESTINATION "${CMAKE_INSTALL_LIBEXECDIR}/nekotune" RENAME node)
 install(FILES "${NEKOTUNE_RUNTIME_DIR}/node-v${NEKOTUNE_NODE_VERSION}-linux-x64/LICENSE" DESTINATION "${CMAKE_INSTALL_LIBEXECDIR}/nekotune" RENAME NODE-LICENSE)
-install(DIRECTORY "${CMAKE_SOURCE_DIR}/extensions/dist/" DESTINATION "${CMAKE_INSTALL_LIBEXECDIR}/nekotune")
+# Only ship the host runtime; stale archives from previous builds must not be distributed.
+install(FILES
+    "${CMAKE_SOURCE_DIR}/extensions/dist/supervisor.cjs"
+    "${CMAKE_SOURCE_DIR}/extensions/dist/supervisor.cjs.map"
+    "${CMAKE_SOURCE_DIR}/extensions/dist/worker.cjs"
+    "${CMAKE_SOURCE_DIR}/extensions/dist/worker.cjs.map"
+    "${CMAKE_SOURCE_DIR}/extensions/dist/index.d.ts"
+    DESTINATION "${CMAKE_INSTALL_LIBEXECDIR}/nekotune")

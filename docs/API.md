@@ -251,18 +251,9 @@ NekoTune 使用基于换行分隔的 JSON 协议，通过 Unix domain socket 进
 {"id":24,"method":"library.play","params":{"tag_ids":[1,2],"song_id":7}}
 ```
 
-### 酷狗插件
+### 外部插件服务
 
-酷狗专属方法已从内置 IPC 移到扩展服务；旧 `kugou.*` 方法不再注册。
-
-```json
-{"id":1,"method":"extensions.call","params":{"id":"nekotune.kugou","service":"status"}}
-{"id":2,"method":"extensions.call","params":{"id":"nekotune.kugou","service":"config.set","params":{"enabled":true,"worker_url":"https://worker.example"}}}
-```
-
-插件服务名为 `status`、`config.set`、`save_key`、`clear_key`、`send_code`、`login`、`search`、`play`、`download`、`cancel`。服务参数保留旧方法对应字段；状态直接位于 `data`，不包含 Cookie、密钥或临时播放地址。插件事件使用 `extension.nekotune.kugou.<事件名>`，载荷位于 `data`；登录、搜索和短信操作先返回 `{started:true}`，完成后发布事件。
-
-统一音乐来源为 `nekotune.kugou/music`，歌词来源为 `nekotune.kugou/lyrics`。推荐通用客户端使用 `music.*` 与 `lyrics.*`，避免绑定插件的专属界面协议。详细服务与迁移说明见 [酷狗插件](../extensions/builtin/kugou/README.md)。
+外部插件通过 `extensions.call` 暴露独立服务；具体参数和事件由插件自己的文档定义。通用音乐与歌词客户端使用 `music.*` 和 `lyrics.*`，不依赖某个音源的专属协议。主项目不附带第三方音源插件，需自行安装和信任。
 
 ### `song.metadata`
 
@@ -316,13 +307,13 @@ AI 操作失败沿用 `status: "error"` 和 `message`，后者为可翻译的 `a
 
 后端负责解析、搜索和缓存歌词，Qt/QML 客户端只通过 IPC 获取结果。播放曲目后按“同目录同名 `.krc` → `.lrc` → 歌曲自定义歌词 → 本地歌词缓存 → LRCLIB”顺序加载。`.krc` 支持酷狗二进制与已解码文本，损坏时回退 `.lrc`。缓存文件位于 `~/Music/NekoTune/config/lyrics-cache`，以音频内容 hash（或标题、歌手、专辑和时长）为键，由 `QSaveFile` 原子写入；旧版缓存仍可读取。刷新跳过缓存和自定义歌词，同名文件仍优先。
 
-`lyrics.changed` 广播当前歌曲的 `track_id`、`revision`、`state` 和可选 `document`、`candidates`。`document.format` 为 `krc`、`lrc` 或 `plain`；`document.lines` 保留 `{time_ms,text}`，KRC 行另有 `duration_ms` 和 `words`，每个词组包含 `{text,offset_ms,time_ms,duration_ms}`，时间单位均为毫秒。普通歌词位于 `document.plain_text`。酷狗候选及选定歌词的 `cover_url` 为可选封面地址。状态包括 `loading`、`waiting_metadata`、`searching`、`ready`、`instrumental`、`not_found`、`offline`、`error` 和 `candidates`。
+`lyrics.changed` 广播当前歌曲的 `track_id`、`revision`、`state` 和可选 `document`、`candidates`。`document.format` 为 `krc`、`lrc` 或 `plain`；`document.lines` 保留 `{time_ms,text}`，KRC 行另有 `duration_ms` 和 `words`，每个词组包含 `{text,offset_ms,time_ms,duration_ms}`，时间单位均为毫秒。普通歌词位于 `document.plain_text`。歌词候选及选定歌词的 `cover_url` 为可选封面地址。状态包括 `loading`、`waiting_metadata`、`searching`、`ready`、`instrumental`、`not_found`、`offline`、`error` 和 `candidates`。
 
 歌词请求携带当前歌曲的 `track_id`（音频内容 hash）：
 
 - `lyrics.refresh`：忽略缓存和自定义歌词，重新获取当前歌曲歌词。
 - `lyrics.search`：按 `title`、`artist`、`album` 手动搜索；`source` 从 `lyrics.sources` 读取，包括 `lrclib`（默认）和启用扩展的来源 ID。
-- `lyrics.select`：按当前字符串 `revision` 和候选 `index` 选择结果。酷狗先选歌曲版本，再选歌词；第二次选择后优先下载 KRC，失败时回退 LRC。
+- `lyrics.select`：按当前字符串 `revision` 和候选 `index` 选择结果。支持分阶段选择的来源可以先返回歌曲版本，再返回歌词候选；具体阶段由来源实现。
 - `lyrics.set_offline`：设置离线模式；仍可读取同名 KRC/LRC、缓存和自定义歌词，不发起歌词网络请求。
 
 自动结果仅在标题、歌手、专辑和时长满足精确匹配（时长误差不超过 2 秒）且候选明显领先时直接应用；其余结果交给客户端选择。旧版数据库的 ASR 表不会被删除，但后端不再读取或写入其中的转写结果。
@@ -338,7 +329,7 @@ AI 操作失败沿用 `status: "error"` 和 `message`，后者为可翻译的 `a
 ```
 
 ```json
-{"id":20,"status":"ok","data":{"sources":[{"id":"lrclib","name":"LRCLIB","supports_search":true},{"id":"nekotune.kugou/lyrics","name":"酷狗 / Kugou","supports_search":true}]}}
+{"id":20,"status":"ok","data":{"sources":[{"id":"lrclib","name":"LRCLIB","supports_search":true},{"id":"example.lyrics/demo","name":"Example / 示例歌词","supports_search":true}]}}
 ```
 
 ### 异步完成与元数据补丁
@@ -366,7 +357,7 @@ AI 操作失败沿用 `status: "error"` 和 `message`，后者为可翻译的 `a
 
 设置和缓存集中在 `config`；首次默认目录迁移保留旧数据库和缓存，不覆盖已有目标。账号密钥和会话迁入系统密钥环，回读校验成功后删除旧明文凭据；失败保留原文件并返回 `credential_error`。设置页保存的语言优先于系统语言，`NEKOTUNE_LANGUAGE` 优先于保存语言；`lyrics.set_offline` 持久保存到 `config/settings.json`。
 
-酷狗插件服务 `status` 的 `credential_error` 字段在系统密钥环访问或旧凭据迁移失败时返回错误说明，正常时为空字符串；不包含凭据内容。`key_saved` 表示密钥已通过 QtKeychain 保存到系统安全存储（Windows 凭据管理器、macOS Keychain 或 Linux Secret Service / KWallet）。保存失败不会回退为明文存储。Linux 升级时会回读校验并迁移旧 libsecret 条目，成功后清理旧条目。
+扩展通过宿主凭据接口使用系统安全存储（Windows 凭据管理器、macOS Keychain 或 Linux Secret Service / KWallet）。凭据不会通过公开业务 IPC 返回；系统密钥环访问或旧凭据迁移失败时返回错误说明。保存失败不会回退为明文存储。Linux 升级时会回读校验并迁移旧 libsecret 条目，成功后清理旧条目。
 
 ## 动态扩展接口
 

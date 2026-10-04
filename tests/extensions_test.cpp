@@ -15,6 +15,7 @@
 #include <QQmlComponent>
 #include <QQmlContext>
 #include <QQuickWindow>
+#include <QRegularExpression>
 #include <QSignalSpy>
 #include <QSqlQuery>
 #include <QTemporaryDir>
@@ -541,10 +542,11 @@ class ExtensionsTest final : public QObject {
         QTRY_VERIFY(
             engine.newQObject(pageItem("music_sources")).property("tracks").property("length").toInt() > 0);
         QVERIFY(capture("music-sources"));
-        QCOMPARE(peer.call("extensions.enable", {{"id", "nekotune.kugou"}, {"trusted", true}})
-                     .value("status").toString(), "ok");
-        QCOMPARE(peer.call("extensions.call", {{"id", "nekotune.kugou"}, {"service", "config.set"},
-                         {"params", QJsonObject{{"enabled", true}, {"worker_url", "https://worker.example"}}}})
+        const auto installed = peer.call("extensions.install",
+            {{"path", QStringLiteral(NEKOTUNE_SOURCE_DIR "/tests/fixtures/dedicated-source")},
+             {"development", true}, {"replace", true}});
+        QCOMPARE(installed.value("status").toString(), QString("ok"));
+        QCOMPARE(peer.call("extensions.enable", {{"id", "test.dedicated-source"}, {"trusted", true}})
                      .value("status").toString(), "ok");
         QTRY_COMPARE(controllers.extensions->sources().size(), 2);
         QTRY_COMPARE(controllers.extensions->browserSources().size(), 1);
@@ -560,9 +562,9 @@ class ExtensionsTest final : public QObject {
         QTRY_COMPARE(window->property("viewMode").toString(), QString("home"));
         QVERIFY(!visualItem(window->contentItem(), "nav_music_sources"));
         translator.setLanguage("zh");
-        QVERIFY(QMetaObject::invokeMethod(window, "navigate", Q_ARG(QVariant, "nekotune.kugou/music"),
+        QVERIFY(QMetaObject::invokeMethod(window, "navigate", Q_ARG(QVariant, "test.dedicated-source/music"),
                                          Q_ARG(QVariant, QVariant())));
-        QVERIFY(capture("music-kugou-only"));
+        QVERIFY(capture("music-dedicated-only"));
         QCOMPARE(peer.call("extensions.enable", {{"id", "example.test-source"}}).value("status").toString(), "ok");
         QTRY_COMPARE(controllers.extensions->browserSources().size(), 1);
         QTRY_VERIFY(visualItem(window->contentItem(), "nav_music_sources"));

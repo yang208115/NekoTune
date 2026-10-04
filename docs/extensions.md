@@ -18,7 +18,7 @@ NekoTune 的扩展由 JavaScript/TypeScript 后台代码和可选 QML 界面组�
 
 安全模式保留扩展及其数据，不启动扩展代码。分离运行时，`nekotune-backend --safe-mode` 控制后端脚本，`nekotune-qt-qml --safe-mode` 跳过该前端的扩展视图；已经运行的另一后端不会被前端启动参数停止。包含 Qt 原生模块的扩展应声明 `nativeModules: true`，其更新需要重启。
 
-应用随附的 [酷狗插件](../extensions/builtin/kugou/README.md) 会自动登记到扩展列表，首次运行仍需要用户启用并信任。卸载后不会在下次启动时重新登记，可手动导入发行 ZIP 恢复。
+主项目只提供通用扩展运行时、SDK、工具与示例，不包含或自动分发第三方音源插件。外部插件单独维护、打包和安装；已有安装、配置和凭据会保留。
 
 ## 目录、构建与打包
 
@@ -66,6 +66,23 @@ pnpm run create /tmp/my-extension
 ```
 
 创建模板后，在模板目录运行 `pnpm install`、`pnpm check` 和 `pnpm build`。模板引用本仓库的 `@nekotune/sdk` 类型包。TypeScript 和第三方依赖在构建时由 esbuild 打包；扩展安装和启用时不运行包管理器或安装脚本。打包工具忽略开发用 `node_modules`，因此应将第三方依赖打包进 JS 产物。需要原生 Node 模块时，由扩展作者提供匹配捆绑 Node 版本及平台的实际文件；不要将开发目录的符号链接打入 ZIP。
+
+外部扩展无需放回本仓库。在宿主 `extensions` 目录准备工具依赖后，可直接验证与打包任意外部目录：
+
+```sh
+pnpm run validate /path/to/my-extension
+pnpm run pack /path/to/my-extension /path/to/my-extension.zip
+```
+
+外部项目可以提供自己的 CMake 测试入口，并按需接入宿主目标：
+
+```sh
+cmake -S . -B build-external -DNEKOTUNE_EXTERNAL_TESTS_DIR=/path/to/extension-project/tests
+cmake --build build-external -j2
+QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software ctest --test-dir build-external --output-on-failure
+```
+
+该选项默认留空，主项目构建和测试不依赖外部目录。QML 扩展测试可复用 `nekotune_slider_quick_test -input /path/to/tests/qml`，其中包含宿主资源和测试夹具。
 
 ZIP 根目录必须包含 `extension.json`，不额外嵌套目录。宿主拒绝越界路径、链接和超限包：最多 20,000 个条目、总解压大小 512 MiB。
 

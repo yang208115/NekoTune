@@ -1,0 +1,15 @@
+{
+  "id": "test.dedicated-source",
+  "name": "Dedicated source test fixture",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "main": "main.mjs",
+  "contributes": {
+    "pages": [
+      { "id": "music", "title": { "zh": "测试音源", "en": "Test source" }, "source": "Page.qml" }
+    ],
+    "settings": [
+      { "id": "settings", "title": { "zh": "测试设置", "en": "Test settings" }, "source": "Settings.qml" }
+    ]
+  }
+}

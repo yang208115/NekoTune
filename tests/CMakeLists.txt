@@ -39,19 +39,6 @@ add_executable(nekotune_cover_test cover_test.cpp)
 target_link_libraries(nekotune_cover_test PRIVATE nekotune_core Qt6::Test)
 add_test(NAME nekotune_cover_test COMMAND nekotune_cover_test)
 
-# Retain old protocol fixtures for migration regressions; none of these adapters ships in the app.
-file(GLOB_RECURSE LEGACY_KUGOU_TEST_SOURCES CONFIGURE_DEPENDS legacy/*.cpp legacy/*.h)
-add_library(nekotune_legacy_kugou_test_support STATIC ${LEGACY_KUGOU_TEST_SOURCES})
-target_include_directories(nekotune_legacy_kugou_test_support PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/legacy)
-target_link_libraries(nekotune_legacy_kugou_test_support PUBLIC nekotune_core)
-target_link_libraries(nekotune_lyrics_test PRIVATE nekotune_legacy_kugou_test_support)
-add_executable(nekotune_kugou_music_test kugou_music_test.cpp)
-target_link_libraries(nekotune_kugou_music_test PRIVATE nekotune_legacy_kugou_test_support Qt6::Test)
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    add_test(NAME nekotune_kugou_music_test COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/with_test_keyring.sh $<TARGET_FILE:nekotune_kugou_music_test>)
-    set_tests_properties(nekotune_kugou_music_test PROPERTIES SKIP_RETURN_CODE 77)
-endif()
-
 find_package(Qt6 6.6 REQUIRED COMPONENTS QuickTest)
 
 add_executable(nekotune_slider_quick_test slider_quick_test.cpp ../frontend/qt-qml/resources.qrc)
@@ -66,6 +53,7 @@ set_tests_properties(nekotune_slider_quick_test PROPERTIES
 
 add_executable(nekotune_refactor_test refactor_test.cpp ../frontend/qt-qml/resources.qrc)
 target_link_libraries(nekotune_refactor_test PRIVATE nekotune_core nekotune_frontend Qt6::Test Qt6::Quick Qt6::QuickControls2)
+target_compile_definitions(nekotune_refactor_test PRIVATE NEKOTUNE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 add_test(NAME nekotune_refactor_test COMMAND nekotune_refactor_test)
 set_tests_properties(nekotune_refactor_test PROPERTIES
  ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Fusion")
@@ -111,5 +99,5 @@ target_link_libraries(nekotune_extensions_test PRIVATE nekotune_core nekotune_fr
 target_compile_definitions(nekotune_extensions_test PRIVATE NEKOTUNE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 add_test(NAME nekotune_extensions_test COMMAND nekotune_extensions_test)
 set_tests_properties(nekotune_extensions_test PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
-add_test(NAME nekotune_extension_sdk_test COMMAND "${NEKOTUNE_NODE_BINARY}" --test tests/packages.test.mjs tests/audio.test.mjs tests/runtime.test.mjs tests/kugou.test.mjs)
+add_test(NAME nekotune_extension_sdk_test COMMAND "${NEKOTUNE_NODE_BINARY}" --test tests/packages.test.mjs tests/audio.test.mjs tests/runtime.test.mjs)
 set_tests_properties(nekotune_extension_sdk_test PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/extensions" TIMEOUT 120)

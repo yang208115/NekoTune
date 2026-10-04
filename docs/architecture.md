@@ -135,11 +135,11 @@ tests/                          # 服务、存储、协议、QML 和依赖边界
 
 `LyricsService` 通过 `ILyricsStorage` 读取本地歌词和缓存，通过 `LyricsProvider` 请求候选。普通自动加载顺序为本地 KRC → 本地 LRC → 自定义歌词 → 缓存 → LRCLIB；强制刷新跳过自定义歌词和缓存，本地文件仍优先。低置信度候选交由用户选择。
 
-LRCLIB 在后端装配处注册，扩展歌词来源随运行时动态注册。酷狗插件支持歌曲版本、歌词候选、下载的分阶段选择。`SidecarStore` 保存接受的歌词和配套封面；`CoverService` 统一解析本地优先的封面，`ApiContext::withCover()` 在歌曲 JSON 中补充 `cover_url`，各界面消费同一字段。
+LRCLIB 在后端装配处注册，扩展歌词来源随运行时动态注册。扩展歌词来源可支持歌曲版本、歌词候选、下载的分阶段选择。`SidecarStore` 保存接受的歌词和配套封面；`CoverService` 统一解析本地优先的封面，`ApiContext::withCover()` 在歌曲 JSON 中补充 `cover_url`，各界面消费同一字段。
 
-### 酷狗与 AI
+### 外部音源与 AI
 
-酷狗位于 `extensions/builtin/kugou`：独立 Node 进程处理账号和网络，QML 通过扩展贡献注册页面与设置。音乐下载统一由 `MusicService` 完成受限代理传输、文件检查和入库，再在写队列外调用来源的 `downloaded` 钩子保存配套资源。宿主仅保留旧凭据迁移兼容代码。原网络适配器移入 `tests/legacy`，只用于协议迁移回归，不链接进应用。
+音源插件在主仓库之外维护：独立 Node 进程处理账号和网络，QML 通过扩展贡献注册页面与设置。主项目构建不读取外部音源源码，也不生成或安装它们的 ZIP。音乐下载统一由 `MusicService` 完成受限代理传输、文件检查和入库，再在写队列外调用来源的 `downloaded` 钩子保存配套资源。宿主仅保留旧凭据迁移兼容代码。旧网络适配器和音源专属回归测试也在外部项目维护；主仓库使用无网络的通用扩展夹具测试导航和设置。
 
 `AiService` 在数据库所属线程读取歌曲与标签快照，通过 `IAiBackend` 交给独立 AI 线程。`AiBackend`／`AiSettings` 处理歌词文本、配置、凭据和网络请求，工作线程不持有数据库连接。`song.suggest_metadata` 只返回建议，不进入结构性写队列；用户保存时复用元数据事务。
 
@@ -159,7 +159,7 @@ LRCLIB 在后端装配处注册，扩展歌词来源随运行时动态注册。�
 
 `IpcRouter::registerMethod()` 注册处理器并拒绝重复方法名；`dispatch()` 校验方法与参数，关联请求 ID，并保证响应完成入口只生效一次。播放、曲库、歌词、音乐来源、扩展和 AI 在独立 API 文件中注册。
 
-需要串行的操作在注册时指定 `serialized = true`，交给 `CommandScheduler`。导入等异步操作只有实际完成入库或入队后才响应；查询、暂停、停止、跳转和音量无需等待结构性写任务。酷狗插件的登录、搜索等服务返回受理结果，后续完成通过事件报告，应分别理解这两种完成语义。
+需要串行的操作在注册时指定 `serialized = true`，交给 `CommandScheduler`。导入等异步操作只有实际完成入库或入队后才响应；查询、暂停、停止、跳转和音量无需等待结构性写任务。扩展中的异步服务可以返回受理结果，后续完成通过事件报告，应分别理解这两种完成语义。
 
 客户端断连时清理等待中的请求，重连重新接收快照，不自动重放修改命令。已接受的后端任务可能在客户端断连后继续完成。
 
@@ -277,7 +277,7 @@ git diff --check
 cmake -DSOURCE_DIR="$PWD" -P tests/dependency_boundaries.cmake
 ```
 
-服务与仓储测试覆盖队列、播放顺序、歌词、曲库、封面、酷狗、AI 和凭据。`nekotune_refactor_test` 使用假播放实现验证失败提交，也通过真实后端、Socket、前端控制器和 QML 验证交互；`nekotune_slider_quick_test` 执行 `tests/qml` 下的界面用例。
+服务与仓储测试覆盖队列、播放顺序、歌词、曲库、封面、扩展、AI 和凭据。`nekotune_refactor_test` 使用假播放实现验证失败提交，也通过真实后端、Socket、前端控制器和 QML 验证交互；`nekotune_slider_quick_test` 执行 `tests/qml` 下的界面用例。
 
 Linux 密钥库集成测试由 `tests/with_test_keyring.sh` 创建临时 D-Bus 会话和密钥环；缺少工具时返回 77，CTest 将其标记为跳过。网络单测使用模拟响应，不能代替真实账号、短信或付费歌曲下载验收。
 

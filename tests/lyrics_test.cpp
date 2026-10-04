@@ -3,7 +3,6 @@
 #include "domain/lyrics/lrc_parser.h"
 #include "infrastructure/lyrics/lyrics_storage.h"
 #include "ipc/serialization/lyrics_serialization.h"
-#include "infrastructure/lyrics/kugou_provider.h"
 #include "infrastructure/lyrics/lrclib_provider.h"
 
 #include <QDir>
@@ -139,10 +138,7 @@ class LyricsTest final : public QObject {
     void networkFailures();
     void providerPayloadsAndRequest();
     void providerCancellationAndDestruction();
-    void kugouSearchSelectAndCache();
-    void kugouGroupCovers();
     void krcDecodeAndPriority();
-    void kugouKrcSelectionAndCancellation();
 };
 
 static QByteArray sampleKrc() {
@@ -222,55 +218,6 @@ void LyricsTest::krcDecodeAndPriority() {
              QStringLiteral("krc"));
 }
 
-// Drive the staged song-to-lyric selection through fake HTTP replies.
-// The direct KRC request must preserve its format and word timing.
-// Resolver access data must not appear in the serialized UI snapshot.
-// Successful selection is also available from the persistent lyric cache.
-// Hold the next download open, then clear the current revision.
-// The late network completion must not replace the cleared idle state.
-void LyricsTest::kugouKrcSelectionAndCancellation() {
-    MockManager manager;
-    manager.bodies.insert(QStringLiteral("/api/music/kugou/v1/search"), R"({"status":1,"error_code":0,"data":{"lists":[
-        {"SongName":"Song","SingerName":"Artist","FileHash":"0123456789abcdef0123456789abcdef","Duration":180}]}})");
-    manager.bodies.insert(QStringLiteral("/api/music/kugou/v1/search/lyric"), R"({"status":200,"candidates":[
-        {"id":456,"accesskey":"secretkey","song":"Song","singer":"Artist","duration":180000}]})");
-    manager.bodies.insert(QStringLiteral("/download"),
-                          QByteArray(R"({"status":200,"content":")") + sampleKrc().toBase64() + R"("})");
-    KugouProvider kugou(nullptr, &manager, QUrl(QStringLiteral("https://example.invalid")));
-    MockProvider lrclib;
-    QTemporaryDir temp;
-    LyricsService service({&lrclib, &kugou}, std::make_unique<LyricsStorage>(temp.path()));
-    QJsonObject state;
-    connect(&service, &LyricsService::changed, this, [&](const auto &value) { state = toJson(value); });
-    service.search(query(), 1, QStringLiteral("kugou"));
-    QTRY_COMPARE(state.value(QStringLiteral("state")).toString(), QStringLiteral("candidates"));
-    service.select(0, 1);
-    QTRY_COMPARE(state.value(QStringLiteral("search_stage")).toString(), QStringLiteral("lyrics"));
-    QTRY_COMPARE(state.value(QStringLiteral("state")).toString(), QStringLiteral("candidates"));
-    service.select(0, 1);
-    QTRY_COMPARE(state.value(QStringLiteral("state")).toString(), QStringLiteral("ready"));
-    QCOMPARE(state.value(QStringLiteral("document")).toObject().value(QStringLiteral("format")).toString(),
-             QStringLiteral("krc"));
-    QCOMPARE(QUrlQuery(manager.lastRequest.url()).queryItemValue(QStringLiteral("fmt")),
-             QStringLiteral("krc"));
-    QCOMPARE(manager.lastRequest.url().adjusted(QUrl::RemoveQuery),
-             QUrl("https://lyrics.kugou.com/download"));
-    QVERIFY(manager.lastRequest.rawHeader("X-Account-Key").isEmpty());
-    QVERIFY(!QJsonDocument(state).toJson().contains("secretkey"));
-    QVERIFY(LyricsCache(temp.path()).read(query())->isSynced());
-
-    service.search(query(), 2, QStringLiteral("kugou"));
-    QTRY_COMPARE(state.value(QStringLiteral("state")).toString(), QStringLiteral("candidates"));
-    service.select(0, 2);
-    QTRY_COMPARE(state.value(QStringLiteral("search_stage")).toString(), QStringLiteral("lyrics"));
-    QTRY_COMPARE(state.value(QStringLiteral("state")).toString(), QStringLiteral("candidates"));
-    manager.hang = true;
-    service.select(0, 2);
-    QCOMPARE(state.value(QStringLiteral("state")).toString(), QStringLiteral("loading"));
-    service.clear(3);
-    QTest::qWait(20);
-    QCOMPARE(state.value(QStringLiteral("state")).toString(), QStringLiteral("idle"));
-}
 
 // Feature retirement must not re-enable ASR through old local artifacts.
 // The test supplies legacy data without deleting or migrating user content.
@@ -745,115 +692,7 @@ void LyricsTest::providerCancellationAndDestruction() {
     QCOMPARE(callbacks, 0);
 }
 
-// The provider first returns song choices, then lyric choices for the selected song.
-// Each stage must keep the user's chosen version rather than auto-picking another.
-// Private access handles remain absent from serialized candidate state.
-// Resolved lyric text can be cached and used independently of later network state.
-// Mock routes let the test verify exact staged request parameters.
-// This is a protocol regression test without requiring account login.
-void LyricsTest::kugouSearchSelectAndCache() {
-    MockManager manager;
-    manager.bodies.insert(QStringLiteral("/api/music/kugou/v1/search"), R"({"status":1,"error_code":0,"data":{"lists":[
-        {"SongName":"<em>Song</em>","SingerName":"Artist","AlbumName":"Album",
-         "FileHash":"0123456789abcdef0123456789abcdef","Duration":180,"MixSongID":123,
-         "Image":"http://imge.kugou.com/stdmusic/{size}/cover.jpg"}]}})");
-    manager.bodies.insert(QStringLiteral("/api/music/kugou/v1/search/lyric"), R"({"status":200,"candidates":[
-        {"id":456,"accesskey":"secretkey","song":"Song","singer":"Artist","duration":180000}]})");
-    manager.bodies.insert(QStringLiteral("/api/music/kugou/v1/lyric"),
-                          R"({"status":200,"decodeContent":"[00:01.00]Kugou line"})");
-    KugouProvider kugou(nullptr, &manager, QUrl(QStringLiteral("https://example.invalid")));
-    MockProvider lrclib;
-    QTemporaryDir temp;
-    LyricsService service({&lrclib, &kugou}, std::make_unique<LyricsStorage>(temp.path()));
-    QJsonObject state;
-    connect(&service, &LyricsService::changed, this, [&](const auto &value) { state = toJson(value); });
-    service.search(query(), 1, QStringLiteral("kugou"));
-    QTRY_COMPARE(state.value(QStringLiteral("search_stage")).toString(), QStringLiteral("songs"));
-    QCOMPARE(manager.lastRequest.url().adjusted(QUrl::RemoveQuery),
-             QUrl("https://example.invalid/api/music/kugou/v1/search"));
-    QCOMPARE(state.value(QStringLiteral("candidates")).toArray().size(), 1);
-    QVERIFY(state.value(QStringLiteral("candidates"))
-                .toArray()
-                .first()
-                .toObject()
-                .value(QStringLiteral("song_result"))
-                .toBool());
-    const auto expectedCover = QStringLiteral("https://imge.kugou.com/stdmusic/240/cover.jpg");
-    QCOMPARE(state.value(QStringLiteral("candidates"))
-                 .toArray()
-                 .first()
-                 .toObject()
-                 .value(QStringLiteral("cover_url"))
-                 .toString(),
-             expectedCover);
-    QCOMPARE(lrclib.requests, 0);
-    service.select(0, 1);
-    QTRY_COMPARE(state.value(QStringLiteral("search_stage")).toString(), QStringLiteral("lyrics"));
-    QTRY_COMPARE(state.value(QStringLiteral("state")).toString(), QStringLiteral("candidates"));
-    QCOMPARE(state.value(QStringLiteral("candidates"))
-                 .toArray()
-                 .first()
-                 .toObject()
-                 .value(QStringLiteral("cover_url"))
-                 .toString(),
-             expectedCover);
-    QCOMPARE(QUrlQuery(manager.lastRequest.url()).queryItemValue(QStringLiteral("hash")),
-             QStringLiteral("0123456789abcdef0123456789abcdef"));
-    QCOMPARE(manager.lastRequest.url().path(), QString("/api/music/kugou/v1/search/lyric"));
-    QCOMPARE(QUrlQuery(manager.lastRequest.url()).queryItemValue("duration"), QString("180000"));
-    QVERIFY(!QJsonDocument(state).toJson().contains("secretkey"));
-    service.select(0, 1);
-    QTRY_COMPARE(state.value(QStringLiteral("state")).toString(), QStringLiteral("ready"));
-    QCOMPARE(state.value(QStringLiteral("document")).toObject().value(QStringLiteral("source")).toString(),
-             QStringLiteral("kugou"));
-    QCOMPARE(state.value(QStringLiteral("document")).toObject().value(QStringLiteral("cover_url")).toString(),
-             expectedCover);
-    QCOMPARE(
-        state.value(QStringLiteral("document")).toObject().value(QStringLiteral("lines")).toArray().size(),
-        1);
-    QCOMPARE(LyricsCache(temp.path()).read(query())->source, QStringLiteral("kugou"));
-    QCOMPARE(LyricsCache(temp.path()).read(query())->coverUrl, expectedCover);
-    QVERIFY(!QJsonDocument(state).toJson().contains("secretkey"));
-    QCOMPARE(QUrlQuery(manager.lastRequest.url()).queryItemValue(QStringLiteral("accesskey")),
-             QStringLiteral("secretkey"));
-    QCOMPARE(manager.lastRequest.url().adjusted(QUrl::RemoveQuery),
-             QUrl("https://example.invalid/api/music/kugou/v1/lyric"));
-    QCOMPARE(QUrlQuery(manager.lastRequest.url()).queryItemValue("id"), QString("456"));
-    QCOMPARE(QUrlQuery(manager.lastRequest.url()).queryItemValue("fmt"), QString("lrc"));
-    QVERIFY(manager.lastRequest.rawHeader("X-Account-Key").isEmpty());
-    QVERIFY(manager.lastRequest.rawHeader("Authorization").isEmpty());
-    QVERIFY(manager.lastRequest.rawHeader("Cookie").isEmpty());
-    service.search(query(), 2, QStringLiteral("lrclib"));
-    QCOMPARE(lrclib.requests, 1);
-    service.load(query(), {}, {}, 3, true);
-    QCOMPARE(state.value(QStringLiteral("document")).toObject().value(QStringLiteral("cover_url")).toString(),
-             expectedCover);
-    QCOMPARE(lrclib.requests, 1); // Cached lyrics and cover do not repeat the search.
-}
 
-// Grouped search variants may omit their own artwork field.
-// The parent's trusted image can fill that descriptive gap.
-// Version identities still remain separate selectable candidates.
-// Cover propagation must not collapse variants or require lyric download first.
-void LyricsTest::kugouGroupCovers() {
-    MockManager manager;
-    manager.body = R"({"status":1,"error_code":0,"data":{"lists":[
-        {"SongName":"Song","FileHash":"0123456789abcdef0123456789abcdef",
-         "Image":"http://imge.kugou.com/stdmusic/{size}/main.jpg","Grp":[
-           {"FileHash":"abcdef0123456789abcdef0123456789","Image":"http://imge.kugou.com/stdmusic/{size}/group.jpg"},
-           {"FileHash":"fedcba9876543210fedcba9876543210","Image":"https://invalid.example/cover.jpg"}]}
-    ]}})";
-    KugouProvider provider(nullptr, &manager, QUrl(QStringLiteral("https://example.invalid")));
-    QVector<LyricsCandidate> results;
-    connect(&provider, &LyricsProvider::completed, this,
-            [&](quint64, const auto &candidates) { results = candidates; });
-    provider.request(query(), 1, true);
-    QTRY_COMPARE(results.size(), 3);
-    QCOMPARE(results.at(0).document.coverUrl, QStringLiteral("https://imge.kugou.com/stdmusic/240/main.jpg"));
-    QCOMPARE(results.at(1).document.coverUrl,
-             QStringLiteral("https://imge.kugou.com/stdmusic/240/group.jpg"));
-    QVERIFY(results.at(2).document.coverUrl.isEmpty());
-}
 
 QTEST_GUILESS_MAIN(LyricsTest)
 #include "lyrics_test.moc"

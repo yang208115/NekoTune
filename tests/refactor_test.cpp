@@ -833,14 +833,17 @@ class RefactorTest final : public QObject {
     // Muting is explicit zero and unmuting restores the remembered positive level.
     // The test also exercises dialog lifecycle and current-row action identity.
     // It does not substitute for a separate screenshot-based visual acceptance.
-    void kugouPluginNavigation() {
-        QVERIFY(AppPaths::saveSetting("kugou", QJsonObject{}));
+    void extensionPluginNavigation() {
         BackendRuntime runtime;
         QVERIFY(runtime.start());
         RpcPeer peer;
         QVERIFY(peer.connect(m_socket));
         QTRY_VERIFY_WITH_TIMEOUT(
             peer.call("extensions.list").value("data").toObject().value("runtimeReady").toBool(), 15000);
+        const auto installed = peer.call("extensions.install",
+            {{"path", QStringLiteral(NEKOTUNE_SOURCE_DIR "/tests/fixtures/dedicated-source")},
+             {"development", true}, {"replace", true}});
+        QCOMPARE(installed.value("status").toString(), QString("ok"));
         IpcClient client;
         AppControllers controllers(client);
         I18n translator;
@@ -854,34 +857,28 @@ class RefactorTest final : public QObject {
         auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
         QVERIFY(window);
         QTRY_VERIFY(client.connected());
-        QVERIFY(!visualItem(window->contentItem(), "nav_nekotune.kugou/music"));
-        const auto enabled = peer.call("extensions.enable", {{"id", "nekotune.kugou"}, {"trusted", true}});
+        QVERIFY(!visualItem(window->contentItem(), "nav_test.dedicated-source/music"));
+        const auto enabled = peer.call("extensions.enable", {{"id", "test.dedicated-source"}, {"trusted", true}});
         QVERIFY2(enabled.value("status") == "ok",
                  qPrintable(QString::fromUtf8(QJsonDocument(enabled).toJson())));
-        QTRY_VERIFY(visualItem(window->contentItem(), "nav_nekotune.kugou/music"));
-        QVERIFY(!visualItem(window->contentItem(), "nav_nekotune.kugou/settings"));
+        QTRY_VERIFY(visualItem(window->contentItem(), "nav_test.dedicated-source/music"));
+        QVERIFY(!visualItem(window->contentItem(), "nav_test.dedicated-source/settings"));
         QCOMPARE(controllers.extensions->settingsPages().size(), 1);
-        const auto configured =
-            peer.call("extensions.call",
-                      {{"id", "nekotune.kugou"},
-                       {"service", "config.set"},
-                       {"params", QJsonObject{{"enabled", true}, {"worker_url", "https://worker.example"}}}});
-        QCOMPARE(configured.value("status").toString(), QString("ok"));
         QTRY_COMPARE(controllers.lyrics->sources().size(), 2);
         QVERIFY(controllers.extensions->browserSources().isEmpty());
         QVERIFY(!visualItem(window->contentItem(), "nav_music_sources"));
-        auto *button = visualItem(window->contentItem(), "nav_nekotune.kugou/music");
+        auto *button = visualItem(window->contentItem(), "nav_test.dedicated-source/music");
         QVERIFY(QMetaObject::invokeMethod(button, "clicked"));
-        QCOMPARE(window->property("viewMode").toString(), QString("nekotune.kugou/music"));
+        QCOMPARE(window->property("viewMode").toString(), QString("test.dedicated-source/music"));
         auto pluginPage = [&]() -> QObject * {
             QVariant result;
             QMetaObject::invokeMethod(window, "pageItem", Q_RETURN_ARG(QVariant, result),
-                                      Q_ARG(QVariant, QVariant("nekotune.kugou/music")));
+                                      Q_ARG(QVariant, QVariant("test.dedicated-source/music")));
             return result.value<QObject *>();
         };
         QTRY_VERIFY_WITH_TIMEOUT(pluginPage(), 5000);
-        QCOMPARE(pluginPage()->objectName(), QString("kugouPluginPage"));
-        QVERIFY(pluginPage()->findChild<QObject *>("kugouPluginPanel"));
+        QCOMPARE(pluginPage()->objectName(), QString("fixturePluginPage"));
+        QVERIFY(pluginPage()->findChild<QObject *>("fixturePluginPanel"));
         const auto screenshotDirectory = qEnvironmentVariable("NEKOTUNE_TEST_SCREENSHOT_DIR");
         if (!screenshotDirectory.isEmpty()) {
             window->resize(1000, 720);
@@ -889,55 +886,55 @@ class RefactorTest final : public QObject {
                 translator.setLanguage(language);
                 QTest::qWait(180);
                 QVERIFY(
-                    window->grabWindow().save(screenshotDirectory + "/kugou-plugin-" + language + ".png"));
+                    window->grabWindow().save(screenshotDirectory + "/fixture-plugin-" + language + ".png"));
             }
         }
         auto *settingsNav = visualItem(window->contentItem(), "nav_settings");
         QVERIFY(settingsNav);
         QVERIFY(QMetaObject::invokeMethod(settingsNav, "clicked"));
         QCOMPARE(window->property("viewMode").toString(), QString("settings"));
-        auto entry = [&] { return visualItem(window->contentItem(), "settings_entry_nekotune.kugou/settings"); };
+        auto entry = [&] { return visualItem(window->contentItem(), "settings_entry_test.dedicated-source/settings"); };
         QTRY_VERIFY(entry() && entry()->isVisible());
         for (const QString language : {"zh", "en"}) {
             translator.setLanguage(language);
             QTRY_COMPARE(entry()->property("text").toString(),
-                         language == "zh" ? QString("酷狗设置") : QString("Kugou settings"));
+                         language == "zh" ? QString("测试设置") : QString("Test settings"));
             if (!screenshotDirectory.isEmpty()) {
                 QTest::qWait(180);
                 QVERIFY(window->grabWindow().save(screenshotDirectory + "/settings-overview-" + language + ".png"));
             }
             QVERIFY(QMetaObject::invokeMethod(entry(), "clicked"));
             QCOMPARE(window->property("viewMode").toString(), QString("settings"));
-            QCOMPARE(window->property("settingsSection").toString(), QString("nekotune.kugou/settings"));
-            QTRY_VERIFY(visualItem(window->contentItem(), "kugouPluginSettings"));
+            QCOMPARE(window->property("settingsSection").toString(), QString("test.dedicated-source/settings"));
+            QTRY_VERIFY(visualItem(window->contentItem(), "fixturePluginSettings"));
             auto *title = visualItem(window->contentItem(), "settingsSubpageTitle");
             QVERIFY(title);
             QCOMPARE(title->property("text").toString(), entry()->property("text").toString());
             if (!screenshotDirectory.isEmpty()) {
                 QTest::qWait(180);
-                QVERIFY(window->grabWindow().save(screenshotDirectory + "/settings-kugou-subpage-" + language + ".png"));
+                QVERIFY(window->grabWindow().save(screenshotDirectory + "/settings-fixture-subpage-" + language + ".png"));
             }
             auto *back = visualItem(window->contentItem(), "settingsBackButton");
             QVERIFY(back && back->isVisible());
             QVERIFY(QMetaObject::invokeMethod(back, "clicked"));
             QCOMPARE(window->property("settingsSection").toString(), QString());
-            QTRY_VERIFY(!visualItem(window->contentItem(), "kugouPluginSettings"));
+            QTRY_VERIFY(!visualItem(window->contentItem(), "fixturePluginSettings"));
             QVERIFY(entry()->isVisible());
         }
         QVERIFY(QMetaObject::invokeMethod(button, "clicked"));
-        auto *shortcut = visualItem(window->contentItem(), "kugouOpenSettingsButton");
+        auto *shortcut = visualItem(window->contentItem(), "fixtureOpenSettingsButton");
         QVERIFY(shortcut && shortcut->isVisible());
         QVERIFY(QMetaObject::invokeMethod(shortcut, "clicked"));
         QCOMPARE(window->property("viewMode").toString(), QString("settings"));
-        QTRY_VERIFY(visualItem(window->contentItem(), "kugouPluginSettings"));
-        const auto disabled = peer.call("extensions.disable", {{"id", "nekotune.kugou"}});
+        QTRY_VERIFY(visualItem(window->contentItem(), "fixturePluginSettings"));
+        const auto disabled = peer.call("extensions.disable", {{"id", "test.dedicated-source"}});
         QCOMPARE(disabled.value("status").toString(), QString("ok"));
-        QTRY_VERIFY(!visualItem(window->contentItem(), "nav_nekotune.kugou/music"));
+        QTRY_VERIFY(!visualItem(window->contentItem(), "nav_test.dedicated-source/music"));
         QTRY_COMPARE(controllers.lyrics->sources().size(), 1);
         QTRY_COMPARE(window->property("settingsSection").toString(), QString());
         QCOMPARE(window->property("viewMode").toString(), QString("settings"));
         QTRY_VERIFY(!entry());
-        QTRY_VERIFY(!visualItem(window->contentItem(), "kugouPluginSettings"));
+        QTRY_VERIFY(!visualItem(window->contentItem(), "fixturePluginSettings"));
         runtime.stop();
     }
 

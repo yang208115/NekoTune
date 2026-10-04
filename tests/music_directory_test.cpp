@@ -460,9 +460,9 @@ class MusicDirectoryTest final : public QObject {
     // Migration copies the legacy database rather than consuming or rewriting its original bytes.
     // Tags, playlists and queue records must survive along with the audio identities.
     // Lyrics assets move to the new profile layout independently of credential migration.
-    // Secrets become usable only after the credential store accepts and verifies them.
-    // Once cleared, stale legacy plaintext must not restore the key on another startup.
-    void migratesLegacyDatabaseAndSecuresCredentials() {
+    // Without an installed account plugin, credential files stay available for later secure migration.
+    // Plugin-specific secure migration is verified by the external plugin suite.
+    void migratesLegacyDatabaseAndPreservesCredentials() {
         QTemporaryDir directory;
         const auto project = directory.filePath("project");
         const auto oldDb = project + "/build/nekotune.sqlite3";
@@ -513,60 +513,14 @@ class MusicDirectoryTest final : public QObject {
         QCOMPARE(status.value("queue").toArray().size(), 1);
         QCOMPARE(status.value("playlists").toArray().first().toObject().value("name").toString(),
                  QString("Old playlist"));
-        QTRY_VERIFY_WITH_TIMEOUT(
-            peer.call("extensions.list").value("data").toObject().value("runtimeReady").toBool(), 15000);
-        const auto enabled = peer.call("extensions.enable", {{"id", "nekotune.kugou"}, {"trusted", true}});
-        QVERIFY2(enabled.value("status") == "ok",
-                 qPrintable(QString::fromUtf8(QJsonDocument(enabled).toJson())));
-        QVERIFY(!QFileInfo::exists(config + "/kugou-account-key"));
-        QVERIFY(!QFileInfo::exists(config + "/kugou-session.json"));
-        QVERIFY(peer.call("extensions.call", {{"id", "nekotune.kugou"}, {"service", "status"}})
-                    .value("data")
-                    .toObject()
-                    .value("key_saved")
-                    .toBool());
+        // Without an installed plugin, migration leaves credentials available for a later opt-in.
+        QCOMPARE(read(oldKey), QByteArray("fixture-key"));
+        QCOMPARE(read(oldSession), QByteArray("{\"version\":1,\"cookies\":{}}"));
         QVERIFY(QFileInfo(config + "/lyrics-cache/sample.json").isFile());
         QVERIFY(QFileInfo(config + "/covers/sample").isFile());
         backend.terminate();
         QVERIFY(backend.waitForFinished());
         QCOMPARE(read(oldDb), oldBytes);
-        QVERIFY(!QFileInfo::exists(oldKey));
-        QVERIFY(!QFileInfo::exists(oldSession));
-        // The keyring is authoritative over stale plaintext copies; clearing stays cleared.
-        write(config + "/kugou-account-key", "new-key");
-        backend.start(NEKOTUNE_BACKEND_BINARY);
-        QVERIFY(backend.waitForStarted());
-        QTRY_VERIFY_WITH_TIMEOUT(QFileInfo(socket).exists(), 5000);
-        Rpc restarted;
-        QTRY_VERIFY(restarted.connect(socket));
-        QTRY_VERIFY_WITH_TIMEOUT(
-            restarted.call("extensions.call", {{"id", "nekotune.kugou"}, {"service", "status"}})
-                    .value("status") == "ok",
-            15000);
-        QVERIFY(!QFileInfo::exists(config + "/kugou-account-key"));
-        QCOMPARE(restarted.call("extensions.call", {{"id", "nekotune.kugou"}, {"service", "clear_key"}})
-                     .value("status")
-                     .toString(),
-                 QString("ok"));
-        backend.terminate();
-        QVERIFY(backend.waitForFinished());
-        backend.start(NEKOTUNE_BACKEND_BINARY);
-        QVERIFY(backend.waitForStarted());
-        QTRY_VERIFY_WITH_TIMEOUT(QFileInfo(socket).exists(), 5000);
-        Rpc cleared;
-        QTRY_VERIFY(cleared.connect(socket));
-        QTRY_VERIFY_WITH_TIMEOUT(
-            cleared.call("extensions.call", {{"id", "nekotune.kugou"}, {"service", "status"}})
-                    .value("status") == "ok",
-            15000);
-        QVERIFY(!QFileInfo(config + "/kugou-account-key").exists());
-        QVERIFY(!cleared.call("extensions.call", {{"id", "nekotune.kugou"}, {"service", "status"}})
-                     .value("data")
-                     .toObject()
-                     .value("key_saved")
-                     .toBool());
-        backend.terminate();
-        QVERIFY(backend.waitForFinished());
     }
 };
 QTEST_GUILESS_MAIN(MusicDirectoryTest)

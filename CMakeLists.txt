@@ -46,3 +46,9 @@ add_subdirectory(frontend/qt-qml)
 
 enable_testing()
 add_subdirectory(tests)
+
+# External extensions may opt in to integration tests against this host build.
+set(NEKOTUNE_EXTERNAL_TESTS_DIR "" CACHE PATH "Optional external extension test project")
+if(NEKOTUNE_EXTERNAL_TESTS_DIR)
+    add_subdirectory("${NEKOTUNE_EXTERNAL_TESTS_DIR}" "external-extension-tests")
+endif()
