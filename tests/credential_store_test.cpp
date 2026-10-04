@@ -1,4 +1,5 @@
 #include "infrastructure/kugou/kugou_account_session.h"
+#include "infrastructure/library/audio_reference.h"
 #include <QFile>
 #include <QTemporaryDir>
 #include <QtTest>
@@ -36,9 +37,11 @@ const QByteArray session = R"({"version":1,"cookies":{"token":"fixture-token","u
 }
 class CredentialStoreTest : public QObject {
     Q_OBJECT
+    QTemporaryDir m_profile;
   private slots:
     void initTestCase() {
-        qputenv("NEKOTUNE_HOME", "/tmp/nekotune-credential-test-isolated");
+        QVERIFY(m_profile.isValid());
+        qputenv("NEKOTUNE_HOME", m_profile.path().toUtf8());
         qunsetenv("KUGOU_ACCOUNT_API_KEY");
         qunsetenv("KUGOU_ACCOUNT_API_KEY_FILE");
     }
@@ -142,7 +145,7 @@ class CredentialStoreTest : public QObject {
         QVERIFY(QFile::exists(keyPath) && QFile::exists(sessionPath));
         QVERIFY(QFile::remove(keyPath));
         write(dir.filePath("target"), "private");
-        QVERIFY(QFile::link(dir.filePath("target"), keyPath));
+        QVERIFY(createAudioSymlink(dir.filePath("target"), keyPath));
         KugouAccountSession linked(keyPath, sessionPath, store);
         QVERIFY(!linked.keyError.isEmpty());
         QVERIFY(QFileInfo(keyPath).isSymLink());

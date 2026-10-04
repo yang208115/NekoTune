@@ -1,3 +1,5 @@
+// Host and extension pages may omit the optional playlist argument.
+pragma FunctionSignatureBehavior: Ignored
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Dialogs

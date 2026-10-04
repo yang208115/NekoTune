@@ -1,6 +1,8 @@
 # Explicit stdout logging keeps QtTest failures visible under Windows runners.
 function(nekotune_add_qt_test)
-    add_test(${ARGN} -o -,txt)
+    cmake_parse_arguments(QT_TEST "" "NAME" "COMMAND" ${ARGN})
+    add_test(NAME ${QT_TEST_NAME} COMMAND ${QT_TEST_COMMAND}
+        -o -,txt -o "${CMAKE_CURRENT_BINARY_DIR}/${QT_TEST_NAME}.txt,txt")
 endfunction()
 
 set(CMAKE_WIN32_EXECUTABLE OFF)

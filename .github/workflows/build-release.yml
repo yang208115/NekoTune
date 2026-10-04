@@ -103,6 +103,12 @@ jobs:
             -DBUILD_TRANSLATIONS=OFF -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/qtkeychain"
           cmake --build .ci-qtkeychain/build --parallel 2
           cmake --install .ci-qtkeychain/build
+      - name: Enable native symlinks on the disposable Windows test runner
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock' -Force | Out-Null
+          New-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock' -Name AllowDevelopmentWithoutDevLicense -PropertyType DWord -Value 1 -Force | Out-Null
       - name: Install Windows dependencies (UCRT64)
         if: runner.os == 'Windows'
         uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2
@@ -129,23 +135,40 @@ jobs:
           path: .ccache
           key: ccache-${{ matrix.platform }}-${{ github.sha }}
           restore-keys: ccache-${{ matrix.platform }}-
-      - name: Configure, build and test Linux
+      - name: Configure and build Linux
+        id: build_linux
         if: runner.os == 'Linux'
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR;$RUNNER_TEMP/qtkeychain"
           cmake --build build --parallel 2
-          ctest --test-dir build --output-on-failure --timeout 180
-          pnpm --dir extensions check
-      - name: Configure, build and test Windows
+      - name: Configure and build Windows
+        id: build_windows
         if: runner.os == 'Windows'
         shell: msys2 {0}
         run: |
           set -euo pipefail
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
           cmake --build build --parallel 2
-          ctest --test-dir build --output-on-failure --timeout 180
+      - name: Run Linux CTest and check extension types
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          test_result=0
+          ctest --test-dir build --output-on-failure --timeout 180 || test_result=$?
+          if [[ "$test_result" != 0 ]]; then cat build/tests/nekotune_*.txt; fi
           pnpm --dir extensions check
+          exit "$test_result"
+      - name: Run Windows CTest and check extension types
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          test_result=0
+          ctest --test-dir build --output-on-failure --timeout 180 || test_result=$?
+          if [[ "$test_result" != 0 ]]; then cat build/tests/nekotune_*.txt; fi
+          pnpm --dir extensions check
+          exit "$test_result"
 
       - name: Save compiled objects even when tests expose a regression
         if: always()
@@ -155,7 +178,8 @@ jobs:
           key: ccache-${{ matrix.platform }}-${{ github.sha }}
 
       - name: Bundle and smoke test Linux distribution
-        if: runner.os == 'Linux'
+        id: package_linux
+        if: ${{ !cancelled() && runner.os == 'Linux' && steps.build_linux.outcome == 'success' }}
         env:
           VERSION: ${{ needs.metadata.outputs.version }}
         run: |
@@ -164,7 +188,8 @@ jobs:
             --stage stage --qt-prefix "$QT_ROOT_DIR" --platform linux --version "$VERSION"
           node scripts/ci/smoke_release.mjs stage
       - name: Bundle and smoke test Windows distribution
-        if: runner.os == 'Windows'
+        id: package_windows
+        if: ${{ !cancelled() && runner.os == 'Windows' && steps.build_windows.outcome == 'success' }}
         shell: msys2 {0}
         env:
           VERSION: ${{ needs.metadata.outputs.version }}
@@ -175,6 +200,7 @@ jobs:
             --stage stage --qt-prefix "$(cygpath -m /ucrt64)" --platform windows --version "$VERSION"
           node scripts/ci/smoke_release.mjs stage
       - name: Upload executable distribution
+        if: ${{ !cancelled() && (steps.package_linux.outcome == 'success' || steps.package_windows.outcome == 'success') }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: NekoTune-${{ matrix.platform }}-x64
