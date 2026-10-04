@@ -208,6 +208,15 @@ class MusicDirectoryTest final : public QObject {
         QCOMPARE(read(target), QByteArray("native link audio bytes"));
         QVERIFY(QFile::remove(target));
         QCOMPARE(read(source), QByteArray("native link audio bytes"));
+        QVERIFY(createAudioSymlink(source, target));
+        StoreFixture store(m_profile.filePath("native-link-availability.sqlite3"));
+        const auto imported = store.library.importFile({target, hash("native link audio bytes"), "Native link"});
+        QVERIFY(imported);
+        QVERIFY(!store.library.availablePath(imported.value().id).isEmpty());
+        QVERIFY(QFile::remove(source));
+        QVERIFY(store.library.availablePath(imported.value().id).isEmpty());
+        QCOMPARE(store.library.snapshot().songs.size(), 1);
+        QVERIFY(store.library.snapshot().songs.first().path.isEmpty());
     }
     void referenceFallbackKeepsPlaybackAndAssetsSeparate() {
         const auto source = m_profile.filePath("外部音乐/歌曲.flac");

@@ -51,7 +51,7 @@ GitHub Actions 的 `Build and Release` 工作流在推送 `main`、提交 PR、�
 
 推送与 `CMakeLists.txt` 中版本一致的标签（例如 `v0.1.0`），或在 `main` 上手动运行并勾选 `release`，会在两个平台都通过后创建 GitHub Release。发布包含 Windows ZIP、Linux TAR.GZ 和各自的 SHA-256 校验文件；附件上传和校验完成后才公开 Release。更新版本时先修改 CMake 项目版本，再创建对应标签。已公开版本不可通过重跑覆盖，应使用新版本发布。
 
-解压 Windows 包后运行 `bin/nekotune.exe`；解压 Linux 包后运行根目录的 `./NekoTune`。包中包含 Qt、FFmpeg、QtKeychain、QML 模块和 Node，无需另装 Node 或 Qt。Linux 包在 Ubuntu 24.04 构建，面向 glibc 2.39+ 的 x64 桌面系统，仍需系统图形驱动、音频服务和 Secret Service 密钥库。Windows 包面向 Windows 10/11 x64。CI 启动检查使用离屏渲染；真实桌面的显示、音频设备和原生密钥库仍需设备验收。
+解压 Windows 包后运行 `bin/nekotune.exe`；解压 Linux 包后运行根目录的 `./NekoTune`。包中包含 Qt、FFmpeg、QtKeychain、QML 模块和 Node，无需另装 Node 或 Qt。Linux 包在 Ubuntu 24.04 构建，面向 glibc 2.39+ 的 x64 桌面系统，仍需系统图形驱动、音频服务和 Secret Service 密钥库。Windows 包面向 Windows 10/11 x64。CI 使用软件渲染，Linux 使用离屏平台，Windows 使用原生窗口平台；真实设备的图形驱动、音频设备和原生密钥库仍需设备验收。
 
 ### 分离运行
 

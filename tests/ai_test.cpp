@@ -179,6 +179,7 @@ class AiTest final : public QObject {
         QFile file(AppPaths::configFile("settings.json"));
         QVERIFY(file.open(QIODevice::ReadOnly));
         QVERIFY(!file.readAll().contains("test-secret"));
+        file.close();
         QVERIFY(settings.configure({"https://other.example/v1", "model-b"}));
         QVERIFY(!settings.configuration().keySaved);
         QVERIFY(settings.key(settings.configuration()).value().isEmpty());

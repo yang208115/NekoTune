@@ -22,7 +22,8 @@ Object.assign(environment, {
   NEKOTUNE_HOME: root, NEKOTUNE_SOCKET: socketName,
   XDG_CONFIG_HOME: path.join(root, 'config'), XDG_DATA_HOME: path.join(root, 'data'),
   XDG_CACHE_HOME: path.join(root, 'cache'),
-  QT_QPA_PLATFORM: 'offscreen', QT_QUICK_BACKEND: 'software',
+  QT_QPA_PLATFORM: process.platform === 'win32' ? 'windows' : 'offscreen',
+  QT_QUICK_BACKEND: 'software',
   PATH: process.platform === 'win32'
     ? `${stage}/bin;${process.env.SystemRoot}/System32;${process.env.SystemRoot}`
     : '/usr/bin:/bin',

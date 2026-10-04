@@ -107,6 +107,8 @@ bool saveSetting(const QString &key, const QJsonValue &value) {
         if (!document.isObject())
             return false;
         object = document.object();
+        // Windows cannot atomically replace a file while this read handle is open.
+        input.close();
     }
     object.insert(key, value);
     QSaveFile output(configFile("settings.json"));

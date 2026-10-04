@@ -140,8 +140,9 @@ Result<void> CollectionService::playPlaylist(int id, int songId,
     }
     for (const auto &record : records) {
         auto song = m_songs.songById(record.songId);
+        const QFileInfo file(record.path);
         // A playlist is an explicit sequence: one unavailable entry rejects the replacement.
-        if (!song || (!song->isRemote() && !QFileInfo(record.path).isFile()))
+        if (!song || (!song->isRemote() && (!file.isFile() || file.canonicalFilePath().isEmpty())))
             return failure(QStringLiteral("Playlist file is unavailable: %1").arg(record.path));
         if (record.songId == songId)
             start = next.size();

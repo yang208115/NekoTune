@@ -61,7 +61,7 @@ jobs:
           - os: windows-2022
             platform: windows
     env:
-      QT_QPA_PLATFORM: offscreen
+      QT_QPA_PLATFORM: ${{ matrix.platform == 'windows' && 'windows' || 'offscreen' }}
       QT_QUICK_BACKEND: software
       QT_QUICK_CONTROLS_STYLE: Fusion
       CCACHE_DIR: ${{ github.workspace }}/.ccache

@@ -1,5 +1,3 @@
-// Host and extension pages may omit the optional playlist argument.
-pragma FunctionSignatureBehavior: Ignored
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Dialogs
@@ -94,7 +92,11 @@ ApplicationWindow {
     // The queue page also represents saved playlists, keyed by currentPlaylist.
     // Playlist identity is set before selecting that page so bindings agree.
     // No navigation action itself starts or replaces playback.
-    function navigate(id, playlistId) {
+    // A JS callable preserves optional arguments across Qt versions and extension contexts.
+    readonly property var navigate: function(id, playlistId) {
+        root.navigateTo(id, playlistId || 0)
+    }
+    function navigateTo(id, playlistId) {
         nowPlayingOpen = false
         queueOpen = false
         if (id === "music_sources" && !hasBrowserSources) id = "home"

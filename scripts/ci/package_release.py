@@ -23,7 +23,12 @@ def copy_file(source: Path, destination: Path) -> None:
 
 
 def bundle_linux(stage: Path, qt: Path) -> None:
-    shutil.copytree(qt / "qml", stage / "qml", dirs_exist_ok=True)
+    # Multimedia also installs optional Quick3D modules without their 3D dependencies.
+    # Ship the host's 2D UI modules and the multimedia API used by extensions.
+    for module in ("QtQml", "QtQuick", "Qt", "QtMultimedia"):
+        source = qt / "qml" / module
+        if source.exists():
+            shutil.copytree(source, stage / "qml" / module, dirs_exist_ok=True)
     for kind in (
         "platforms", "platforminputcontexts", "xcbglintegrations", "imageformats",
         "tls", "sqldrivers", "multimedia", "styles", "iconengines",
@@ -98,6 +103,10 @@ def bundle_windows(stage: Path, qt: Path) -> None:
     run(str(deploy), "--release", "--no-translations", "--qmldir",
         str(Path("frontend/qt-qml/qml").resolve()), "--dir", str(binary_dir),
         str(binary_dir / "nekotune.exe"))
+    # windeployqt copies every SQL plugin, including drivers the app never uses.
+    for driver in (binary_dir / "sqldrivers").glob("*.dll"):
+        if driver.name.lower() != "qsqlite.dll":
+            driver.unlink()
     sources = {file.name.lower(): file for file in (qt / "bin").glob("*.dll")}
     windows = Path(os.environ.get("SystemRoot", "C:/Windows")) / "System32"
     system_dlls = {file.name.lower() for file in windows.glob("*.dll")}

@@ -392,11 +392,13 @@ void LyricsTest::cacheRoundTripAndAtomicWrite() {
     const auto path = QDir(temp.path()).filePath(cache.keyFor(query()) + QStringLiteral(".json"));
     // A reader sees the complete prior file while an atomic replacement is
     // unfinished.
-    QSaveFile unfinished(path);
-    QVERIFY(unfinished.open(QIODevice::WriteOnly));
-    unfinished.write("partial");
-    QCOMPARE(cache.read(query())->syncedLyrics, document.syncedLyrics);
-    unfinished.cancelWriting();
+    {
+        QSaveFile unfinished(path);
+        QVERIFY(unfinished.open(QIODevice::WriteOnly));
+        unfinished.write("partial");
+        QCOMPARE(cache.read(query())->syncedLyrics, document.syncedLyrics);
+        unfinished.cancelWriting();
+    }
     document.syncedLyrics.clear();
     document.plainLyrics = QStringLiteral("Plain");
     QVERIFY(cache.write(query(), document));

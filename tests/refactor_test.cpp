@@ -439,7 +439,7 @@ class RefactorTest final : public QObject {
         result = peer.call("library.play", {{"tag_ids", QJsonArray{tagId}}});
         QCOMPARE(result.value("status").toString(), QString("ok"));
         QCOMPARE(result.value("data").toObject().value("queue").toArray().size(), 3);
-        result = peer.call("playlist.play", {{"id", playlist}});
+        result = peer.call("playlist.play", {{"id", playlist}, {"song_id", ids[2]}});
         QCOMPARE(result.value("status").toString(), QString("ok"));
         QCOMPARE(result.value("data").toObject().value("queue").toArray().size(), 3);
         // An import, even with an active track, must not replace or append to the queue.

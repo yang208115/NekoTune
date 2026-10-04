@@ -17,11 +17,13 @@ LibrarySnapshot LibraryService::snapshot() const {
         if (song.isRemote())
             continue;
         QString path;
-        for (const auto &candidate : paths.value(song.id))
-            if (QFileInfo(candidate).isFile()) {
+        for (const auto &candidate : paths.value(song.id)) {
+            const QFileInfo file(candidate);
+            if (file.isFile() && !file.canonicalFilePath().isEmpty()) {
                 path = candidate;
                 break;
             }
+        }
         result.songs.append({song, path, memberships.value(song.id)});
     }
     return result;
@@ -34,9 +36,12 @@ Result<SongMetadata> LibraryService::metadata(int id) const {
 }
 QVector<SongTag> LibraryService::tagsFor(int id) const { return m_tags.songTags().value(id); }
 QString LibraryService::availablePath(int id) const {
-    for (const auto &path : m_songs.pathsForSong(id))
-        if (QFileInfo(path).isFile())
+    for (const auto &path : m_songs.pathsForSong(id)) {
+        const QFileInfo file(path);
+        // Windows can retain file attributes on a link after its target disappears.
+        if (file.isFile() && !file.canonicalFilePath().isEmpty())
             return path;
+    }
     return {};
 }
 Result<SongMetadata> LibraryService::importFile(const ImportedFile &file, const QString &title,

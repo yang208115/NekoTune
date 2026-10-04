@@ -562,7 +562,7 @@ class ExtensionsTest final : public QObject {
         QTRY_COMPARE(window->property("viewMode").toString(), QString("home"));
         QVERIFY(!visualItem(window->contentItem(), "nav_music_sources"));
         translator.setLanguage("zh");
-        QVERIFY(QMetaObject::invokeMethod(window, "navigate", Q_ARG(QVariant, "test.dedicated-source/music"),
+        QVERIFY(QMetaObject::invokeMethod(window, "navigateTo", Q_ARG(QVariant, "test.dedicated-source/music"),
                                          Q_ARG(QVariant, QVariant())));
         QVERIFY(capture("music-dedicated-only"));
         QCOMPARE(peer.call("extensions.enable", {{"id", "example.test-source"}}).value("status").toString(), "ok");

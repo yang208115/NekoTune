@@ -6,6 +6,10 @@ function(nekotune_add_qt_test)
 endfunction()
 
 set(CMAKE_WIN32_EXECUTABLE OFF)
+set(NEKOTUNE_TEST_QPA offscreen)
+if(WIN32)
+    set(NEKOTUNE_TEST_QPA windows)
+endif()
 
 add_executable(nekotune_player_queue_test
     player_queue_test.cpp
@@ -65,7 +69,7 @@ target_compile_definitions(nekotune_slider_quick_test PRIVATE
 )
 nekotune_add_qt_test(NAME nekotune_slider_quick_test COMMAND nekotune_slider_quick_test)
 set_tests_properties(nekotune_slider_quick_test PROPERTIES
-    ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Fusion"
+    ENVIRONMENT "QT_QPA_PLATFORM=${NEKOTUNE_TEST_QPA};QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Fusion"
 )
 
 add_executable(nekotune_refactor_test refactor_test.cpp ../frontend/qt-qml/resources.qrc)
@@ -73,7 +77,7 @@ target_link_libraries(nekotune_refactor_test PRIVATE nekotune_core nekotune_fron
 target_compile_definitions(nekotune_refactor_test PRIVATE NEKOTUNE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 nekotune_add_qt_test(NAME nekotune_refactor_test COMMAND nekotune_refactor_test)
 set_tests_properties(nekotune_refactor_test PROPERTIES
- ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Fusion")
+ ENVIRONMENT "QT_QPA_PLATFORM=${NEKOTUNE_TEST_QPA};QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Fusion")
 add_test(NAME nekotune_dependency_boundaries
  COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/dependency_boundaries.cmake)
 
@@ -115,6 +119,6 @@ add_executable(nekotune_extensions_test extensions_test.cpp ../frontend/qt-qml/r
 target_link_libraries(nekotune_extensions_test PRIVATE nekotune_core nekotune_frontend Qt6::Test Qt6::Quick Qt6::QuickControls2)
 target_compile_definitions(nekotune_extensions_test PRIVATE NEKOTUNE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 nekotune_add_qt_test(NAME nekotune_extensions_test COMMAND nekotune_extensions_test)
-set_tests_properties(nekotune_extensions_test PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
+set_tests_properties(nekotune_extensions_test PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=${NEKOTUNE_TEST_QPA};QT_QUICK_BACKEND=software")
 add_test(NAME nekotune_extension_sdk_test COMMAND "${NEKOTUNE_NODE_BINARY}" --test tests/packages.test.mjs tests/audio.test.mjs tests/runtime.test.mjs)
 set_tests_properties(nekotune_extension_sdk_test PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/extensions" TIMEOUT 120)
