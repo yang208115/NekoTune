@@ -6,7 +6,42 @@ import path from 'node:path';
 import os from 'node:os';
 import { pipeline } from 'node:stream/promises';
 import yazl from 'yazl';
-import { readManifest, unpack, dependencyOrder } from '../runtime/packages.mjs';
+import { readManifest, unpack, dependencyOrder, writeJson } from '../runtime/packages.mjs';
+
+test('atomic JSON replacement retries sharing failures and preserves existing data on permanent failure', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'nekotune-json-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const file = path.join(root, 'registry.json');
+  await writeJson(file, { enabled: true });
+  const rename = fs.rename;
+  let attempts = 0;
+  const mocked = t.mock.method(fs, 'rename', async (...args) => {
+    if (++attempts <= 2) {
+      assert.deepEqual(JSON.parse(await fs.readFile(file, 'utf8')), { enabled: true });
+      throw Object.assign(new Error('Destination is temporarily open'), { code: 'EPERM' });
+    }
+    return rename(...args);
+  });
+  await writeJson(file, { enabled: false, failure: 'Extension disconnected' });
+  assert.equal(attempts, 3);
+  const saved = JSON.parse(await fs.readFile(file, 'utf8'));
+  assert.equal(saved.enabled, false);
+  assert.ok(saved.failure);
+  mocked.mock.mockImplementation(async () => {
+    throw Object.assign(new Error('Invalid destination'), { code: 'EINVAL' });
+  });
+  await assert.rejects(writeJson(file, { enabled: true }), { code: 'EINVAL' });
+  assert.deepEqual(JSON.parse(await fs.readFile(file, 'utf8')), saved);
+  attempts = 0;
+  mocked.mock.mockImplementation(async () => {
+    attempts++;
+    throw Object.assign(new Error('Destination remains busy'), { code: 'EBUSY' });
+  });
+  await assert.rejects(writeJson(file, { enabled: true }), { code: 'EBUSY' });
+  assert.equal(attempts, 7);
+  assert.deepEqual(JSON.parse(await fs.readFile(file, 'utf8')), saved);
+  assert.deepEqual(await fs.readdir(root), ['registry.json']);
+});
 
 test('manifest entry containment and dependency versions/cycles', async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'nekotune-manifest-'));

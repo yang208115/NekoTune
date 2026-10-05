@@ -461,8 +461,11 @@ class AiTest final : public QObject {
         QCOMPARE(server.requests.size(), 0);
         store->readDelayMs = 0;
         const QByteArray unsupported = R"({"error":{"param":"response_format","message":"unsupported"}})";
-        server.responses = {{400, unsupported, 60}, {200, completion(validSuggestion), 100}};
-        AiBackend backend(store, 120);
+        // Leave scheduling headroom for two HTTP attempts on Windows runners.
+        // Their combined delay still exceeds the shared deadline, while the
+        // second response would succeed if a retry incorrectly reset it.
+        server.responses = {{400, unsupported, 600}, {200, completion(validSuggestion), 1000}};
+        AiBackend backend(store, 1200);
         const auto result = generate(backend);
         QVERIFY(!result);
         QCOMPARE(result.error().message, QString("ai_error_timeout"));

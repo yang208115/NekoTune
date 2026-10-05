@@ -3,6 +3,7 @@ import { createWriteStream } from 'node:fs';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { randomUUID } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
 import semver from 'semver';
 import yauzl from 'yauzl';
 
@@ -52,7 +53,17 @@ export async function writeJson(file, value) {
   const temporary = `${file}.${randomUUID()}.tmp`;
   try {
     await fs.writeFile(temporary, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 });
-    await fs.rename(temporary, file);
+    // Readers and virus scanners can briefly block replacement on Windows.
+    // Keep the old file intact and retry only these bounded sharing failures.
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await fs.rename(temporary, file);
+        break;
+      } catch (error) {
+        if (!['EACCES', 'EPERM', 'EBUSY'].includes(error.code) || attempt === 6) throw error;
+        await delay(25 * 2 ** attempt);
+      }
+    }
   } finally {
     await fs.rm(temporary, { force: true });
   }

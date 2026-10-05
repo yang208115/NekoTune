@@ -194,7 +194,10 @@ test(
     const registry = await until(
       async () => JSON.parse(await fs.readFile(path.join(root, 'extensions/registry.json'), 'utf8')),
       (result) => result.entries.find((entry) => entry.id === 'test.crash').enabled === false,
-    );
+    ).catch(async (error) => {
+      error.message += '\nSupervisor logs: ' + JSON.stringify(await call('extensions.logs', { id: 'test.crash' }));
+      throw error;
+    });
     assert.ok(registry.entries.find((entry) => entry.id === 'test.crash').failure);
     assert.deepEqual(await call('extensions.call', { id: 'test.healthy', service: 'echo' }), { alive: true });
     const dependent = await fixture(root, 'test.dependent', 'export function activate() {}', {

@@ -313,7 +313,12 @@ async function main() {
     void stop(id).then(async () => {
       entry.state = 'failed';
       changed();
-      if (entries.get(id) === entry) await enqueueMutation(save).catch(() => {});
+      if (entries.get(id) === entry)
+        await enqueueMutation(save).catch((error) => {
+          const message = `Cannot persist disabled extension ${id}: ${error.message}`;
+          recordLog(id, 'error', message);
+          host.send({ event: 'extensions.error', message: redact(message) });
+        });
     });
     for (const other of dependents(id).reverse())
       if (other !== id) {
