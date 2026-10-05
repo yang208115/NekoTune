@@ -14,6 +14,7 @@ Item {
     required property var client
     required property var translator
     property var ai: null
+    property var audioOutput: null
     property bool saving: false
     property string message: ""
     property bool failed: false
@@ -53,6 +54,23 @@ Item {
                     Label { Layout.fillWidth: true; text: root.t("language"); color: Theme.textSecondary; font.pixelSize: Theme.fontBody }
                     TextButton { text: "中文"; subtle: root.translator.language !== "zh"; onClicked: root.translator.language = "zh" }
                     TextButton { text: "English"; subtle: root.translator.language !== "en"; onClicked: root.translator.language = "en" }
+                }
+            }
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            visible: root.audioOutput !== null
+            implicitHeight: outputSettings.implicitHeight + 36
+            radius: Theme.radiusMd; color: Theme.bgSurface; border.color: Theme.borderSubtle
+            ColumnLayout {
+                id: outputSettings
+                anchors.fill: parent; anchors.margins: 18; spacing: 12
+                Label { text: root.t("audio_output"); color: Theme.textPrimary; font.pixelSize: Theme.fontDialogTitle }
+                AudioOutputPicker {
+                    objectName: "settingsAudioOutputPicker"
+                    Layout.fillWidth: true
+                    controller: root.audioOutput; translator: root.translator; connected: root.connected
                 }
             }
         }

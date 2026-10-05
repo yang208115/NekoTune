@@ -15,7 +15,7 @@ Rectangle {
     property bool addPending: false
     property string addError: ""
     readonly property int leftWidth: shell.width < 1200 ? 220 : 280
-    readonly property int rightWidth: shell.width < 1200 ? 160 : 220
+    readonly property int rightWidth: shell.width < 1200 ? 160 : 264
     readonly property string coverUrl: String(shell.song.cover_url || "")
     Layout.fillWidth: true
     Layout.preferredHeight: Theme.bottomBarHeight
@@ -153,6 +153,10 @@ Rectangle {
             anchors.right: parent.right; anchors.bottom: parent.bottom
             width: implicitWidth
             spacing: 4
+            AudioOutputButton {
+                controller: bar.shell.app ? bar.shell.app.audioOutput || null : null
+                translator: bar.translator; connected: bar.shell.transport.connected
+            }
             IconButton {
                 objectName: "nowPlayingButton"
                 kind: "lyrics"; tooltipText: bar.t("now_playing")

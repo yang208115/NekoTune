@@ -140,6 +140,32 @@ NekoTune 使用基于换行分隔的 JSON 协议，通过 Unix domain socket 进
 
 随机模式默认使用 `shuffle_bag`：每轮每个队列项播放一次，轮次结束后重新洗牌，至少两项时避免跨轮连续重复同一项。队列显示顺序保持不变，相同歌曲的不同 `queue_id` 分别参与。上一首回到播放历史，下一首先沿历史前进，无历史时上一首重播当前项。直接点播、替换队列或切换模式重建随机轮次；追加项加入本轮待播序列，删除项从待播序列和历史移除。随机历史不跨重启保存。
 
+### `player.audio_outputs` / `player.set_audio_output`
+
+查询、设置响应和 `player.audio_outputs_changed` 事件共享设备快照：
+
+```json
+{
+  "devices": [{"id": "aGVhZHNldA==", "name": "USB Headset", "is_default": true}],
+  "audio_output": {
+    "selected_id": "", "selected_name": "",
+    "active_id": "aGVhZHNldA==", "available": true
+  }
+}
+```
+
+`player.set_audio_output` 接收必填字符串 `device_id`：空字符串表示跟随系统默认，非空值必须来自当前设备列表。ID 是 Qt 设备原始标识的 Base64，不使用显示名称匹配。非法参数、离线 ID 或保存失败返回错误，并保留原选择。设备恰在保存后断开时保留已保存的偏好，按离线状态处理。
+
+选择原子保存到 `config/settings.json` 的 `audio_output` 对象（`device_id`、`device_name`），不覆盖其他设置；首次使用跟随系统默认。保存的设备离线时仍返回它的 ID 和名称，`active_id` 为空、`available` 为 `false`，不会改为扬声器。`player.status` 和 `server.connected.data` 也包含 `audio_output`。
+
+正常切换不重新加载音源，保留进度、音量和播放状态。当前实际输出设备消失时暂停并清除待播放意图，包括正在解析在线音源的情况。默认模式只有在旧设备仍在线、系统主动更改默认输出时连续播放；旧设备消失时先暂停再连接新的默认输出。设备恢复或用户选择其他可用输出后均需手动恢复播放。没有可用输出时 `player.play` 返回 `audio_output_device_unavailable`；点播或切歌仍可更新队列选中项，但保持暂停。设备断开不删除队列项，也不作为音频文件损坏处理。
+
+Linux 编入 libpulse 支持时，设备对象还包含 `ports`（每项为 `id,name,kind,available`）和 `active_port_id`。同一声卡的耳机、扬声器和线路输出按端口分别展示；`kind` 用于翻译显示名称，`name` 保留系统说明。内置扬声器即使因耳机插入而被标记为不可用，仍允许用户显式选择；未连接的耳机端口禁用。
+
+`player.set_audio_output` 可附加 `port_id`，例如 `{"device_id":"...","port_id":"analog-output-headphones"}`。端口切换异步执行并回读确认后保存；保存失败时尝试恢复原端口。状态增加 `selected_port_id`、`selected_port_name`、`active_port_id`；配置增加 `port_id`、`port_name`，旧的仅设备配置继续有效。显式选择的耳机端口断开时等待重连，即使声卡本身仍在线也不回退外放。默认模式也会检测同声卡的耳机拔出并暂停。
+
+同声卡端口是系统共享设置：切换可能影响其他使用该声卡的应用，界面会提示。恢复保存的端口时可能重新应用该设置；系统主动改到另一个仍可用的端口时，显式固定的端口保持暂停，需用户重新选择，避免持续抢占系统设置。
+
 ### `player.status`
 
 返回当前播放器状态。

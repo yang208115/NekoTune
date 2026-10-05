@@ -1,3 +1,4 @@
+#include "support/audio_backend.h"
 #include "app_paths.h"
 #include "application/library/collection_service.h"
 #include "application/playback/player_engine.h"
@@ -31,7 +32,7 @@ static QQuickItem *visualItem(QQuickItem *parent, const QString &name) {
     return nullptr;
 }
 
-class ExtensionAudio final : public IPlaybackBackend {
+class ExtensionAudio final : public TestAudioBackend {
   public:
     QUrl url;
     bool active = false;

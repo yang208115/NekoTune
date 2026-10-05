@@ -54,7 +54,15 @@ Button {
             const h = height
             const k = button.kind
 
-            if (k === "play") {
+            if (k === "audio_output") {
+                ctx.beginPath()
+                ctx.arc(w * .5, h * .48, w * .32, Math.PI, 0)
+                ctx.moveTo(w * .18, h * .48); ctx.lineTo(w * .18, h * .78)
+                ctx.lineTo(w * .32, h * .78); ctx.lineTo(w * .32, h * .52)
+                ctx.moveTo(w * .82, h * .48); ctx.lineTo(w * .82, h * .78)
+                ctx.lineTo(w * .68, h * .78); ctx.lineTo(w * .68, h * .52)
+                ctx.stroke()
+            } else if (k === "play") {
                 // Play triangle (optical center shifted slightly right)
                 ctx.beginPath()
                 ctx.moveTo(w * 0.36, h * 0.22)

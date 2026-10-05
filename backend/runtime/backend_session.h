@@ -47,6 +47,7 @@ class BackendSession final : public QObject {
     QueueService m_queue;
     QtPlaybackBackend m_audio;
     PlayerEngine m_player;
+    AudioOutputService m_audioOutputs;
     LyricsController m_lyrics;
     CoverService m_covers;
     SidecarStore m_sidecars;

@@ -48,6 +48,11 @@ target_link_libraries(nekotune_infrastructure PRIVATE qt6keychain PkgConfig::FFM
 target_compile_definitions(nekotune_infrastructure PRIVATE NEKOTUNE_NODE_BINARY="${NEKOTUNE_NODE_BINARY}" NEKOTUNE_EXTENSION_SUPERVISOR="${CMAKE_SOURCE_DIR}/extensions/dist/supervisor.cjs")
 add_dependencies(nekotune_infrastructure nekotune_extension_runtime)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    if(TARGET PkgConfig::PULSE)
+        target_sources(nekotune_infrastructure PRIVATE infrastructure/playback/pulse_audio_ports.cpp)
+        target_link_libraries(nekotune_infrastructure PUBLIC PkgConfig::PULSE)
+        target_compile_definitions(nekotune_infrastructure PUBLIC NEKOTUNE_PULSE_AUDIO_PORTS)
+    endif()
     target_sources(nekotune_infrastructure PRIVATE infrastructure/credentials/legacy_credential_store.cpp)
     target_compile_definitions(nekotune_infrastructure PRIVATE NEKOTUNE_LEGACY_SECRET_SERVICE)
     target_link_libraries(nekotune_infrastructure PRIVATE PkgConfig::LIBSECRET Threads::Threads)
@@ -67,6 +72,7 @@ add_library(nekotune_application STATIC
     application/lyrics/lyrics_controller.cpp
     application/lyrics/lyrics_service.cpp
     application/playback/playback_order_service.cpp
+    application/playback/audio_output_service.cpp
     application/playback/player_engine.cpp
     application/playback/queue_service.cpp
 )

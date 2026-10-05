@@ -13,6 +13,7 @@ NekoTune 是一款本地优先的 Linux 音乐播放器，使用 C++20、Qt6 和
 | 歌单 | 创建、重命名、导入、添加歌曲及按当前浏览顺序播放 |
 | 播放队列 | 独立抽屉，支持追加、移除、清空和重启恢复 |
 | 播放控制 | 播放／暂停、停止、上一首、下一首、跳转、音量；顺序、单曲循环、随机和列表循环 |
+| 音频输出 | 设置页和播放栏选择系统默认或指定设备；保存选择，设备断开时暂停，重连后手动恢复 |
 | 歌词与封面 | 本地优先，支持 LRC、KRC 词组高亮、在线候选选择和离线缓存 |
 | AI 歌曲信息 | 通过兼容 Chat Completions 的服务生成歌名、歌手和标签建议，确认后保存 |
 | 扩展 | JS/TS 独立后台、QML 页面与完整界面替换、主题、命令、歌词及在线播放音源 |
@@ -28,7 +29,7 @@ NekoTune 是一款本地优先的 Linux 音乐播放器，使用 C++20、Qt6 和
 - Qt 6.6+：Core、Gui、Network、Sql、Multimedia、Quick、Qml、QuickControls2、Test、QuickTest。
 - Zlib 和 FFmpeg 开发库：`libavformat`、`libavutil`。
 - QtKeychain 0.17+ 的 Qt6 开发包，CMake 包名为 `Qt6Keychain`。
-- Linux 还需 `libsecret-1` 开发库，用于读取并迁移旧版系统密钥库条目。
+- Linux 还需 `libsecret-1` 开发库，用于读取并迁移旧版系统密钥库条目。建议安装 `libpulse` 14+ 开发库（Debian/Ubuntu：`libpulse-dev`），以便直接选择同一声卡下的耳机／扬声器端口；兼容 PulseAudio 和 PipeWire 的 Pulse 服务，未编入此支持时仍可选择 Qt 音频设备。
 - JS 构建工具需要 pnpm；CMake 下载并校验固定的 Node.js 24.21.0，发行运行不依赖系统 Node.js。扩展运行时支持 Linux 和 Windows x86_64。
 
 Linux 构建使用系统开发包或官方 Qt SDK；Windows 构建使用 MSYS2 UCRT64 的 GCC、CMake、Ninja、pkgconf、Qt6、QtKeychain、FFmpeg 和 Zlib。macOS 尚无完整构建工作流。

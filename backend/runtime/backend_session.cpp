@@ -5,6 +5,11 @@
 #include "infrastructure/lyrics/lyrics_storage.h"
 namespace nekotune {
 namespace {
+AudioOutputSelection savedAudioOutput() {
+    const auto saved = AppPaths::setting("audio_output").toObject();
+    return {saved.value("device_id").toString(), saved.value("device_name").toString(),
+            saved.value("port_id").toString(), saved.value("port_name").toString()};
+}
 // Providers are parented before the service is moved to its worker thread.
 // That move carries their child network objects into the same thread affinity.
 // The controller then owns service shutdown and thread joining as one lifetime unit.
@@ -32,6 +37,12 @@ BackendSession::BackendSession()
                playbackModeFromString(AppPaths::setting("playback_mode").toString())
                    .value_or(PlaybackMode::Sequential),
                [](PlaybackMode mode) { return AppPaths::saveSetting("playback_mode", toString(mode)); }),
+      m_audioOutputs(m_audio, savedAudioOutput(), [](const AudioOutputSelection &selected) {
+          return AppPaths::saveSetting("audio_output", QJsonObject{{"device_id", selected.id},
+                                                                 {"device_name", selected.name},
+                                                                 {"port_id", selected.portId},
+                                                                 {"port_name", selected.portName}});
+      }),
       m_lyrics(m_player, createLyrics()), m_covers(std::make_unique<LyricsStorage>()),
       m_collections(m_songs, m_queueRepository, m_playlistRepository, m_database, m_library, m_queue,
                     m_player, &m_music),
@@ -52,6 +63,12 @@ BackendSession::BackendSession()
     m_api.musicDirectory = m_music.directory();
     m_api.configDirectory = AppPaths::configDirectory();
     m_api.ai = &m_ai;
+    m_api.audioOutputs = &m_audioOutputs;
+    connect(&m_audioOutputs, &AudioOutputService::changed, this, [this] {
+        auto event = m_api.audioOutputStatus();
+        event.insert("event", "player.audio_outputs_changed");
+        m_server.broadcastEvent(event);
+    });
     m_api.extensions = &m_extensions;
     m_api.music = &m_musicSources;
     m_player.setSourceResolver(&m_musicSources);

@@ -85,7 +85,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build ccache pkg-config libavformat-dev libavutil-dev zlib1g-dev \
-            libsecret-1-dev libssl-dev libgl1-mesa-dev libxkbcommon-x11-0 libxcb-cursor0 \
+            libsecret-1-dev libpulse-dev libssl-dev libgl1-mesa-dev libxkbcommon-x11-0 libxcb-cursor0 \
             libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 libxcb-xinerama0 \
             libxcb-xkb1 gnome-keyring dbus-x11 libglib2.0-bin fonts-noto-cjk libpipewire-0.3-0
       - name: Install Linux Qt

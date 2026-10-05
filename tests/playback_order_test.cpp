@@ -1,3 +1,4 @@
+#include "support/audio_backend.h"
 #include "application/playback/playback_order_service.h"
 #include "app_paths.h"
 #include "controllers/playback_controller.h"
@@ -15,7 +16,7 @@
 
 using namespace nekotune;
 
-class OrderAudio final : public IPlaybackBackend {
+class OrderAudio final : public TestAudioBackend {
   public:
     QUrl path;
     qint64 clock = 0;

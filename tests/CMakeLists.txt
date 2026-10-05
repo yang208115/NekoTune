@@ -115,6 +115,11 @@ add_executable(nekotune_playback_order_test playback_order_test.cpp)
 target_link_libraries(nekotune_playback_order_test PRIVATE nekotune_core nekotune_frontend Qt6::Test)
 nekotune_add_qt_test(NAME nekotune_playback_order_test COMMAND nekotune_playback_order_test)
 
+add_executable(nekotune_audio_output_test audio_output_test.cpp ../frontend/qt-qml/resources.qrc)
+target_link_libraries(nekotune_audio_output_test PRIVATE nekotune_core nekotune_frontend Qt6::Test Qt6::Quick Qt6::QuickControls2)
+nekotune_add_qt_test(NAME nekotune_audio_output_test COMMAND nekotune_audio_output_test)
+set_tests_properties(nekotune_audio_output_test PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=${NEKOTUNE_TEST_QPA};QT_QUICK_BACKEND=software;QT_QUICK_CONTROLS_STYLE=Fusion")
+
 add_executable(nekotune_extensions_test extensions_test.cpp ../frontend/qt-qml/resources.qrc)
 target_link_libraries(nekotune_extensions_test PRIVATE nekotune_core nekotune_frontend Qt6::Test Qt6::Quick Qt6::QuickControls2)
 target_compile_definitions(nekotune_extensions_test PRIVATE NEKOTUNE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")

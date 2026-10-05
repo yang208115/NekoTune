@@ -13,6 +13,14 @@ PlayerEngine::PlayerEngine(IPlaybackBackend &backend, QueueService &queue,
             m_order.syncQueue(m_queue.queue());
     });
     connect(&backend, &IPlaybackBackend::stateChanged, this, &PlayerEngine::setState);
+    connect(&backend, &IPlaybackBackend::audioOutputAvailabilityChanged, this, [this](bool available) {
+        if (!available) {
+            const bool intended = playing() || m_playIntent;
+            m_playIntent = false;
+            if (intended)
+                pause();
+        }
+    });
     connect(&backend, &IPlaybackBackend::positionChanged, this,
             [this](qint64 position) { emit positionChanged(position, m_backend.duration()); });
     connect(&backend, &IPlaybackBackend::durationChanged, this, [this](qint64 duration) {
@@ -92,6 +100,7 @@ void PlayerEngine::setState(PlayerState state) {
     emit stateChanged(state);
 }
 void PlayerEngine::loadCurrent(bool play) {
+    play = play && m_backend.audioOutputAvailable();
     const auto generation = ++m_sourceGeneration;
     m_resolving = false;
     m_waitingForReload = false;
@@ -143,7 +152,7 @@ void PlayerEngine::loadCurrent(bool play) {
             }
             guard->m_resolvedSource = result.value();
             guard->m_backend.setSource(result.value());
-            if (guard->m_playIntent)
+            if (guard->m_playIntent && guard->m_backend.audioOutputAvailable())
                 guard->m_backend.play();
             else
                 guard->setState(PlayerState::Paused);
@@ -154,6 +163,8 @@ void PlayerEngine::loadCurrent(bool play) {
     emit trackChanged();
     if (play)
         m_backend.play();
+    else
+        setState(PlayerState::Paused);
 }
 void PlayerEngine::clearSource() {
     ++m_sourceGeneration;
@@ -179,6 +190,8 @@ void PlayerEngine::clearSource() {
 // An already loaded source resumes through the playback adapter.
 // An empty queue fails instead of reviving the last cleared source.
 Result<void> PlayerEngine::play() {
+    if (!m_backend.audioOutputAvailable())
+        return failure("audio_output_device_unavailable", ErrorCode::Unavailable);
     if (m_resolving || m_waitingForReload) {
         m_playIntent = true;
         setState(PlayerState::Loading);

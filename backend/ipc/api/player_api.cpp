@@ -9,6 +9,31 @@ namespace nekotune {
 // Responses include authoritative state after the accepted operation.
 // The client should reconcile that state instead of predicting selection.
 void registerPlayerApi(IpcRouter &router, ApiContext &api) {
+    router.registerMethod("player.audio_outputs", [&api](const auto &, auto done) {
+        done(api.audioOutputs ? success(api.audioOutputStatus())
+                              : error(failure("Audio outputs unavailable", ErrorCode::Unavailable)));
+    });
+    router.registerMethod("player.set_audio_output", [&api](const QJsonObject &params, auto done) {
+        if (!api.audioOutputs) {
+            done(error(failure("Audio outputs unavailable", ErrorCode::Unavailable)));
+            return;
+        }
+        if (!params.value("device_id").isString()) {
+            done(error(failure("device_id must be a string")));
+            return;
+        }
+        if (params.contains("port_id") && !params.value("port_id").isString()) {
+            done(error(failure("port_id must be a string")));
+            return;
+        }
+        if (!params.value("port_id").toString().isEmpty()) {
+            api.audioOutputs->selectPort(params.value("device_id").toString(), params.value("port_id").toString(),
+                                         [&api, done](Result<void> result) { done(response(result, api.audioOutputStatus())); });
+            return;
+        }
+        const auto result = api.audioOutputs->select(params.value("device_id").toString());
+        done(response(result, api.audioOutputStatus()));
+    });
     auto control = [&](const QString &name, auto operation, bool serialized) {
         router.registerMethod(
             name,

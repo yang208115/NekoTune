@@ -1,3 +1,4 @@
+#include "support/audio_backend.h"
 #include "application/lyrics/lyrics_service.h"
 #include "controllers/app_controllers.h"
 #include "application/playback/player_engine.h"
@@ -36,7 +37,7 @@ static QQuickItem *visualItem(QQuickItem *parent, const QString &name) {
     return nullptr;
 }
 
-class FakeAudio final : public IPlaybackBackend {
+class FakeAudio final : public TestAudioBackend {
   public:
     QUrl path;
     bool playing = false;
@@ -801,11 +802,11 @@ class RefactorTest final : public QObject {
                 window->resize(width, width == 1000 ? 640 : 860);
                 QTRY_COMPARE(window->width(), width);
                 QTest::qWait(60);
-                QCOMPARE(secondary->width(), width == 1000 ? 160.0 : 220.0);
+                QCOMPARE(secondary->width(), width == 1000 ? 160.0 : 264.0);
                 QCOMPARE(transport->mapToScene(QPointF(transport->width() / 2, 0)).x(), width / 2.0);
                 const QRectF bounds(0, 0, secondary->width(), secondary->height());
                 QList<QRectF> controlRects;
-                for (const QString name : {"volumeMuteButton", "volumeSlider", "nowPlayingButton", "queueToggleButton"}) {
+                for (const QString name : {"volumeMuteButton", "volumeSlider", "audioOutputButton", "nowPlayingButton", "queueToggleButton"}) {
                     auto *control = secondary->findChild<QQuickItem *>(name);
                     QVERIFY2(control, qPrintable(name));
                     const QRectF rect(control->mapToItem(secondary, QPointF()), control->size());

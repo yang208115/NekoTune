@@ -1,5 +1,6 @@
 #pragma once
 #include "controllers/ai_controller.h"
+#include "controllers/audio_output_controller.h"
 #include "controllers/extensions_controller.h"
 #include "controllers/settings_controller.h"
 #include "controllers/library_controller.h"
@@ -17,6 +18,7 @@
 class AppControllers final : public QObject {
     Q_OBJECT
     Q_PROPERTY(PlaybackController *playback MEMBER playback CONSTANT)
+    Q_PROPERTY(AudioOutputController *audioOutput MEMBER audioOutput CONSTANT)
     Q_PROPERTY(QueueController *queue MEMBER queue CONSTANT)
     Q_PROPERTY(PlaylistController *playlists MEMBER playlists CONSTANT)
     Q_PROPERTY(LibraryController *library MEMBER library CONSTANT)
@@ -30,6 +32,7 @@ class AppControllers final : public QObject {
     explicit AppControllers(IpcClient &client);
     QString databasePath() const { return m_databasePath; }
     PlaybackController *playback;
+    AudioOutputController *audioOutput;
     QueueController *queue;
     PlaylistController *playlists;
     LibraryController *library;

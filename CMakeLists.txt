@@ -30,6 +30,7 @@ pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET libavformat libavutil)
 
 # Linux-only reader for credentials saved by the previous libsecret backend.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    pkg_check_modules(PULSE QUIET IMPORTED_TARGET libpulse>=14)
     pkg_check_modules(LIBSECRET REQUIRED IMPORTED_TARGET libsecret-1)
     find_package(Threads REQUIRED)
 endif()

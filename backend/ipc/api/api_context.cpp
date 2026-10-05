@@ -1,6 +1,29 @@
 #include "ipc/api/api_context.h"
 #include <QFileInfo>
 namespace nekotune {
+QJsonObject ApiContext::audioOutputStatus() const {
+    if (!audioOutputs)
+        return {};
+    const auto output = audioOutputs->snapshot();
+    QJsonArray devices;
+    QString activePort;
+    for (const auto &device : output.devices) {
+        QJsonArray ports;
+        for (const auto &port : device.ports)
+            ports.append(QJsonObject{{"id", port.id}, {"name", port.name}, {"kind", port.kind}, {"available", port.available}});
+        devices.append(QJsonObject{{"id", device.id}, {"name", device.name}, {"is_default", device.isDefault},
+                                   {"ports", ports}, {"active_port_id", device.activePortId}});
+        if (device.id == output.activeId) activePort = device.activePortId;
+    }
+    return {{"devices", devices},
+            {"audio_output", QJsonObject{{"selected_id", output.selected.id},
+                                         {"selected_name", output.selected.name},
+                                         {"selected_port_id", output.selected.portId},
+                                         {"selected_port_name", output.selected.portName},
+                                         {"active_port_id", output.available ? activePort : QString()},
+                                         {"active_id", output.available ? output.activeId : QString()},
+                                         {"available", output.available}}}};
+}
 QJsonObject ApiContext::withCover(QJsonObject song) const {
     if (!song.isEmpty()) {
         const auto path = song.value("path").toString().isEmpty() ? song.value("first_path").toString()
@@ -40,6 +63,8 @@ QJsonObject ApiContext::status() const {
     state.insert("music_directory", musicDirectory);
     state.insert("config_directory", configDirectory);
     state.insert("lyrics", toJson(lyrics.snapshot()));
+    if (audioOutputs)
+        state.insert("audio_output", audioOutputStatus().value("audio_output"));
     return state;
 }
 QJsonObject ApiContext::queueStatus() const {

@@ -222,7 +222,7 @@ ApplicationWindow {
                             Label {
                                 id: errorLabel
                                 anchors.fill: parent; anchors.margins: 10
-                                text: root.transport.error; textFormat: Text.PlainText
+                                text: root.translator.text(root.transport.error, root.translator.language); textFormat: Text.PlainText
                                 color: Theme.statusError; wrapMode: Text.WordWrap; font.pixelSize: 12
                             }
                         }

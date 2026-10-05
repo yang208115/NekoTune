@@ -1,8 +1,26 @@
 #pragma once
 #include "domain/playback/player_state.h"
+#include "domain/result.h"
+#include <functional>
 #include <QObject>
+#include <QList>
 #include <QUrl>
 namespace nekotune {
+struct AudioOutputPort {
+    QString id;
+    QString name;
+    QString kind;
+    bool available = true;
+    bool operator==(const AudioOutputPort &) const = default;
+};
+struct AudioOutputDevice {
+    QString id;
+    QString name;
+    bool isDefault = false;
+    QList<AudioOutputPort> ports;
+    QString activePortId;
+    bool operator==(const AudioOutputDevice &) const = default;
+};
 /// These are decoder tags, which can be missing or arrive late.
 /// They supplement library metadata for the current playback source.
 /// User-edited title/artist override decoder values in the snapshot.
@@ -35,6 +53,16 @@ class IPlaybackBackend : public QObject {
     virtual qint64 duration() const = 0;
     virtual double volume() const = 0;
     virtual AudioMetadata metadata() const = 0;
+    virtual QList<AudioOutputDevice> audioOutputs() const = 0;
+    virtual QString activeAudioOutputId() const = 0;
+    virtual bool audioOutputAvailable() const = 0;
+    // Receives a concrete device ID; an empty ID suspends output, never selects a fallback.
+    virtual void setAudioOutput(const QString &deviceId, const QString &portId = {}) = 0;
+    using OutputCompletion = std::function<void(Result<void>)>;
+    virtual void setAudioOutputPort(const QString &, const QString &, OutputCompletion done) {
+        done(failure("audio_output_port_unavailable", ErrorCode::Unavailable));
+    }
+    virtual void suspendAudioOutput() = 0;
   signals:
     void stateChanged(nekotune::PlayerState state);
     void positionChanged(qint64 position);
@@ -42,5 +70,8 @@ class IPlaybackBackend : public QObject {
     void metadataChanged();
     void ended();
     void failed(const QString &message);
+    void audioOutputsChanged();
+    void audioOutputAvailabilityChanged(bool available);
+    void audioOutputError(const QString &message);
 };
 } // namespace nekotune
