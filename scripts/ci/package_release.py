@@ -101,9 +101,19 @@ def bundle_windows(stage: Path, qt: Path) -> None:
     deploy = qt / "bin" / "windeployqt6.exe"
     if not deploy.exists():
         deploy = qt / "bin" / "windeployqt.exe"
-    run(str(deploy), "--release", "--no-translations", "--qmldir",
-        str(Path("frontend/qt-qml/qml").resolve()), "--dir", str(binary_dir),
-        str(binary_dir / "nekotune.exe"))
+    print(run(str(deploy), "--release", "--no-translations", "--qmldir",
+              str(Path("frontend/qt-qml/qml").resolve()), "--dir", str(binary_dir),
+              "--qml-deploy-dir", str(binary_dir / "qml"),
+              str(binary_dir / "nekotune.exe")))
+    # MSYS2 Qt's compiled-in QML path is share/qt6/qml. windeployqt copies
+    # imports into bin/qml, so make the installed layout explicit for Qt.
+    (binary_dir / "qt.conf").write_text(
+        "[Paths]\nPrefix=.\nBinaries=.\nLibraries=.\nPlugins=.\nQmlImports=qml\n",
+        encoding="utf-8",
+    )
+    controls = binary_dir / "qml" / "QtQuick" / "Controls"
+    if not any(controls.glob("*qtquickcontrols2plugin*.dll")):
+        raise RuntimeError(f"QtQuick.Controls plugin was not deployed into {controls}")
     # windeployqt copies every SQL plugin, including drivers the app never uses.
     for driver in (binary_dir / "sqldrivers").glob("*.dll"):
         if driver.name.lower() != "qsqlite.dll":

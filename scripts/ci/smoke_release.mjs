@@ -22,6 +22,7 @@ async function checkDistribution(backendOnly) {
   }
   Object.assign(environment, {
     NEKOTUNE_HOME: root, NEKOTUNE_SOCKET: socketName,
+    NEKOTUNE_DB_PATH: path.join(root, 'player.sqlite3'),
     XDG_CONFIG_HOME: path.join(root, 'config'), XDG_DATA_HOME: path.join(root, 'data'),
     XDG_CACHE_HOME: path.join(root, 'cache'),
     QT_QPA_PLATFORM: process.platform === 'win32' ? 'windows' : 'offscreen',
@@ -63,6 +64,12 @@ async function checkDistribution(backendOnly) {
     socket.on('error', error => trace.push(`pipe error: ${error.message}`));
     let buffer = '', id = 0;
     const pending = new Map();
+    const rejectPending = reason => {
+      for (const { reject } of pending.values()) reject(new Error(`${reason}\n${diagnostics()}`));
+      pending.clear();
+    };
+    child.on('close', () => rejectPending('Process closed during IPC request'));
+    socket.on('close', () => rejectPending('IPC disconnected during request'));
     socket.on('data', bytes => {
       buffer += bytes;
       while (buffer.includes('\n')) {
@@ -71,13 +78,14 @@ async function checkDistribution(backendOnly) {
         trace.push(`received: ${JSON.stringify(message)}`);
         if (trace.length > 20) trace.shift();
         buffer = buffer.slice(newline + 1);
-        const resolve = pending.get(message.id);
-        if (resolve) { pending.delete(message.id); resolve(message); }
+        const request = pending.get(message.id);
+        if (request) { pending.delete(message.id); request.resolve(message); }
       }
     });
     async function call(method) {
+      assert.ok(!exited && !socket.destroyed, diagnostics());
       const requestId = ++id;
-      const reply = new Promise(resolve => pending.set(requestId, resolve));
+      const reply = new Promise((resolve, reject) => pending.set(requestId, { resolve, reject }));
       trace.push(`send: ${requestId} ${method}`);
       socket.write(JSON.stringify({ id: requestId, method, params: {} }) + '\n');
       let timer;
@@ -87,7 +95,7 @@ async function checkDistribution(backendOnly) {
         })]);
         assert.equal(response.status, 'ok', JSON.stringify(response));
         return response.data;
-      } finally { clearTimeout(timer); }
+      } finally { clearTimeout(timer); pending.delete(requestId); }
     }
     assert.ok(await call('player.status'));
     let extensions;
