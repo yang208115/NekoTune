@@ -1,7 +1,9 @@
 #include "runtime/backend_runtime.h"
 #include "runtime/backend_session.h"
 namespace nekotune {
-BackendRuntime::BackendRuntime(QObject *parent) : QObject(parent) {}
+BackendRuntime::BackendRuntime(QObject *parent) : BackendRuntime(PlaybackBackendFactory{}, parent) {}
+BackendRuntime::BackendRuntime(PlaybackBackendFactory audioFactory, QObject *parent)
+    : QObject(parent), m_audioFactory(std::move(audioFactory)) {}
 BackendRuntime::~BackendRuntime() { stop(); }
 bool BackendRuntime::start() {
     if (m_thread.isRunning())
@@ -16,7 +18,7 @@ bool BackendRuntime::start() {
     QMetaObject::invokeMethod(
         m_context,
         [this, &ok] {
-            m_session = new BackendSession;
+            m_session = new BackendSession(m_audioFactory ? m_audioFactory() : nullptr);
             ok = m_session->start();
             m_error = m_session->errorString();
             m_serverName = m_session->serverName();

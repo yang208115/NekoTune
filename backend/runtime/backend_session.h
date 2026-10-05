@@ -2,12 +2,12 @@
 #include "application/extensions/extension_service.h"
 #include "application/extensions/music_service.h"
 #include "application/library/download_service.h"
+#include "domain/playback/playback_backend.h"
 #include "infrastructure/ai/ai_backend.h"
 #include "infrastructure/extensions/extension_backend.h"
 #include "infrastructure/library/import_executor.h"
 #include "infrastructure/library/music_directory.h"
 #include "infrastructure/lyrics/sidecar_store.h"
-#include "infrastructure/playback/qt_playback_backend.h"
 #include "ipc/api/api_context.h"
 #include "ipc/ipc_server.h"
 #include "runtime/library_scanner.h"
@@ -16,6 +16,7 @@
 #include "storage/queue_repository.h"
 #include "storage/song_repository.h"
 #include "storage/tag_repository.h"
+#include <memory>
 namespace nekotune {
 /// Composition and lifetime owner for one embedded or standalone backend instance.
 /// Construction, service access and shutdown all occur on its backend thread.
@@ -24,7 +25,7 @@ namespace nekotune {
 class BackendSession final : public QObject {
     Q_OBJECT
   public:
-    BackendSession();
+    explicit BackendSession(std::unique_ptr<IPlaybackBackend> audio = {});
     ~BackendSession() override;
     bool start();
     QString errorString() const;
@@ -45,7 +46,7 @@ class BackendSession final : public QObject {
     PlaylistService m_playlists;
     TagService m_tags;
     QueueService m_queue;
-    QtPlaybackBackend m_audio;
+    std::unique_ptr<IPlaybackBackend> m_audio;
     PlayerEngine m_player;
     AudioOutputService m_audioOutputs;
     LyricsController m_lyrics;

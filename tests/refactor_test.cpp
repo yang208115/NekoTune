@@ -68,6 +68,10 @@ class FakeAudio final : public TestAudioBackend {
     AudioMetadata metadata() const override { return {}; }
 };
 
+static std::unique_ptr<IPlaybackBackend> makeFakeAudio() {
+    return std::make_unique<FakeAudio>();
+}
+
 class ExtraProvider final : public LyricsProvider {
   public:
     LyricsSource descriptor() const override { return {"extra", "Extra provider", true, false}; }
@@ -257,7 +261,7 @@ class RefactorTest final : public QObject {
     // Stop the runtime while a client is still connected to exercise buffer ownership.
     // Starting again must provide a usable new socket session without old callbacks.
     void socketCompatibilityAndConnectedShutdown() {
-        BackendRuntime runtime;
+        BackendRuntime runtime(makeFakeAudio);
         QVERIFY2(runtime.start(), qPrintable(runtime.errorString()));
         RpcPeer peer;
         QVERIFY(peer.connect(m_socket));
@@ -279,6 +283,50 @@ class RefactorTest final : public QObject {
         QVERIFY(reconnected.connect(m_socket));
         QVERIFY(peer.socket.waitForDisconnected(50) || peer.socket.state() == QLocalSocket::UnconnectedState);
         QCOMPARE(reconnected.call("player.status").value("status").toString(), QString("ok"));
+        runtime.stop();
+    }
+    void unavailableOutputPreservesQueueAcrossRuntimeRestart() {
+        int creations = 0;
+        QThread *audioThread = nullptr;
+        BackendRuntime runtime([&] {
+            ++creations;
+            auto audio = std::make_unique<FakeAudio>();
+            audioThread = audio->thread();
+            audio->setDevices({});
+            return audio;
+        });
+        QVERIFY(runtime.start());
+        QCOMPARE(creations, 1);
+        QVERIFY(audioThread != QThread::currentThread());
+        RpcPeer peer;
+        QVERIFY(peer.connect(m_socket));
+        QCOMPARE(peer.call("lyrics.set_offline", {{"offline", true}}).value("status").toString(),
+                 QString("ok"));
+        QCOMPARE(peer.call("queue.clear").value("status").toString(), QString("ok"));
+        const auto played = peer.call("player.play", {{"path", m_audio}});
+        QCOMPARE(played.value("status").toString(), QString("ok"));
+        const auto state = played.value("data").toObject();
+        QCOMPARE(state.value("state").toString(), QString("paused"));
+        const auto output = state.value("audio_output").toObject();
+        QVERIFY(!output.value("available").toBool());
+        QVERIFY(output.contains("active_id"));
+        QVERIFY(output.value("active_id").toString().isEmpty());
+        const auto queue = state.value("queue").toArray();
+        QCOMPARE(queue.size(), 1);
+        QCOMPARE(peer.call("player.play").value("status").toString(), QString("error"));
+        QCOMPARE(peer.call("player.status").value("data").toObject().value("queue").toArray(), queue);
+        runtime.stop();
+
+        QVERIFY(runtime.start());
+        QCOMPARE(creations, 2);
+        QVERIFY(audioThread != QThread::currentThread());
+        RpcPeer restored;
+        QVERIFY(restored.connect(m_socket));
+        const auto reopened = restored.call("player.status").value("data").toObject();
+        QCOMPARE(reopened.value("queue").toArray(), queue);
+        QVERIFY(reopened.value("state").toString() != "playing");
+        QVERIFY(!reopened.value("audio_output").toObject().value("available").toBool());
+        QCOMPARE(restored.call("queue.clear").value("status").toString(), QString("ok"));
         runtime.stop();
     }
     // Shutdown can happen before accepted file inspections finish normally.
@@ -311,7 +359,7 @@ class RefactorTest final : public QObject {
     // A second client observes their eventual committed queue without resending them.
     // Runtime shutdown then exercises cancellation of a deliberately large pending import.
     void orderedImportsAndDisconnect() {
-        BackendRuntime runtime;
+        BackendRuntime runtime(makeFakeAudio);
         QVERIFY(runtime.start());
         RpcPeer peer;
         QVERIFY(peer.connect(m_socket));
@@ -368,7 +416,7 @@ class RefactorTest final : public QObject {
     // Import-only remains independent even when a visible sequence is playing.
     // Reopening verifies the accepted survivor sequence was durably persisted.
     void orderedVisiblePlaybackPreservesQueueOnFailure() {
-        BackendRuntime runtime;
+        BackendRuntime runtime(makeFakeAudio);
         QVERIFY(runtime.start());
         RpcPeer peer;
         QVERIFY(peer.connect(m_socket));
@@ -423,7 +471,7 @@ class RefactorTest final : public QObject {
             QVERIFY(database.open());
             QSqlQuery sql(database);
             QVERIFY(sql.exec("CREATE TRIGGER fail_visible_queue BEFORE DELETE ON queue_items BEGIN SELECT RAISE(FAIL, 'visible save failed'); END"));
-            // Let the real audio backend finish loading before comparing rollback state.
+            // Queue rollback must preserve the injected backend's playing state.
             QTRY_COMPARE(peer.call("player.status").value("data").toObject().value("state").toString(),
                          QString("playing"));
             const auto before = peer.call("player.status").value("data").toObject();
@@ -460,7 +508,7 @@ class RefactorTest final : public QObject {
         QCOMPARE(peer.call("library.play", {{"song_ids", visible}, {"song_id", ids[0]}}).value("status").toString(), QString("error"));
         QCOMPARE(peer.call("player.status").value("data").toObject().value("queue"), retained);
         runtime.stop();
-        BackendRuntime restored;
+        BackendRuntime restored(makeFakeAudio);
         QVERIFY(restored.start());
         RpcPeer reopened;
         QVERIFY(reopened.connect(m_socket));
@@ -491,7 +539,7 @@ class RefactorTest final : public QObject {
         document.coverUrl = "https://imge.kugou.com/cached-cover.jpg";
         QVERIFY(LyricsCache().write(query, document));
 
-        BackendRuntime runtime;
+        BackendRuntime runtime(makeFakeAudio);
         QVERIFY(runtime.start());
         RpcPeer peer;
         QVERIFY(peer.connect(m_socket));
@@ -588,7 +636,7 @@ class RefactorTest final : public QObject {
     // Playing current media can toggle rather than rebuild the recent sequence.
     // The real QML/controller path ensures wrappers preserve this ownership rule.
     void homePlaybackIgnoresLibraryFilters() {
-        BackendRuntime runtime;
+        BackendRuntime runtime(makeFakeAudio);
         QVERIFY(runtime.start());
         RpcPeer peer;
         QVERIFY(peer.connect(m_socket));
@@ -665,7 +713,7 @@ class RefactorTest final : public QObject {
     // Menu behavior is exercised through actual QML bindings and backend state.
     // This complements domain navigation tests with frontend integration coverage.
     void playbackModePageAndDrawer() {
-        BackendRuntime runtime;
+        BackendRuntime runtime(makeFakeAudio);
         QVERIFY(runtime.start());
         RpcPeer peer;
         QVERIFY(peer.connect(m_socket));
@@ -751,7 +799,7 @@ class RefactorTest final : public QObject {
     }
     // Exercise animation interruption and real hit areas rather than checking token values alone.
     void drawerAnimationAndCompactControls() {
-        BackendRuntime runtime;
+        BackendRuntime runtime(makeFakeAudio);
         QVERIFY(runtime.start());
         RpcPeer peer;
         QVERIFY(peer.connect(m_socket));
@@ -836,7 +884,7 @@ class RefactorTest final : public QObject {
     // The test also exercises dialog lifecycle and current-row action identity.
     // It does not substitute for a separate screenshot-based visual acceptance.
     void extensionPluginNavigation() {
-        BackendRuntime runtime;
+        BackendRuntime runtime(makeFakeAudio);
         QVERIFY(runtime.start());
         RpcPeer peer;
         QVERIFY(peer.connect(m_socket));
@@ -947,7 +995,7 @@ class RefactorTest final : public QObject {
             QVERIFY(coverImage.load(":/artwork/default-cover.png"));
         const auto coverPath = m_directory.filePath("test.png");
         QVERIFY(coverImage.save(coverPath));
-        BackendRuntime runtime;
+        BackendRuntime runtime(makeFakeAudio);
         QVERIFY(runtime.start());
         RpcPeer peer;
         QVERIFY(peer.connect(m_socket));

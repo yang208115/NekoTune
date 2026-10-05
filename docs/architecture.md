@@ -119,6 +119,8 @@ tests/                          # 服务、存储、协议、QML 和依赖边界
 
 `PlayerEngine` 通过 `IPlaybackBackend` 操作媒体源、播放状态、位置、音量和音频元数据，具体实现为 `QtPlaybackBackend`。播放实现不负责曲库、下载或数据库访问。
 
+`BackendRuntime` 可接收播放后端工厂，每次启动均在后端线程创建适配器，再由 `BackendSession` 持有。正式程序默认使用 `QtPlaybackBackend`；IPC／QML 播放业务测试注入模拟后端，不依赖运行机器是否有音频设备。无设备时保持暂停的行为另外通过模拟设备和实际 Qt 适配器验证。
+
 音频设备由同一接口暴露普通设备／端口数据和输出可用性信号，Qt 类型保留在基础设施层。`AudioOutputService` 负责持久选择与默认设备／断开策略，保存回调在 `BackendSession` 注入。Linux 可选的 `PulseAudioPorts` 使用原生 libpulse 异步订阅和切换同声卡端口，通过非阻塞主循环迭代接入后端线程，并在切换后回读确认。`QtPlaybackBackend` 在设备或耳机端口丢失时停用输出，`PlayerEngine` 清除待播放意图并检查所有起播路径；前端的共享 `AudioOutputController` 通过 IPC 同步设置页和播放栏，不直接枚举本机音频设备。
 
 `PlayerQueue` 是领域队列，歌曲 ID 与队列项 ID 分开：同一歌曲可以在队列中出现多次，每个队列项仍有独立身份。`QueueService` 恢复持久队列，并提供先写库、后更新内存的提交入口。

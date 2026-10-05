@@ -3,6 +3,7 @@
 #include "infrastructure/extensions/extension_lyrics_provider.h"
 #include "infrastructure/lyrics/lrclib_provider.h"
 #include "infrastructure/lyrics/lyrics_storage.h"
+#include "infrastructure/playback/qt_playback_backend.h"
 namespace nekotune {
 namespace {
 AudioOutputSelection savedAudioOutput() {
@@ -28,16 +29,17 @@ LyricsService *createLyrics() {
 // Artwork enrichment is centralized before snapshots reach any view.
 // Worker adapters exchange value snapshots with this backend thread.
 // Keep new feature wiring here rather than growing PlayerEngine.
-BackendSession::BackendSession()
+BackendSession::BackendSession(std::unique_ptr<IPlaybackBackend> audio)
     : m_music(m_database), m_songs(m_database), m_queueRepository(m_database),
       m_playlistRepository(m_database), m_tagRepository(m_database),
       m_library(m_songs, m_tagRepository, m_database), m_playlists(m_playlistRepository),
       m_tags(m_tagRepository), m_queue(m_queueRepository, m_songs, m_database),
-      m_player(m_audio, m_queue, std::make_unique<ShuffleBagStrategy>(),
+      m_audio(audio ? std::move(audio) : std::make_unique<QtPlaybackBackend>()),
+      m_player(*m_audio, m_queue, std::make_unique<ShuffleBagStrategy>(),
                playbackModeFromString(AppPaths::setting("playback_mode").toString())
                    .value_or(PlaybackMode::Sequential),
                [](PlaybackMode mode) { return AppPaths::saveSetting("playback_mode", toString(mode)); }),
-      m_audioOutputs(m_audio, savedAudioOutput(), [](const AudioOutputSelection &selected) {
+      m_audioOutputs(*m_audio, savedAudioOutput(), [](const AudioOutputSelection &selected) {
           return AppPaths::saveSetting("audio_output", QJsonObject{{"device_id", selected.id},
                                                                  {"device_name", selected.name},
                                                                  {"port_id", selected.portId},
