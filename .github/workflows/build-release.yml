@@ -64,6 +64,8 @@ jobs:
       QT_QPA_PLATFORM: ${{ matrix.platform == 'windows' && 'windows' || 'offscreen' }}
       QT_QUICK_BACKEND: software
       QT_QUICK_CONTROLS_STYLE: Fusion
+      # The Windows runner's 1024px display must accommodate 1360px logical UI tests.
+      QT_SCALE_FACTOR: ${{ matrix.platform == 'windows' && '0.5' || '1' }}
       CCACHE_DIR: ${{ github.workspace }}/.ccache
       CCACHE_BASEDIR: ${{ github.workspace }}
     steps:
@@ -185,7 +187,8 @@ jobs:
         run: |
           cmake --install build --prefix "$PWD/stage"
           uv run --no-project --python 3.12 scripts/ci/package_release.py \
-            --stage stage --qt-prefix "$QT_ROOT_DIR" --platform linux --version "$VERSION"
+            --stage stage --qt-prefix "$QT_ROOT_DIR" --library-dir "$RUNNER_TEMP/qtkeychain/lib" \
+            --platform linux --version "$VERSION"
           node scripts/ci/smoke_release.mjs stage
       - name: Bundle and smoke test Windows distribution
         id: package_windows

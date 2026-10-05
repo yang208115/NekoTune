@@ -22,7 +22,7 @@ def copy_file(source: Path, destination: Path) -> None:
     shutil.copy2(source.resolve(), destination)
 
 
-def bundle_linux(stage: Path, qt: Path) -> None:
+def bundle_linux(stage: Path, qt: Path, extra_library_dirs: list[Path]) -> None:
     # Multimedia also installs optional Quick3D modules without their 3D dependencies.
     # Ship the host's 2D UI modules and the multimedia API used by extensions.
     for module in ("QtQml", "QtQuick", "Qt", "QtMultimedia"):
@@ -55,7 +55,8 @@ def bundle_linux(stage: Path, qt: Path) -> None:
     )
     environment = dict(os.environ)
     environment["LD_LIBRARY_PATH"] = os.pathsep.join(
-        [str(library_dir), str(qt / "lib"), environment.get("LD_LIBRARY_PATH", "")]
+        [str(library_dir), str(qt / "lib"), *map(str, extra_library_dirs),
+         environment.get("LD_LIBRARY_PATH", "")]
     )
     pending = [file for file in stage.rglob("*") if file.is_file()
                and (".so" in file.name or file.parent.name == "bin")]
@@ -135,6 +136,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--stage", type=Path, required=True)
     parser.add_argument("--qt-prefix", type=Path, required=True)
+    parser.add_argument("--library-dir", type=Path, action="append", default=[])
     parser.add_argument("--platform", choices=["linux", "windows"], required=True)
     parser.add_argument("--version", required=True)
     parser.add_argument("--output", type=Path, default=Path("dist"))
@@ -142,7 +144,7 @@ def main() -> None:
     stage = args.stage.resolve()
     qt = args.qt_prefix.resolve()
     if args.platform == "linux":
-        bundle_linux(stage, qt)
+        bundle_linux(stage, qt, [directory.resolve() for directory in args.library_dir])
     else:
         bundle_windows(stage, qt)
     licenses = stage / "licenses"

@@ -1,6 +1,6 @@
 #include "application/library/collection_service.h"
+#include "application/library/audio_availability.h"
 #include "application/transaction.h"
-#include <QFileInfo>
 #include <QSet>
 #include <algorithm>
 namespace nekotune {
@@ -140,9 +140,8 @@ Result<void> CollectionService::playPlaylist(int id, int songId,
     }
     for (const auto &record : records) {
         auto song = m_songs.songById(record.songId);
-        const QFileInfo file(record.path);
         // A playlist is an explicit sequence: one unavailable entry rejects the replacement.
-        if (!song || (!song->isRemote() && (!file.isFile() || file.canonicalFilePath().isEmpty())))
+        if (!song || (!song->isRemote() && !isAvailableAudioFile(record.path)))
             return failure(QStringLiteral("Playlist file is unavailable: %1").arg(record.path));
         if (record.songId == songId)
             start = next.size();

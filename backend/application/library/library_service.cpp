@@ -1,6 +1,6 @@
 #include "application/library/library_service.h"
+#include "application/library/audio_availability.h"
 #include "application/transaction.h"
-#include <QFileInfo>
 namespace nekotune {
 LibraryService::LibraryService(ISongRepository &songs, ITagRepository &tags, ITransaction &transaction)
     : m_songs(songs), m_tags(tags), m_transaction(transaction) {}
@@ -18,8 +18,7 @@ LibrarySnapshot LibraryService::snapshot() const {
             continue;
         QString path;
         for (const auto &candidate : paths.value(song.id)) {
-            const QFileInfo file(candidate);
-            if (file.isFile() && !file.canonicalFilePath().isEmpty()) {
+            if (isAvailableAudioFile(candidate)) {
                 path = candidate;
                 break;
             }
@@ -37,9 +36,7 @@ Result<SongMetadata> LibraryService::metadata(int id) const {
 QVector<SongTag> LibraryService::tagsFor(int id) const { return m_tags.songTags().value(id); }
 QString LibraryService::availablePath(int id) const {
     for (const auto &path : m_songs.pathsForSong(id)) {
-        const QFileInfo file(path);
-        // Windows can retain file attributes on a link after its target disappears.
-        if (file.isFile() && !file.canonicalFilePath().isEmpty())
+        if (isAvailableAudioFile(path))
             return path;
     }
     return {};

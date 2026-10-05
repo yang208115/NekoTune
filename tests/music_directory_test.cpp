@@ -217,6 +217,15 @@ class MusicDirectoryTest final : public QObject {
         QVERIFY(store.library.availablePath(imported.value().id).isEmpty());
         QCOMPARE(store.library.snapshot().songs.size(), 1);
         QVERIFY(store.library.snapshot().songs.first().path.isEmpty());
+        write(source, "native link audio bytes");
+        QCOMPARE(store.library.availablePath(imported.value().id), target);
+        const auto chained = m_profile.filePath("native-links/chained.flac");
+        QVERIFY(createAudioSymlink(target, chained));
+        const auto chainedSong = store.library.importFile({chained, hash("chain"), "Chained link"});
+        QVERIFY(chainedSong);
+        QCOMPARE(store.library.availablePath(chainedSong.value().id), chained);
+        QVERIFY(QFile::remove(source));
+        QVERIFY(store.library.availablePath(chainedSong.value().id).isEmpty());
     }
     void referenceFallbackKeepsPlaybackAndAssetsSeparate() {
         const auto source = m_profile.filePath("外部音乐/歌曲.flac");

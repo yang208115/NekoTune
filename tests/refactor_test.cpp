@@ -799,6 +799,7 @@ class RefactorTest final : public QObject {
             translator.setLanguage(language);
             for (int width : {1000, 1360}) {
                 window->resize(width, width == 1000 ? 640 : 860);
+                QTRY_COMPARE(window->width(), width);
                 QTest::qWait(60);
                 QCOMPARE(secondary->width(), width == 1000 ? 160.0 : 220.0);
                 QCOMPARE(transport->mapToScene(QPointF(transport->width() / 2, 0)).x(), width / 2.0);
@@ -1039,6 +1040,7 @@ class RefactorTest final : public QObject {
         QVERIFY(controls);
         for (int width : {1000, 1360}) {
             root->setProperty("width", width);
+            QTRY_COMPARE(root->property("width").toInt(), width);
             QTest::qWait(30);
             QCOMPARE(qRound(controls->mapToScene(QPointF(controls->width() / 2, 0)).x()), width / 2);
         }
