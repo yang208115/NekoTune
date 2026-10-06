@@ -1,55 +1,21 @@
-name: Build and Release
+name: CI
 
 on:
   push:
     branches: [main]
-    tags: ['v*']
   pull_request:
   workflow_dispatch:
-    inputs:
-      release:
-        description: 'Publish v<CMake project version> after both platforms pass'
-        type: boolean
-        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: build-release-${{ github.ref }}
-  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  metadata:
-    runs-on: ubuntu-24.04
-    outputs:
-      version: ${{ steps.version.outputs.version }}
-      tag: ${{ steps.version.outputs.tag }}
-      publish: ${{ steps.version.outputs.publish }}
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-      - id: version
-        env:
-          REQUEST_RELEASE: ${{ inputs.release }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          version=$(sed -nE 's/^    VERSION ([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' CMakeLists.txt)
-          test -n "$version"
-          tag="v$version"
-          publish=false
-          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
-            test "$GITHUB_REF_NAME" = "$tag"
-            publish=true
-          elif [[ "$REQUEST_RELEASE" == true ]]; then
-            test "$GITHUB_REF" = refs/heads/main
-            publish=true
-          fi
-          printf 'version=%s\ntag=%s\npublish=%s\n' "$version" "$tag" "$publish" >> "$GITHUB_OUTPUT"
-
   build:
     name: Build, test and package (${{ matrix.platform }})
-    needs: metadata
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     strategy:
@@ -137,6 +103,8 @@ jobs:
           path: .ccache
           key: ccache-${{ matrix.platform }}-${{ github.sha }}
           restore-keys: ccache-${{ matrix.platform }}-
+
+      # ── Build ──────────────────────────────────────────────────────
       - name: Configure and build Linux
         id: build_linux
         if: runner.os == 'Linux'
@@ -152,6 +120,8 @@ jobs:
           set -euo pipefail
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
           cmake --build build --parallel 2
+
+      # ── Test ───────────────────────────────────────────────────────
       - name: Run Linux CTest and check extension types
         if: runner.os == 'Linux'
         run: |
@@ -183,11 +153,19 @@ jobs:
           path: .ccache
           key: ccache-${{ matrix.platform }}-${{ github.sha }}
 
+      # ── Package ────────────────────────────────────────────────────
+      - name: Extract version from CMakeLists.txt
+        id: version
+        shell: bash
+        run: |
+          version=$(sed -nE 's/^    VERSION ([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' CMakeLists.txt)
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - name: Bundle and smoke test Linux distribution
         id: package_linux
         if: ${{ !cancelled() && runner.os == 'Linux' && steps.build_linux.outcome == 'success' }}
         env:
-          VERSION: ${{ needs.metadata.outputs.version }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           cmake --install build --prefix "$PWD/stage"
           uv run --no-project --python 3.12 scripts/ci/package_release.py \
@@ -199,7 +177,7 @@ jobs:
         if: ${{ !cancelled() && runner.os == 'Windows' && steps.build_windows.outcome == 'success' }}
         shell: msys2 {0}
         env:
-          VERSION: ${{ needs.metadata.outputs.version }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
           cmake --install build --prefix "$(cygpath -m "$PWD/stage")"
@@ -214,44 +192,3 @@ jobs:
           path: dist/*
           if-no-files-found: error
           retention-days: 14
-
-  release:
-    name: Publish GitHub Release
-    needs: [metadata, build]
-    if: needs.metadata.outputs.publish == 'true'
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          fetch-depth: 0
-      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
-        with:
-          pattern: NekoTune-*-x64
-          merge-multiple: true
-          path: dist
-      - name: Verify archives and publish atomically
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.metadata.outputs.tag }}
-          VERSION: ${{ needs.metadata.outputs.version }}
-        run: |
-          set -euo pipefail
-          test "$(find dist -maxdepth 1 -type f | wc -l)" -eq 4
-          test -s "dist/NekoTune-$VERSION-windows-x64.zip"
-          test -s "dist/NekoTune-$VERSION-linux-x64.tar.gz"
-          (cd dist && sha256sum -c ./*.sha256)
-          if git show-ref --verify --quiet "refs/tags/$TAG"; then
-            test "$(git rev-parse "$TAG^{commit}")" = "$GITHUB_SHA"
-          fi
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            test "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = true
-            gh release upload "$TAG" dist/* --clobber
-          else
-            gh release create "$TAG" dist/* --target "$GITHUB_SHA" \
-              --title "NekoTune $TAG" --generate-notes --draft
-          fi
-          test "$(gh release view "$TAG" --json assets --jq '.assets | length')" -eq 4
-          gh release edit "$TAG" --draft=false
-          gh release view "$TAG" --json url,isDraft,assets

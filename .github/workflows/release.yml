@@ -1,0 +1,70 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Publish GitHub Release
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+
+      - name: Verify tag matches CMake version
+        id: meta
+        run: |
+          set -euo pipefail
+          version=$(sed -nE 's/^    VERSION ([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' CMakeLists.txt)
+          test -n "$version"
+          tag="v$version"
+          test "$GITHUB_REF_NAME" = "$tag"
+          printf 'version=%s\ntag=%s\n' "$version" "$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Verify tag is on main
+        run: git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+
+      - name: Download artifacts from successful CI run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run_id=$(gh run list --workflow=ci.yml --branch=main \
+            --commit "$GITHUB_SHA" --status=success \
+            --json databaseId --jq '.[0].databaseId')
+          if [[ -z "$run_id" ]]; then
+            echo "::error::No successful CI run found for commit $GITHUB_SHA on main"
+            exit 1
+          fi
+          echo "Downloading artifacts from CI run $run_id"
+          gh run download "$run_id" \
+            -n NekoTune-linux-x64 \
+            -n NekoTune-windows-x64 \
+            -D dist
+
+      - name: Verify archives and publish atomically
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          test "$(find dist -maxdepth 1 -type f | wc -l)" -eq 4
+          test -s "dist/NekoTune-$VERSION-windows-x64.zip"
+          test -s "dist/NekoTune-$VERSION-linux-x64.tar.gz"
+          (cd dist && sha256sum -c ./*.sha256)
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            test "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = true
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* --target "$GITHUB_SHA" \
+              --title "NekoTune $TAG" --generate-notes --draft
+          fi
+          test "$(gh release view "$TAG" --json assets --jq '.assets | length')" -eq 4
+          gh release edit "$TAG" --draft=false
+          gh release view "$TAG" --json url,isDraft,assets
