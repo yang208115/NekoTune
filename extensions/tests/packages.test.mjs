@@ -4,9 +4,10 @@ import fs from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { randomUUID } from 'node:crypto';
 import { pipeline } from 'node:stream/promises';
 import yazl from 'yazl';
-import { readManifest, unpack, dependencyOrder, writeJson } from '../runtime/packages.mjs';
+import { readManifest, unpack, dependencyOrder, writeJson, cleanupPackages } from '../runtime/packages.mjs';
 
 test('atomic JSON replacement retries sharing failures and preserves existing data on permanent failure', async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'nekotune-json-'));
@@ -83,4 +84,62 @@ test('ZIP installation extracts files and rejects symlinks', async (t) => {
       assert.equal(await fs.readFile(path.join(destination, 'entry.txt'), 'utf8'), 'hello');
     }
   }
+});
+
+test('package cleanup respects references, ownership and symlink boundaries', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'nekotune-cleanup-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const packages = path.join(root, 'packages');
+  await fs.mkdir(packages);
+  const names = ['retired', 'current', 'nested', 'linked', 'symlink'].map(
+    (id) => `test.${id}-1.2.3-beta.1+build.5-${randomUUID()}`,
+  );
+  const [retired, current, nested, linked, symlink] = names.map((name) => path.join(packages, name));
+  const external = path.join(root, 'external');
+  const alias = path.join(root, 'development-link');
+  for (const directory of [retired, current, nested, linked, external]) await fs.mkdir(directory);
+  await fs.mkdir(path.join(nested, 'development'));
+  await fs.writeFile(path.join(external, 'keep.txt'), 'untouched');
+  await fs.symlink(external, symlink, 'junction');
+  await fs.symlink(external, path.join(retired, 'external-link'), 'junction');
+  await fs.symlink(linked, alias, 'junction');
+  const unrelated = [
+    'notes',
+    'test.retired-1.0.0-manual',
+    `.staging-manual`,
+    `test.bad-not-a-version-${randomUUID()}`,
+  ];
+  for (const name of unrelated) await fs.mkdir(path.join(packages, name));
+  await fs.mkdir(path.join(packages, `.staging-${randomUUID()}`));
+  assert.deepEqual(await cleanupPackages(packages, [current, path.join(nested, 'development'), alias]), []);
+  assert.deepEqual((await fs.readdir(packages)).sort(), [...names.slice(1), ...unrelated].sort());
+  assert.equal(await fs.readFile(path.join(external, 'keep.txt'), 'utf8'), 'untouched');
+  assert.ok((await fs.lstat(symlink)).isSymbolicLink());
+
+  const rootLink = path.join(root, 'packages-link');
+  await fs.symlink(packages, rootLink, 'junction');
+  await assert.rejects(cleanupPackages(rootLink, []), /real directory/);
+  assert.ok(await fs.stat(current));
+});
+
+test('failed package deletion is reported and can be retried without blocking other cleanup', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'nekotune-cleanup-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const blocked = path.join(root, `test.blocked-1.0.0-${randomUUID()}`);
+  const retired = path.join(root, `test.retired-1.0.0-${randomUUID()}`);
+  await fs.mkdir(blocked);
+  await fs.mkdir(retired);
+  const remove = fs.rm;
+  const mocked = t.mock.method(fs, 'rm', async (target, options) => {
+    if (target === blocked) throw Object.assign(new Error('Package remains busy'), { code: 'EBUSY' });
+    return remove(target, options);
+  });
+  const failures = await cleanupPackages(root, []);
+  assert.equal(failures.length, 1);
+  assert.equal(failures[0].directory, blocked);
+  assert.equal(failures[0].error.code, 'EBUSY');
+  assert.deepEqual(await fs.readdir(root), [path.basename(blocked)]);
+  mocked.mock.restore();
+  assert.deepEqual(await cleanupPackages(root, []), []);
+  assert.deepEqual(await fs.readdir(root), []);
 });

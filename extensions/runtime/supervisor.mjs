@@ -14,6 +14,7 @@ import {
   unpack,
   dependencyOrder,
   validId,
+  cleanupPackages,
 } from './packages.mjs';
 import { AudioProxy } from './audio.mjs';
 
@@ -24,7 +25,8 @@ async function main() {
     runs = new Map(),
     logs = new Map(),
     secrets = new Set(),
-    nativeActivated = new Set();
+    nativeActivated = new Set(),
+    nativeDirectories = new Set();
   const uiKinds = ['pages', 'settings', 'slots', 'themes', 'menus', 'toolbars'];
   const runtimeDirectory = path.dirname(process.argv[1]);
   let state = { entries: [], selections: {} },
@@ -48,9 +50,10 @@ async function main() {
   });
   const socketDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'nekotune-ext-'));
   await fs.chmod(socketDirectory, 0o700);
-  const socketPath = process.platform === 'win32'
-    ? '\\\\.\\pipe\\nekotune-ext-' + randomUUID()
-    : path.join(socketDirectory, 'rpc');
+  const socketPath =
+    process.platform === 'win32'
+      ? '\\\\.\\pipe\\nekotune-ext-' + randomUUID()
+      : path.join(socketDirectory, 'rpc');
   const server = net.createServer((socket) => {
     const wire = new Wire(socket);
     let run;
@@ -276,6 +279,14 @@ async function main() {
     if (!closing) host.send({ event: 'extensions.changed', ...snapshot() });
   }
   async function save() {
+    state.developmentDirectories = [
+      ...new Set([
+        ...(state.developmentDirectories ?? []),
+        ...[...entries.values()].flatMap((entry) =>
+          [entry, entry.previous].filter((item) => item?.development).map((item) => item.directory),
+        ),
+      ]),
+    ];
     state.entries = [...entries.values()].map(
       ({ directory, development, enabled, trusted, manifest, previous, state: currentState, error }) => ({
         id: manifest.id,
@@ -288,6 +299,33 @@ async function main() {
       }),
     );
     await writeJson(stateFile, state);
+  }
+  async function cleanUnusedPackages() {
+    try {
+      // Disk references also protect the last committed version if saving a mutation failed.
+      const stored = await readJson(stateFile, null);
+      if (!stored || !Array.isArray(stored.entries)) return;
+      const retained = new Set([
+        ...nativeDirectories,
+        ...(state.developmentDirectories ?? []),
+        ...(stored.developmentDirectories ?? []),
+        ...[...runs.values()].map((run) => run.directory),
+      ]);
+      for (const entry of [...entries.values(), ...stored.entries]) {
+        retained.add(entry.directory);
+        if (entry.previous) retained.add(entry.previous.directory);
+      }
+      for (const { directory, error } of await cleanupPackages(path.join(root, 'packages'), retained))
+        host.send({
+          event: 'extensions.error',
+          message: redact(`Cannot clean extension package ${directory}: ${error.message}`),
+        });
+    } catch (error) {
+      host.send({
+        event: 'extensions.error',
+        message: redact(`Extension package cleanup skipped: ${error.message}`),
+      });
+    }
   }
   function broadcast(event) {
     for (const run of runs.values()) if (run.state === 'running') run.wire?.send(event);
@@ -335,12 +373,16 @@ async function main() {
     if (!entry.trusted) throw new Error(`Trust must be explicitly granted to ${id}`);
     if (runs.get(id)?.state === 'running') return;
     if (runs.has(id)) return await runs.get(id).started;
-    if (entry.manifest.nativeModules) nativeActivated.add(id);
+    if (entry.manifest.nativeModules) {
+      nativeActivated.add(id);
+      nativeDirectories.add(entry.directory);
+    }
     await fs.mkdir(dataDirectory(id), { recursive: true, mode: 0o700 });
     entry.error = '';
     entry.state = 'starting';
     const run = {
       id,
+      directory: entry.directory,
       state: 'starting',
       generation: ++generation,
       token: randomBytes(32).toString('hex'),
@@ -628,7 +670,14 @@ async function main() {
     return result;
   }
   function enqueueMutation(operation) {
-    const next = mutations.then(operation);
+    const next = mutations.then(async () => {
+      try {
+        return await operation();
+      } finally {
+        // Only collect after the complete operation, including dependent restarts/rollback.
+        await cleanUnusedPackages();
+      }
+    });
     mutations = next.catch(() => {});
     return next;
   }
@@ -732,8 +781,6 @@ async function main() {
             await host.request('secret', { operation: 'delete', key, extensionId: params.id });
         entries.delete(params.id);
         await save();
-        if (!entry.development && entry.directory.startsWith(path.join(root, 'packages') + path.sep))
-          await fs.rm(entry.directory, { recursive: true, force: true });
         if (params.clearData === true)
           await fs.rm(dataDirectory(params.id), { recursive: true, force: true });
         changed();
@@ -763,65 +810,67 @@ async function main() {
     }
   });
   await host.request('hello', { token: process.env.NEKOTUNE_EXTENSION_TOKEN });
-  try {
-    state = await readJson(stateFile, state);
-    for (const stored of state.entries ?? []) {
-      try {
-        const manifest = await readManifest(stored.directory);
-        if (manifest.id !== stored.id) throw new Error('Installed extension ID changed');
-        entries.set(manifest.id, {
-          ...stored,
-          manifest,
-          state: stored.failure ? 'failed' : 'disabled',
-          error: stored.failure ?? '',
-        });
-      } catch (error) {
-        entries.set(stored.id, {
-          ...stored,
-          manifest: { id: stored.id, name: stored.id, version: '0.0.0' },
-          state: 'failed',
-          error: error.message,
-        });
-      }
-    }
-    const bundledDirectory = process.env.NEKOTUNE_BUNDLED_EXTENSIONS;
-    if (bundledDirectory) {
-      state.bundledSeen ??= [];
-      for (const name of await fs.readdir(bundledDirectory).catch(() => [])) {
-        if (!name.endsWith('.zip') || state.bundledSeen.includes(name)) continue;
-        const id = name.slice(0, -4);
+  await enqueueMutation(async () => {
+    try {
+      state = await readJson(stateFile, state);
+      for (const stored of state.entries ?? []) {
         try {
-          if (!entries.has(id)) await install({ path: path.join(bundledDirectory, name) });
-          state.bundledSeen.push(name);
-          await save();
+          const manifest = await readManifest(stored.directory);
+          if (manifest.id !== stored.id) throw new Error('Installed extension ID changed');
+          entries.set(manifest.id, {
+            ...stored,
+            manifest,
+            state: stored.failure ? 'failed' : 'disabled',
+            error: stored.failure ?? '',
+          });
         } catch (error) {
-          host.send({ event: 'extensions.error', message: `Bundled extension ${id}: ${error.message}` });
+          entries.set(stored.id, {
+            ...stored,
+            manifest: { id: stored.id, name: stored.id, version: '0.0.0' },
+            state: 'failed',
+            error: error.message,
+          });
         }
       }
-    }
-    catalogueReady = true;
-    changed();
-    if (process.env.NEKOTUNE_SAFE_MODE !== '1')
-      for (const [id, entry] of entries)
-        if (entry.enabled && entry.state !== 'failed')
-          await (async () => {
-            const order = dependencyOrder(entries, id);
-            if (
-              order.some(
-                (dependency) =>
-                  !entries.get(dependency).enabled || entries.get(dependency).state === 'failed',
+      const bundledDirectory = process.env.NEKOTUNE_BUNDLED_EXTENSIONS;
+      if (bundledDirectory) {
+        state.bundledSeen ??= [];
+        for (const name of await fs.readdir(bundledDirectory).catch(() => [])) {
+          if (!name.endsWith('.zip') || state.bundledSeen.includes(name)) continue;
+          const id = name.slice(0, -4);
+          try {
+            if (!entries.has(id)) await install({ path: path.join(bundledDirectory, name) });
+            state.bundledSeen.push(name);
+            await save();
+          } catch (error) {
+            host.send({ event: 'extensions.error', message: `Bundled extension ${id}: ${error.message}` });
+          }
+        }
+      }
+      catalogueReady = true;
+      changed();
+      if (process.env.NEKOTUNE_SAFE_MODE !== '1')
+        for (const [id, entry] of entries)
+          if (entry.enabled && entry.state !== 'failed')
+            await (async () => {
+              const order = dependencyOrder(entries, id);
+              if (
+                order.some(
+                  (dependency) =>
+                    !entries.get(dependency).enabled || entries.get(dependency).state === 'failed',
+                )
               )
-            )
-              throw new Error('Dependency is disabled or failed; enable it manually');
-            await enable(id);
-          })().catch((error) => {
-            if (entry.state !== 'failed') entry.state = 'blocked';
-            entry.error = error.message;
-            changed();
-          });
-  } catch (error) {
-    host.send({ event: 'extensions.error', message: error.message });
-  }
+                throw new Error('Dependency is disabled or failed; enable it manually');
+              await enable(id);
+            })().catch((error) => {
+              if (entry.state !== 'failed') entry.state = 'blocked';
+              entry.error = error.message;
+              changed();
+            });
+    } catch (error) {
+      host.send({ event: 'extensions.error', message: error.message });
+    }
+  });
 }
 main().catch((error) => {
   console.error(error);

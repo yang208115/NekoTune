@@ -76,6 +76,51 @@ export async function readJson(file, fallback) {
     throw error;
   }
 }
+export async function cleanupPackages(directory, retainedDirectories) {
+  const rootStat = await fs.lstat(directory).catch((error) => {
+    if (error.code !== 'ENOENT') throw error;
+  });
+  if (!rootStat) return [];
+  if (!rootStat.isDirectory()) throw new Error('Package cleanup requires a real directory');
+  const root = await fs.realpath(directory);
+  const retained = new Set();
+  for (const reference of retainedDirectories) {
+    // Keep both spellings: a development directory may point into a package via a symlink.
+    retained.add(path.resolve(reference));
+    try {
+      retained.add(await fs.realpath(reference));
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+  }
+  const uuid = '[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
+  const stagingName = new RegExp(`^\\.staging-${uuid}$`);
+  const packageName = new RegExp(`^([a-z][a-z0-9._-]{1,100})-(v?\\d+\\.\\d+\\.\\d+[^/]*)-${uuid}$`);
+  const failures = [];
+  for (const item of await fs.readdir(root, { withFileTypes: true })) {
+    if (!item.isDirectory()) continue;
+    const match = item.name.match(packageName);
+    if (!stagingName.test(item.name) && !(match && semver.valid(match[2]))) continue;
+    const target = path.join(root, item.name);
+    if (
+      [...retained].some(
+        (reference) =>
+          reference === target ||
+          reference.startsWith(target + path.sep) ||
+          target.startsWith(reference + path.sep),
+      )
+    )
+      continue;
+    try {
+      // Never follow directory links, including links inside a retired package.
+      if (!(await fs.lstat(target)).isDirectory()) continue;
+      await fs.rm(target, { recursive: true, force: true, maxRetries: 2, retryDelay: 50 });
+    } catch (error) {
+      failures.push({ directory: target, error });
+    }
+  }
+  return failures;
+}
 export async function unpack(zipPath, destination) {
   const zip = await new Promise((resolve, reject) =>
     yauzl.open(zipPath, { lazyEntries: true }, (error, file) => (error ? reject(error) : resolve(file))),
