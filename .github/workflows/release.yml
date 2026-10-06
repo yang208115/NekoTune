@@ -29,18 +29,29 @@ jobs:
       - name: Verify tag is on main
         run: git merge-base --is-ancestor "$GITHUB_SHA" origin/main
 
-      - name: Download artifacts from successful CI run
+      - name: Wait for CI and download artifacts
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          run_id=$(gh run list --workflow=ci.yml --branch=main \
-            --commit "$GITHUB_SHA" --status=success \
-            --json databaseId --jq '.[0].databaseId')
+          # Wait for the CI run to appear (it may not exist yet if pushed simultaneously)
+          for i in $(seq 1 30); do
+            run_id=$(gh run list --workflow=ci.yml --branch=main \
+              --commit "$GITHUB_SHA" \
+              --json databaseId --jq '.[0].databaseId')
+            if [[ -n "$run_id" ]]; then
+              echo "Found CI run: $run_id"
+              break
+            fi
+            echo "Waiting for CI run to appear... (attempt $i/30)"
+            sleep 10
+          done
           if [[ -z "$run_id" ]]; then
-            echo "::error::No successful CI run found for commit $GITHUB_SHA on main"
+            echo "::error::No CI run found for commit $GITHUB_SHA after 5 minutes"
             exit 1
           fi
+          # Wait for the CI run to complete (exits non-zero if CI fails)
+          gh run watch "$run_id" --exit-status
           echo "Downloading artifacts from CI run $run_id"
           gh run download "$run_id" \
             -n NekoTune-linux-x64 \
