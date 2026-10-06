@@ -260,6 +260,52 @@ class RefactorTest final : public QObject {
     // Source enumeration remains compatible with registered default providers.
     // Stop the runtime while a client is still connected to exercise buffer ownership.
     // Starting again must provide a usable new socket session without old callbacks.
+    void playbackStatisticsStayConsistentOverIpcAndRestart() {
+        BackendRuntime runtime(makeFakeAudio);
+        QVERIFY2(runtime.start(), qPrintable(runtime.errorString()));
+        RpcPeer peer;
+        QVERIFY(peer.connect(m_socket));
+        QCOMPARE(peer.call("lyrics.set_offline", {{"offline", true}}).value("status").toString(), "ok");
+        QCOMPARE(peer.call("queue.clear").value("status").toString(), "ok");
+        QCOMPARE(peer.call("player.play", {{"path", m_audio}}).value("status").toString(), "ok");
+        const auto current = peer.call("player.status").value("data").toObject().value("song").toObject();
+        const int id = current.value("song_id").toInt();
+        QVERIFY(id > 0);
+        const qint64 count = current.value("play_count").toInteger();
+        QVERIFY(count > 0);
+        QCOMPARE(current.value("import_source").toString(), "local");
+        auto metadata = [&] {
+            return peer.call("song.metadata", {{"song_id", id}}).value("data").toObject();
+        };
+        QCOMPARE(metadata().value("play_count").toInteger(), count);
+        QCOMPARE(peer.call("player.pause").value("status").toString(), "ok");
+        QCOMPARE(peer.call("player.play").value("status").toString(), "ok");
+        QCOMPARE(metadata().value("play_count").toInteger(), count);
+        QCOMPARE(peer.call("player.stop").value("status").toString(), "ok");
+        QCOMPARE(peer.call("player.play").value("status").toString(), "ok");
+        QCOMPARE(metadata().value("play_count").toInteger(), count + 1);
+        const auto items = peer.call("queue.status").value("data").toObject().value("items").toArray();
+        QCOMPARE(items.first().toObject().value("play_count").toInteger(), count + 1);
+        const auto library = peer.call("library.list").value("data").toObject().value("library").toObject();
+        bool found = false;
+        for (const auto &song : library.value("songs").toArray()) {
+            if (song.toObject().value("song_id").toInt() == id) {
+                QCOMPARE(song.toObject().value("play_count").toInteger(), count + 1);
+                found = true;
+            }
+        }
+        QVERIFY(found);
+        runtime.stop();
+        QVERIFY(runtime.start());
+        RpcPeer restored;
+        QVERIFY(restored.connect(m_socket));
+        QCOMPARE(restored.call("song.metadata", {{"song_id", id}}).value("data").toObject()
+                     .value("play_count").toInteger(), count + 1);
+        QCOMPARE(restored.call("player.play").value("status").toString(), "ok");
+        QCOMPARE(restored.call("player.status").value("data").toObject().value("song").toObject()
+                     .value("play_count").toInteger(), count + 2);
+        runtime.stop();
+    }
     void socketCompatibilityAndConnectedShutdown() {
         BackendRuntime runtime(makeFakeAudio);
         QVERIFY2(runtime.start(), qPrintable(runtime.errorString()));

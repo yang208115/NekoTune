@@ -188,10 +188,12 @@ bool DatabaseSession::migrate() {
         setError(query.lastError().text());
         return false;
     }
-    bool hasSourceName = false, hasDuration = false;
+    bool hasSourceName = false, hasDuration = false, hasImportSource = false, hasPlayCount = false;
     while (query.next()) {
         hasSourceName |= query.value(1).toString() == "source_name";
         hasDuration |= query.value(1).toString() == "duration_ms";
+        hasImportSource |= query.value(1).toString() == "import_source";
+        hasPlayCount |= query.value(1).toString() == "play_count";
     }
     // Finish the schema-inspection cursor before issuing an ALTER on the same connection.
     // Existing databases can have either optional column independently.
@@ -281,6 +283,25 @@ bool DatabaseSession::migrate() {
                 return false;
             }
         }
+    }
+    if (!hasImportSource) {
+        const QStringList provenanceMigration{
+            "ALTER TABLE songs ADD COLUMN import_source TEXT NOT NULL DEFAULT 'local'",
+            "UPDATE songs SET import_source=CASE WHEN instr(source_provider,'/')>0 "
+            "THEN substr(source_provider,1,instr(source_provider,'/')-1) ELSE source_provider END "
+            "WHERE source_provider<>''"};
+        for (const auto &statement : provenanceMigration)
+            if (!query.exec(statement)) {
+                setError(query.lastError().text());
+                m_db.rollback();
+                return false;
+            }
+    }
+    if (!hasPlayCount && !query.exec(
+            "ALTER TABLE songs ADD COLUMN play_count INTEGER NOT NULL DEFAULT 0 CHECK(play_count>=0)")) {
+        setError(query.lastError().text());
+        m_db.rollback();
+        return false;
     }
     const QStringList statements{
         QStringLiteral("CREATE TABLE IF NOT EXISTS managed_resources (id INTEGER PRIMARY KEY AUTOINCREMENT, "

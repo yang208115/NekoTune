@@ -140,6 +140,14 @@ BackendSession::BackendSession(std::unique_ptr<IPlaybackBackend> audio)
     connect(&m_library, &LibraryService::durationUpdated, this,
             [playlistsChanged](const SongMetadata &) { playlistsChanged(); });
     connect(&m_library, &LibraryService::metadataChanged, &m_player, &PlayerEngine::metadataUpdated);
+    connect(&m_library, &LibraryService::statisticsUpdated, &m_queue, &QueueService::updateMetadata);
+    connect(&m_library, &LibraryService::statisticsUpdated, this,
+            [playlistsChanged](const SongMetadata &) { playlistsChanged(); });
+    connect(&m_player, &PlayerEngine::songStarted, this, [this](int id) {
+        const auto result = m_library.recordPlayback(id);
+        if (!result)
+            emit m_player.errorOccurred(result.error().message);
+    });
     connect(&m_library, &LibraryService::metadataChanged, this,
             [playlistsChanged](const SongMetadata &) { playlistsChanged(); });
     auto queueChanged = [this] {

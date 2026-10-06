@@ -4,7 +4,8 @@
 namespace nekotune {
 std::optional<SongMetadata> SongRepository::getOrCreateSong(const QString &hash, const QString &path,
                                                             const QString &customTitle, const QString &artist,
-                                                            const QString &sourceName, qint64 durationMs) {
+                                                            const QString &sourceName, qint64 durationMs,
+                                                            const QString &importSource) {
     if (!m_session.isReady()) {
         return std::nullopt;
     }
@@ -42,8 +43,9 @@ std::optional<SongMetadata> SongRepository::getOrCreateSong(const QString &hash,
 
     QSqlQuery query(m_db);
     query.prepare(QStringLiteral("INSERT INTO songs (hash, first_path, custom_title, artist, "
-                                 "source_name, duration_ms) "
-                                 "VALUES (:hash, :first_path, :custom_title, :artist, :source_name, :duration_ms)"));
+                                 "source_name, duration_ms, import_source) "
+                                 "VALUES (:hash, :first_path, :custom_title, :artist, :source_name, :duration_ms, :origin)"));
+    query.bindValue(":origin", importSource.trimmed().isEmpty() ? QStringLiteral("local") : importSource);
     query.bindValue(":duration_ms", qMax(qint64(0), durationMs));
     query.bindValue(":source_name", sourceName.isNull() ? QStringLiteral("") : sourceName);
     query.bindValue(QStringLiteral(":hash"), hash);
@@ -80,7 +82,8 @@ std::optional<SongMetadata> SongRepository::getOrCreateRemote(const SongMetadata
     query.prepare(
         "INSERT INTO songs "
         "(hash,first_path,custom_title,artist,source_name,duration_ms,source_provider,source_track_id,album,"
-        "cover_url) VALUES (NULL,'',:title,:artist,:name,:duration,:provider,:track,:album,:cover)");
+        "cover_url,import_source) VALUES (NULL,'',:title,:artist,:name,:duration,:provider,:track,:album,:cover,:origin)");
+    query.bindValue(":origin", song.providerId.section('/', 0, 0));
     query.bindValue(":title", song.customTitle.isNull() ? QString("") : song.customTitle);
     query.bindValue(":artist", song.artist.isNull() ? QString("") : song.artist);
     query.bindValue(":name", song.customTitle.isNull() ? QString("") : song.customTitle);
@@ -105,7 +108,7 @@ QVector<SongMetadata> SongRepository::songs() const {
     QSqlQuery query(m_db);
     if (!query.exec(
             QStringLiteral("SELECT id, hash, first_path, custom_title, artist, lyrics, "
-                           "source_name, duration_ms, source_provider, source_track_id, album, cover_url "
+                           "source_name, duration_ms, source_provider, source_track_id, album, cover_url, import_source, play_count "
                            "FROM songs ORDER BY id ASC"))) {
         return items;
     }
@@ -124,6 +127,8 @@ QVector<SongMetadata> SongRepository::songs() const {
             query.value(9).toString(),
             query.value(10).toString(),
             query.value(11).toString(),
+            query.value(12).toString(),
+            query.value(13).toLongLong(),
         });
     }
 
@@ -138,7 +143,7 @@ std::optional<SongMetadata> SongRepository::songById(int songId) const {
     QSqlQuery query(m_db);
     query.prepare(
         QStringLiteral("SELECT id, hash, first_path, custom_title, artist, lyrics, "
-                       "source_name, duration_ms, source_provider, source_track_id, album, cover_url "
+                       "source_name, duration_ms, source_provider, source_track_id, album, cover_url, import_source, play_count "
                        "FROM songs WHERE id = :id"));
     query.bindValue(QStringLiteral(":id"), songId);
 
@@ -229,7 +234,7 @@ std::optional<SongMetadata> SongRepository::songByHash(const QString &hash) cons
     QSqlQuery query(m_db);
     query.prepare(
         QStringLiteral("SELECT id, hash, first_path, custom_title, artist, lyrics, "
-                       "source_name, duration_ms, source_provider, source_track_id, album, cover_url "
+                       "source_name, duration_ms, source_provider, source_track_id, album, cover_url, import_source, play_count "
                        "FROM songs WHERE hash = :hash"));
     query.bindValue(QStringLiteral(":hash"), hash);
 
@@ -263,6 +268,7 @@ std::optional<SongMetadata> SongRepository::readSongFromQuery(QSqlQuery &query) 
         query.value(3).toString(), query.value(4).toString(),   query.value(5).toString(),
         query.value(6).toString(), query.value(7).toLongLong(), query.value(8).toString(),
         query.value(9).toString(), query.value(10).toString(),  query.value(11).toString(),
+        query.value(12).toString(), query.value(13).toLongLong(),
     };
 }
 // Only positive probe results can replace a stored duration.
@@ -281,6 +287,24 @@ bool SongRepository::updateDuration(int songId, qint64 durationMs) {
         return false;
     }
     return query.numRowsAffected() == 1;
+}
+bool SongRepository::incrementPlayCount(int songId) {
+    if (!m_session.isReady() || songId <= 0) {
+        setError(QStringLiteral("Invalid song for playback statistics"));
+        return false;
+    }
+    QSqlQuery query(m_db);
+    query.prepare("UPDATE songs SET play_count=play_count+1 WHERE id=:id");
+    query.bindValue(":id", songId);
+    if (!query.exec()) {
+        setError(query.lastError().text());
+        return false;
+    }
+    if (query.numRowsAffected() != 1) {
+        setError(QStringLiteral("Song not found for playback statistics"));
+        return false;
+    }
+    return true;
 }
 bool SongRepository::erase(int songId) {
     QSqlQuery query(m_db);

@@ -204,6 +204,7 @@ class ExtensionsTest final : public QObject {
         ExtensionAudio audio;
         DelayedSource source;
         PlayerEngine player(audio, queue);
+        QSignalSpy starts(&player, &PlayerEngine::songStarted);
         player.setSourceResolver(&source);
         CollectionService collections(store.songRepo, store.queueRepo, store.playlistRepo, store.db,
                                       store.library, queue, player);
@@ -212,14 +213,17 @@ class ExtensionsTest final : public QObject {
         QVERIFY(player.pause());
         source.pending.takeFirst()(QUrl("http://127.0.0.1/paused"));
         QVERIFY(!audio.active);
+        QCOMPARE(starts.size(), 0);
         QVERIFY(player.play());
         QVERIFY(audio.active);
+        QCOMPARE(starts.size(), 1);
         QVERIFY(collections.enqueueRemote(remote("two"), true));
         QVERIFY(player.stop());
         source.pending.takeFirst()(QUrl("http://127.0.0.1/stale"));
         QVERIFY(audio.source().isEmpty());
         QVERIFY(!audio.active);
         QVERIFY(source.released.contains(QUrl("http://127.0.0.1/stale")));
+        QCOMPARE(starts.size(), 1);
         QVERIFY(player.play());
         QVERIFY(player.previous());
         QCOMPARE(source.pending.size(), 2);
@@ -227,12 +231,14 @@ class ExtensionsTest final : public QObject {
         QVERIFY(audio.source().isEmpty());
         source.pending.takeFirst()(QUrl("http://127.0.0.1/current"));
         QVERIFY(audio.active);
+        QCOMPARE(starts.size(), 2);
         emit audio.failed("temporary network failure");
         QCOMPARE(queue.queue().size(), 2);
         QVERIFY(player.snapshot().state == PlayerState::Error);
         QVERIFY(player.play());
         source.pending.takeFirst()(QUrl("http://127.0.0.1/retry"));
         QVERIFY(audio.active);
+        QCOMPARE(starts.size(), 3);
         player.sourcesReloading({"example.test-source"}, true);
         QVERIFY(audio.source().isEmpty());
         QVERIFY(player.pause());
@@ -241,6 +247,7 @@ class ExtensionsTest final : public QObject {
         source.pending.takeFirst()(QUrl("http://127.0.0.1/reloaded-paused"));
         QVERIFY(!audio.active);
         QVERIFY(player.play());
+        QCOMPARE(starts.size(), 3);
         player.sourcesReloading({"example.test-source"}, true);
         QVERIFY(player.stop());
         player.sourcesReloading({"example.test-source"}, false);
@@ -248,6 +255,7 @@ class ExtensionsTest final : public QObject {
         QVERIFY(!audio.active);
         QVERIFY(player.play());
         source.pending.takeFirst()(QUrl("http://127.0.0.1/restarted"));
+        QCOMPARE(starts.size(), 4);
         player.sourceUnavailable(remote().providerId);
         QCOMPARE(queue.queue().size(), 2);
         QVERIFY(audio.source().isEmpty());
@@ -427,6 +435,11 @@ class ExtensionsTest final : public QObject {
                      .toArray()
                      .size(),
                  1);
+        const auto downloaded = peer.call("library.list").value("data").toObject()
+                                    .value("library").toObject().value("songs").toArray().first().toObject();
+        QCOMPARE(downloaded.value("import_source").toString(), "example.test-source");
+        QCOMPARE(downloaded.value("source").toObject().value("kind").toString(), "local");
+        QCOMPARE(downloaded.value("play_count").toInteger(), 0);
         QCOMPARE(peer.call("extensions.disable", {{"id", "example.test-source"}}).value("status").toString(),
                  "ok");
         QCOMPARE(peer.call("queue.status").value("data").toObject().value("items").toArray().size(), 1);

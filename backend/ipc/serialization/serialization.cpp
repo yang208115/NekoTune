@@ -12,6 +12,8 @@ QJsonObject toJson(const SongMetadata &song) {
             {"resource_key", song.resourceKey()},
             {"album", song.album},
             {"cover_url", song.coverUrl},
+            {"import_source", song.importSource},
+            {"play_count", song.playCount},
             {"source", QJsonObject{{"kind", song.isRemote() ? "extension" : "local"},
                                    {"provider_id", song.providerId},
                                    {"track_id", song.providerTrackId}}}};

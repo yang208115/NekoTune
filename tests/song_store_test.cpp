@@ -16,6 +16,8 @@ class StoreFixtureTest final : public QObject {
   private slots:
     void usesManagedDatabasePath();
     void storesAndUpdatesSongMetadata();
+    void preservesProvenanceAndPlaybackStatistics();
+    void migratesProvenanceAndPlaybackStatistics();
     void remembersImportedPathsAcrossRestart();
     void preservesLegacyAsrTables();
     void storesAndRestoresQueue();
@@ -26,6 +28,73 @@ class StoreFixtureTest final : public QObject {
     void deletesSongsAtomicallyAcrossCollections();
     void rejectsInvalidFolderMigration();
 };
+
+void StoreFixtureTest::preservesProvenanceAndPlaybackStatistics() {
+    QTemporaryDir directory;
+    const auto path = directory.filePath("statistics.sqlite3");
+    int id = 0;
+    {
+        nekotune::StoreFixture store(path);
+        nekotune::ImportedFile download{"/music/download.wav", "download-hash"};
+        download.importSource = "example.music";
+        const auto saved = store.library.importFile(download, "Downloaded", "Artist");
+        QVERIFY(saved);
+        id = saved.value().id;
+        QCOMPARE(saved.value().importSource, "example.music");
+        QVERIFY(!saved.value().isRemote());
+        QVERIFY(store.library.recordPlayback(id));
+        QVERIFY(store.library.recordPlayback(id));
+        const auto repeated = store.library.importFile({"/music/copy.wav", "download-hash"});
+        QVERIFY(repeated);
+        QCOMPARE(repeated.value().importSource, "example.music");
+        QCOMPARE(repeated.value().playCount, 2);
+        QVERIFY(store.library.update(id, {QString("Edited")}));
+        QCOMPARE(store.songById(id)->playCount, 2);
+        QSignalSpy changes(&store.library, &nekotune::LibraryService::statisticsUpdated);
+        QSqlQuery sql(store.db.database());
+        QVERIFY(sql.exec("CREATE TRIGGER reject_count BEFORE UPDATE OF play_count ON songs "
+                         "BEGIN SELECT RAISE(FAIL,'count rejected'); END"));
+        QVERIFY(!store.library.recordPlayback(id));
+        QCOMPARE(changes.size(), 0);
+        QCOMPARE(store.songById(id)->playCount, 2);
+        QVERIFY(!store.library.recordPlayback(99999));
+    }
+    nekotune::StoreFixture reopened(path);
+    QCOMPARE(reopened.songById(id)->importSource, "example.music");
+    QCOMPARE(reopened.songById(id)->playCount, 2);
+    QCOMPARE(reopened.songs().first().playCount, 2);
+    const auto local = reopened.getOrCreateSong("local-hash", "/music/local.wav");
+    QVERIFY(local);
+    QCOMPARE(local->importSource, "local");
+    QCOMPARE(local->playCount, 0);
+}
+
+void StoreFixtureTest::migratesProvenanceAndPlaybackStatistics() {
+    QTemporaryDir directory;
+    const auto path = directory.filePath("legacy-statistics.sqlite3");
+    int localId = 0, remoteId = 0;
+    {
+        nekotune::StoreFixture store(path);
+        localId = store.getOrCreateSong("local", "/music/local.wav")->id;
+        nekotune::SongMetadata remote;
+        remote.providerId = "example.music/catalog";
+        remote.providerTrackId = "42";
+        remoteId = store.songRepo.getOrCreateRemote(remote)->id;
+        QSqlQuery sql(store.db.database());
+        QVERIFY(sql.exec("ALTER TABLE songs DROP COLUMN import_source"));
+        QVERIFY(sql.exec("ALTER TABLE songs DROP COLUMN play_count"));
+    }
+    {
+        nekotune::StoreFixture migrated(path);
+        QVERIFY2(migrated.isReady(), qPrintable(migrated.errorString()));
+        QCOMPARE(migrated.songById(localId)->importSource, "local");
+        QCOMPARE(migrated.songById(remoteId)->importSource, "example.music");
+        QCOMPARE(migrated.songById(remoteId)->playCount, 0);
+        QVERIFY(migrated.library.recordPlayback(remoteId));
+    }
+    nekotune::StoreFixture reopened(path);
+    QCOMPARE(reopened.songById(remoteId)->playCount, 1);
+}
 
 // A fresh schema must not recreate retired ASR feature tables.
 // An existing schema can still contain historical ASR records.

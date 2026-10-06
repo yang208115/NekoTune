@@ -31,7 +31,7 @@ Rectangle {
         signal requestFailed(string method, string message)
         function loadMetadata(id) {
             metadataReady = true;
-            editing = {song_id: id, custom_title: "夜空", artist: "示例歌手", tags: [{name: "收藏"}]};
+            editing = {song_id: id, custom_title: "夜空", artist: "示例歌手", tags: [{name: "收藏"}], import_source: "example.music", play_count: 12};
         }
         function saveMetadata(patch) { savedPatch = patch; }
     }
@@ -60,6 +60,23 @@ Rectangle {
             verify(combo !== null);
         }
         function cleanup() { editor.close(); editor = null; combo = null; }
+        function test_statisticsAreReadOnlyAndLocalized() {
+            const source = findChild(editor, "metadataImportSource");
+            const count = findChild(editor, "metadataPlayCount");
+            compare(source.text, "入库来源: example.music");
+            compare(count.text, "播放次数: 12");
+            testTranslator.language = "en";
+            compare(source.text, "Import source: example.music");
+            compare(count.text, "Play count: 12");
+            editor.save();
+            verify(!("import_source" in library.savedPatch));
+            verify(!("play_count" in library.savedPatch));
+            const path = testFixtures.screenshotPath("metadata-statistics");
+            if (path) {
+                waitForRendering(scene);
+                grabImage(editor.background.parent).save(path);
+            }
+        }
         // The catalog omits tags already present in the draft.
         // Selecting another tag updates the draft and available choices without writing metadata yet.
         // The save button submits the complete selected tag names explicitly.

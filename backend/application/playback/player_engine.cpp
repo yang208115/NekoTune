@@ -94,12 +94,23 @@ PlaybackSnapshot PlayerEngine::snapshot() const {
     return result;
 }
 void PlayerEngine::setState(PlayerState state) {
+    if (state == PlayerState::Playing && !m_playCounted && !m_backend.source().isEmpty() &&
+        m_backend.audioOutputAvailable()) {
+        const auto &queue = m_queue.queue();
+        if (queue.currentIndex() >= 0) {
+            m_playCounted = true;
+            emit songStarted(queue.at(queue.currentIndex()).metadata.id);
+            emit trackChanged();
+        }
+    }
     if (m_state == state)
         return;
     m_state = state;
     emit stateChanged(state);
 }
-void PlayerEngine::loadCurrent(bool play) {
+void PlayerEngine::loadCurrent(bool play, bool resetPlayCount) {
+    if (resetPlayCount)
+        m_playCounted = false;
     play = play && m_backend.audioOutputAvailable();
     const auto generation = ++m_sourceGeneration;
     m_resolving = false;
@@ -167,6 +178,7 @@ void PlayerEngine::loadCurrent(bool play) {
         setState(PlayerState::Paused);
 }
 void PlayerEngine::clearSource() {
+    m_playCounted = false;
     ++m_sourceGeneration;
     m_resolving = false;
     m_waitingForReload = false;
@@ -221,6 +233,7 @@ Result<void> PlayerEngine::pause() {
     return {};
 }
 Result<void> PlayerEngine::stop() {
+    m_playCounted = false;
     const auto &current = m_queue.queue();
     if (m_resolving ||
         current.currentIndex() >= 0 && current.at(current.currentIndex()).metadata.isRemote()) {
@@ -260,11 +273,12 @@ void PlayerEngine::sourcesReloading(const QStringList &extensionIds, bool active
     const auto &song = queue.at(queue.currentIndex()).metadata;
     if (!song.isRemote() || !extensionIds.contains(song.providerId.section('/', 0, 0)))
         return;
-    if (active && (m_resolving || !m_backend.source().isEmpty()))
-        loadCurrent(playing());
-    else if (!active && m_waitingForReload &&
-             !m_reloadingExtensions.contains(song.providerId.section('/', 0, 0)))
-        loadCurrent(m_playIntent);
+    if (active && (m_resolving || !m_backend.source().isEmpty())) {
+        loadCurrent(playing(), false);
+    } else if (!active && m_waitingForReload &&
+             !m_reloadingExtensions.contains(song.providerId.section('/', 0, 0))) {
+        loadCurrent(m_playIntent, false);
+    }
 }
 Result<void> PlayerEngine::next() { return advance(PlaybackAdvance::Next); }
 Result<void> PlayerEngine::previous() { return advance(PlaybackAdvance::Previous); }

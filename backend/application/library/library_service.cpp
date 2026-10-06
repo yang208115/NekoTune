@@ -46,12 +46,24 @@ Result<SongMetadata> LibraryService::importFile(const ImportedFile &file, const 
     Transaction tx(m_transaction);
     if (!tx)
         return failure(m_transaction.errorString(), ErrorCode::Storage);
-    auto song = m_songs.getOrCreateSong(file.hash, file.path, title, artist, file.sourceName, file.durationMs);
+    auto song = m_songs.getOrCreateSong(file.hash, file.path, title, artist, file.sourceName, file.durationMs,
+                                      file.importSource);
     if (!song || !tx.commit())
         return failure(m_transaction.errorString(), ErrorCode::Storage);
     emit durationUpdated(*song);
     emit changed();
     return *song;
+}
+Result<void> LibraryService::recordPlayback(int id) {
+    Transaction tx(m_transaction);
+    if (!tx || !m_songs.incrementPlayCount(id))
+        return failure(m_transaction.errorString(), ErrorCode::Storage);
+    const auto song = m_songs.songById(id);
+    if (!song || !tx.commit())
+        return failure(m_transaction.errorString(), ErrorCode::Storage);
+    emit statisticsUpdated(*song);
+    emit changed();
+    return {};
 }
 Result<void> LibraryService::backfillDuration(int id, const QString &hash, qint64 durationMs) {
     // A scan may finish after deletion or another import; never recreate or replace a song here.

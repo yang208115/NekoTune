@@ -45,6 +45,7 @@ class LibraryService final : public QObject {
     /// Missing/deleted records are ignored rather than recreated.
     /// This makes delayed scan results safe across intervening edits.
     Result<void> backfillDuration(int id, const QString &hash, qint64 durationMs);
+    Result<void> recordPlayback(int id);
     /// @param id Persistent song to edit; missing songs are rejected before writing.
     /// @param patch Optional field replacements, with present empty values meaning clear.
     /// @return Committed metadata, or an error with the previous values still authoritative.
@@ -57,6 +58,7 @@ class LibraryService final : public QObject {
   signals:
     void changed();
     void durationUpdated(const nekotune::SongMetadata &metadata);
+    void statisticsUpdated(const nekotune::SongMetadata &metadata);
     void metadataChanged(const nekotune::SongMetadata &metadata);
 
   private:

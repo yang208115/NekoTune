@@ -178,6 +178,25 @@ Popup {
                     id: metadataFields
                     Layout.fillWidth: true
                     spacing: 12
+                    Label {
+                        objectName: "metadataImportSource"
+                        Layout.fillWidth: true
+                        visible: metadataEditor.tagsReady
+                        text: metadataEditor.t("song_import_source") + ": " + String(metadataEditor.original.import_source || "local")
+                        textFormat: Text.PlainText
+                        wrapMode: Text.WrapAnywhere
+                        color: Theme.textSecondary
+                        font.pixelSize: Theme.fontCaption
+                    }
+                    Label {
+                        objectName: "metadataPlayCount"
+                        Layout.fillWidth: true
+                        visible: metadataEditor.tagsReady
+                        text: metadataEditor.t("song_play_count") + ": " + String(metadataEditor.original.play_count || 0)
+                        textFormat: Text.PlainText
+                        color: Theme.textSecondary
+                        font.pixelSize: Theme.fontCaption
+                    }
                     TextField {
                         id: titleField
                         objectName: "metadataTitleField"

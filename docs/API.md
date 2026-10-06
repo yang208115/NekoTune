@@ -379,6 +379,10 @@ AI 操作失败沿用 `status: "error"` 和 `message`，后者为可翻译的 `a
 
 歌曲对象（曲库、队列、歌单和 `song.metadata`）包含持久化的 `duration_ms`，单位为毫秒，`0` 表示未知。导入和扫描在后台读取本地音频时长；旧数据库自动新增字段，已知时长不会被读取失败的结果清空。
 
+歌曲对象还包含只读的 `import_source` 和 `play_count`，歌曲信息窗口也会显示这两项。`import_source` 为首次入库的插件 ID（不含来源子 ID）或 `local`；插件下载成文件后仍保留插件 ID，原有 `source` 字段继续描述实际播放来源。相同音频重复导入不会覆盖最初的入库来源或播放次数。旧在线曲目从 `source.provider_id` 补回插件 ID；没有来源记录的旧本地文件使用 `local`，历史播放次数从 `0` 开始。
+
+`play_count` 在解码器确认成功进入播放状态时累加一次。暂停/继续、缓冲恢复和扩展热重载不重复计数；重新选歌、停止后重新播放、切换到重复队列项及单曲循环再次开始都会累加。仅加载、播放失败或没有音频输出时不累加。统计持久化后通过 `library.changed`、`queue.changed`、`playlist.changed` 和 `player.track_changed` 同步；`song.update_metadata` 不用于修改这两项。
+
 每首歌曲使用独立的递增编号目录，例如 `000001/000001.flac`。下载音频为真实文件，外部音频为绝对软链接或 `.audio.json` 引用；程序获取的同编号 KRC、LRC 和封面始终为真实文件。成功在线匹配或手动选定后更新配套文件；结果受歌曲 hash 和歌词 revision 约束，过期请求不能覆盖新选择。原音频离线或断链后保留歌曲资料和配套文件，曲库 `available` 为 `false`。
 
 设置和缓存集中在 `config`；首次默认目录迁移保留旧数据库和缓存，不覆盖已有目标。账号密钥和会话迁入系统密钥环，回读校验成功后删除旧明文凭据；失败保留原文件并返回 `credential_error`。设置页保存的语言优先于系统语言，`NEKOTUNE_LANGUAGE` 优先于保存语言；`lyrics.set_offline` 持久保存到 `config/settings.json`。

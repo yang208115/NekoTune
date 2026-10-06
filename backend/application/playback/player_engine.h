@@ -74,13 +74,14 @@ class PlayerEngine final : public QObject {
     void durationChanged(qint64 duration);
     void volumeChanged(double volume);
     void trackChanged();
+    void songStarted(int songId);
     void playbackModeChanged(nekotune::PlaybackMode mode);
     void lyricsNeeded(bool metadataReady);
     void errorOccurred(const QString &message);
 
   private:
     Result<void> advance(PlaybackAdvance reason);
-    void loadCurrent(bool play);
+    void loadCurrent(bool play, bool resetPlayCount = true);
     void clearSource();
     void setState(PlayerState state);
     IPlaybackBackend &m_backend;
@@ -96,6 +97,7 @@ class PlayerEngine final : public QObject {
     quint64 m_sourceGeneration = 0;
     bool m_resolving = false;
     bool m_playIntent = false;
+    bool m_playCounted = false;
     bool m_waitingForReload = false;
     QSet<QString> m_reloadingExtensions;
 };

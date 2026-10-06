@@ -34,7 +34,8 @@ class ISongRepository {
                                                         const QString &customTitle = {},
                                                         const QString &artist = {},
                                                         const QString &sourceName = {},
-                                                        qint64 durationMs = 0) = 0;
+                                                        qint64 durationMs = 0,
+                                                        const QString &importSource = QStringLiteral("local")) = 0;
     virtual QVector<SongMetadata> songs() const = 0;
     virtual std::optional<SongMetadata> getOrCreateRemote(const SongMetadata &) { return std::nullopt; }
     virtual std::optional<SongMetadata> songById(int songId) const = 0;
@@ -54,6 +55,7 @@ class ISongRepository {
     virtual QVector<QString> pathsForSong(int songId) const = 0;
     virtual QHash<int, QVector<QString>> songPaths() const = 0;
     virtual bool updateDuration(int songId, qint64 durationMs) = 0;
+    virtual bool incrementPlayCount(int songId) = 0;
     virtual bool erase(int songId) = 0;
 };
 /// Persist the playback sequence, including repeated song IDs.

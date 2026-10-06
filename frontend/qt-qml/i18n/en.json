@@ -1,4 +1,6 @@
 {
+  "song_import_source": "Import source",
+  "song_play_count": "Play count",
   "audio_output_kind_headphones": "Headphones",
   "audio_output_kind_speaker": "Speakers",
   "audio_output_kind_lineout": "Line out / speakers",

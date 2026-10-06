@@ -111,6 +111,47 @@ class PlaybackOrderTest final : public QObject {
         return id;
     }
   private slots:
+    void countsSuccessfulPlaybackStarts() {
+        QTemporaryDir directory;
+        StoreFixture store(directory.filePath("counts.sqlite3"));
+        QueueService queues(store.queueRepo, store.songRepo, store.db);
+        OrderAudio audio;
+        PlayerEngine player(audio, queues);
+        bool saved = true;
+        QObject::connect(&player, &PlayerEngine::songStarted, &store.library, [&](int id) {
+            saved &= bool(store.library.recordPlayback(id));
+        });
+        QObject::connect(&store.library, &LibraryService::statisticsUpdated, &queues, &QueueService::updateMetadata);
+        auto list = storedQueue(store, 2);
+        const int songId = list.at(0).metadata.id;
+        auto count = [&] { return store.songById(songId)->playCount; };
+        QVERIFY(player.replaceQueue(list, false));
+        QCOMPARE(count(), 0);
+        QVERIFY(player.play());
+        QCOMPARE(count(), 1);
+        QCOMPARE(player.snapshot().song->metadata.playCount, 1);
+        QVERIFY(player.pause());
+        QVERIFY(player.play());
+        emit audio.stateChanged(PlayerState::Loading);
+        emit audio.stateChanged(PlayerState::Playing);
+        QCOMPARE(count(), 1);
+        QVERIFY(player.stop());
+        QVERIFY(player.play());
+        QCOMPARE(count(), 2);
+        QVERIFY(player.next());
+        QCOMPARE(count(), 3);
+        QVERIFY(player.setPlaybackMode(PlaybackMode::RepeatOne));
+        emit audio.ended();
+        QCOMPARE(count(), 4);
+        QVERIFY(player.playItem(player.snapshot().song->id));
+        QCOMPARE(count(), 5);
+        emit audio.failed("decode failed");
+        QCOMPARE(count(), 5);
+        audio.suspendAudioOutput();
+        QVERIFY(!player.play());
+        QCOMPARE(count(), 5);
+        QVERIFY(saved);
+    }
     void initTestCase() {
         QVERIFY(m_directory.isValid());
         qputenv("NEKOTUNE_HOME", m_directory.filePath("music").toUtf8());

@@ -1,4 +1,6 @@
 {
+  "song_import_source": "入库来源",
+  "song_play_count": "播放次数",
   "audio_output_kind_headphones": "耳机",
   "audio_output_kind_speaker": "扬声器 / 音箱",
   "audio_output_kind_lineout": "线路输出 / 音箱",

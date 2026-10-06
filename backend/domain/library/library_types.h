@@ -22,6 +22,8 @@ struct SongMetadata {
     QString providerTrackId;
     QString album;
     QString coverUrl;
+    QString importSource = QStringLiteral("local");
+    qint64 playCount = 0;
     bool isRemote() const { return !providerId.isEmpty(); }
     QString resourceKey() const {
         return isRemote() ? QStringLiteral("remote-") +
@@ -50,6 +52,7 @@ struct ImportedFile {
     qint64 durationMs = 0;
     /// Optional discovery origin; playback still uses path, never the reference document.
     QString managedReferencePath;
+    QString importSource = QStringLiteral("local");
 };
 
 /// Persisted membership contains a song ID plus the chosen path.
