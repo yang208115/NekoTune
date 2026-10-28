@@ -320,6 +320,35 @@ Rectangle {
             compare(page.playlistCover(playlistModel.items[0]), "qrc:/artwork/default-cover.png")
             compare(page.playlistCover(playlistModel.items[1]), "")
         }
+        function test_coversUseDisplayResolutionAfterLayoutChanges() {
+            const source = "qrc:/artwork/default-cover.png"
+            fakeShell.song = {song_id: 1, title: "Song", cover_url: source}
+            const songs = songModel.items.slice()
+            songs[0] = Object.assign({}, songs[0], {cover_url: source})
+            songs[5] = Object.assign({}, songs[5], {cover_url: source})
+            songModel.items = songs
+            const covers = [button("homeCurrentCover"),
+                            findChild(button("homePlaylist7"), "homePlaylistCover"),
+                            findChild(button("homeRecentSong6"), "trackCover")]
+            for (const compact of [false, true]) {
+                fakeShell.width = compact ? 1000 : 1360
+                scene.width = compact ? 820 : 1140
+                waitForRendering(page)
+                for (const cover of covers) {
+                    verify(cover)
+                    tryCompare(cover, "status", Image.Ready)
+                    compare(cover.sourceSize, Qt.size(Math.ceil(cover.width * cover.decodeScale),
+                                                      Math.ceil(cover.height * cover.decodeScale)))
+                    verify(cover.implicitWidth < 1254)
+                    const fallback = cover.parent.children.find(child => child !== cover && child.sourceSize !== undefined)
+                    verify(fallback)
+                    tryCompare(fallback, "status", Image.Ready)
+                    compare(fallback.sourceSize, cover.sourceSize)
+                }
+                const path = testFixtures.screenshotPath("image-sizing-home-" + (compact ? "compact" : "wide"))
+                if (path) { waitForRendering(page); grabImage(scene).save(path) }
+            }
+        }
         // Responsive layout changes must retain the user's position in the home scroll area.
         // The compact arrangement still keeps the primary controls within their available width.
         // This guards layout recomputation from becoming an implicit navigation reset.

@@ -52,13 +52,12 @@ Window {
             anchors.fill: parent
             active: window.visible && window.hasSong && window.preferences.coverBackground
             sourceComponent: Item {
-                Image {
+                SizedImage {
                     id: cover
                     objectName: "wallpaperBackgroundImage"
                     anchors.fill: parent
                     source: window.song.cover_url || ""
-                    sourceSize: Qt.size(Math.max(1, Math.ceil(width * window.screen.devicePixelRatio)),
-                                        Math.max(1, Math.ceil(height * window.screen.devicePixelRatio)))
+                    decodeScale: window.screen.devicePixelRatio
                     asynchronous: true
                     cache: false
                     fillMode: Image.PreserveAspectCrop

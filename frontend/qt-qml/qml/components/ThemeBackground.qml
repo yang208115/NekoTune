@@ -1,6 +1,5 @@
 pragma ComponentBehavior: Bound
 import QtQuick
-import QtQuick.Window
 import QtQuick.Effects
 
 Item {
@@ -17,14 +16,12 @@ Item {
         anchors.fill: parent
         visible: !custom.ready
         opacity: root.config.opacity === undefined ? 1 : root.config.opacity
-        Image {
+        SizedImage {
             id: backdrop; anchors.fill: parent
             objectName: "themeStaticBackgroundImage"
             source: root.visible && !custom.ready && root.width > 0 && root.height > 0 ? root.config.source || "" : ""
             asynchronous: true
             cache: false
-            sourceSize.width: Math.max(1, Math.ceil(width * Screen.devicePixelRatio))
-            sourceSize.height: Math.max(1, Math.ceil(height * Screen.devicePixelRatio))
             fillMode: Image.PreserveAspectCrop
             visible: !effect.active
         }

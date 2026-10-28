@@ -51,20 +51,20 @@ Item {
         clip: true
 
         // Image if has song
-        Image {
+        SizedImage {
             anchors.fill: parent
             source: "qrc:/artwork/default-cover.png"
-            sourceSize: Qt.size(Math.ceil(coverCard.width * root.decodeScale), Math.ceil(coverCard.height * root.decodeScale))
+            decodeScale: root.decodeScale
             fillMode: Image.PreserveAspectCrop
             smooth: true
             mipmap: true
             visible: root.hasSong
         }
 
-        Image {
+        SizedImage {
             anchors.fill: parent
             source: root.hasSong ? root.coverUrl : ""
-            sourceSize: Qt.size(Math.ceil(coverCard.width * root.decodeScale), Math.ceil(coverCard.height * root.decodeScale))
+            decodeScale: root.decodeScale
             fillMode: Image.PreserveAspectCrop
             asynchronous: true
             smooth: true

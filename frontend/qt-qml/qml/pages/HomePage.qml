@@ -159,8 +159,8 @@ Item {
                             radius: page.theme.radiusLg
                             color: page.theme.bgSurface
                             clip: true
-                            Image { anchors.fill: parent; source: "qrc:/artwork/default-cover.png"; fillMode: Image.PreserveAspectCrop; mipmap: true }
-                            Image {
+                            SizedImage { anchors.fill: parent; source: "qrc:/artwork/default-cover.png"; fillMode: Image.PreserveAspectCrop; mipmap: true }
+                            SizedImage {
                                 objectName: "homeCurrentCover"
                                 anchors.fill: parent
                                 source: page.shell.hasSong ? String(page.shell.song.cover_url || "") : ""
@@ -310,8 +310,8 @@ Item {
                                                 radius: page.theme.radiusSm
                                                 color: page.theme.bgRaised
                                                 clip: true
-                                                Image { anchors.fill: parent; source: "qrc:/artwork/default-cover.png"; fillMode: Image.PreserveAspectCrop; mipmap: true }
-                                                Image { objectName: "homePlaylistCover"; anchors.fill: parent; source: page.playlistCover(card.modelData); fillMode: Image.PreserveAspectCrop; asynchronous: true; visible: status === Image.Ready }
+                                                SizedImage { anchors.fill: parent; source: "qrc:/artwork/default-cover.png"; fillMode: Image.PreserveAspectCrop; mipmap: true }
+                                                SizedImage { objectName: "homePlaylistCover"; anchors.fill: parent; source: page.playlistCover(card.modelData); fillMode: Image.PreserveAspectCrop; asynchronous: true; visible: status === Image.Ready }
                                             }
                                         }
                                         Label {

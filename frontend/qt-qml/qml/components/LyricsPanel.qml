@@ -385,12 +385,12 @@ Item {
                         radius: 6
                         clip: true
                         color: Theme.bgSurface
-                        Image {
+                        SizedImage {
                             anchors.fill: parent
                             source: "qrc:/artwork/default-cover.png"
                             fillMode: Image.PreserveAspectCrop
                         }
-                        Image {
+                        SizedImage {
                             anchors.fill: parent
                             source: !root.current.offline ? (candDelegate.modelData.cover_url || "") : ""
                             fillMode: Image.PreserveAspectCrop

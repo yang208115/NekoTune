@@ -5,4 +5,5 @@ TextButton 1.0 TextButton.qml
 InputField 1.0 InputField.qml
 ArtistNames 1.0 ArtistNames.qml
 AlbumArt 1.0 AlbumArt.qml
+SizedImage 1.0 SizedImage.qml
 EmptyStateCat 1.0 EmptyStateCat.qml

@@ -32,8 +32,8 @@ GridView {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 clip: true
-                Image { anchors.fill: parent; source: "qrc:/artwork/default-cover.png"; fillMode: Image.PreserveAspectCrop }
-                Image { anchors.fill: parent; source: String(card.modelData.cover_url || ""); sourceSize.width: 320; sourceSize.height: 320; fillMode: Image.PreserveAspectCrop; asynchronous: true; visible: status === Image.Ready }
+                SizedImage { anchors.fill: parent; source: "qrc:/artwork/default-cover.png"; fillMode: Image.PreserveAspectCrop }
+                SizedImage { anchors.fill: parent; source: String(card.modelData.cover_url || ""); fillMode: Image.PreserveAspectCrop; asynchronous: true; visible: status === Image.Ready }
             }
             Label { Layout.fillWidth: true; text: card.text; textFormat: Text.PlainText; color: Theme.textPrimary; elide: Text.ElideRight; font.weight: Font.DemiBold }
             Label { Layout.fillWidth: true; text: card.modelData.artist || root.t("unknown_artist"); textFormat: Text.PlainText; color: Theme.textMuted; elide: Text.ElideRight; font.pixelSize: Theme.fontCaption }

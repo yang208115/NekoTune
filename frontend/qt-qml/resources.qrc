@@ -15,6 +15,7 @@
         <file alias="qt/qml/NekoTune/plugins.qmltypes">qml/sdk/plugins.qmltypes</file>
         <file alias="qt/qml/NekoTune/ExtensionApi.qml">qml/sdk/ExtensionApi.qml</file>
         <file>qml/components/AlbumArt.qml</file>
+        <file>qml/components/SizedImage.qml</file>
         <file>qml/components/EmptyStateCat.qml</file>
         <file>qml/components/InputField.qml</file>
         <file>qml/components/ActionMenu.qml</file>

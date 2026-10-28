@@ -164,8 +164,8 @@ Rectangle {
                 radius: Theme.radiusSm
                 color: Theme.bgSurface
                 clip: true
-                Image { anchors.fill: parent; source: "qrc:/artwork/default-cover.png"; fillMode: Image.PreserveAspectCrop; mipmap: true }
-                Image { objectName: "trackCover"; anchors.fill: parent; source: String(row.song.cover_url || ""); fillMode: Image.PreserveAspectCrop; asynchronous: true; visible: status === Image.Ready }
+                SizedImage { anchors.fill: parent; source: "qrc:/artwork/default-cover.png"; fillMode: Image.PreserveAspectCrop; mipmap: true }
+                SizedImage { objectName: "trackCover"; anchors.fill: parent; source: String(row.song.cover_url || ""); fillMode: Image.PreserveAspectCrop; asynchronous: true; visible: status === Image.Ready }
             }
         }
         ColumnLayout {

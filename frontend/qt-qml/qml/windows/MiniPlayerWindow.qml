@@ -64,8 +64,8 @@ Window {
                 Item {
                     Layout.preferredWidth: 64; Layout.preferredHeight: 64
                     clip: true
-                    Image { anchors.fill: parent; source: "qrc:/artwork/default-cover.png"; fillMode: Image.PreserveAspectCrop }
-                    Image { anchors.fill: parent; source: String(window.song.cover_url || ""); asynchronous: true; fillMode: Image.PreserveAspectCrop; visible: status === Image.Ready }
+                    SizedImage { anchors.fill: parent; source: "qrc:/artwork/default-cover.png"; fillMode: Image.PreserveAspectCrop }
+                    SizedImage { anchors.fill: parent; source: String(window.song.cover_url || ""); asynchronous: true; fillMode: Image.PreserveAspectCrop; visible: status === Image.Ready }
                 }
                 ColumnLayout {
                     Layout.fillWidth: true; spacing: 0
