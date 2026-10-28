@@ -945,7 +945,7 @@ class ExtensionsTest final : public QObject {
                               "{ objectName: 'themeTestPlayer'; ExtensionApi { "
                               "id: api }\n color: api.theme.accentPrimary }"));
       QVERIFY(write("Page.qml", "import QtQuick\nRectangle { objectName: "
-                                "'themeTestPage'; color: 'transparent' }"));
+                                "'themeTestPage'; color: 'transparent'; property string draft: '' }"));
       QVERIFY(write("Shell.qml", "import QtQuick\nRectangle { objectName: "
                                  "'themeTestShell'; color: '#123456' }"));
       QVERIFY(write("Background.qml", "import QtQuick\nimport NekoTune 1.0\n"
@@ -1050,10 +1050,18 @@ class ExtensionsTest final : public QObject {
                          .arg(QString::fromUtf8(
                              QJsonDocument::fromVariant(app.theme->uiSlots())
                                  .toJson(QJsonDocument::Compact)))));
+      QPointer<QQuickItem> retainedPage = visualItem(window->contentItem(), "themeTestPage");
+      retainedPage->setProperty("draft", "Keep this page state");
       QMetaObject::invokeMethod(window, "navigateTo",
                                 Q_ARG(QVariant, "appearance"),
                                 Q_ARG(QVariant, 0));
       QTRY_VERIFY(visualItem(window->contentItem(), "themeCard_builtin/ocean"));
+      QVERIFY(retainedPage);
+      QVERIFY(!retainedPage->isVisible());
+      window->setProperty("viewMode", "library");
+      QTRY_COMPARE(visualItem(window->contentItem(), "themeTestPage"), retainedPage.data());
+      QCOMPARE(retainedPage->property("draft").toString(), QString("Keep this page state"));
+      QMetaObject::invokeMethod(window, "navigateTo", Q_ARG(QVariant, "appearance"), Q_ARG(QVariant, 0));
       auto *ocean =
           visualItem(window->contentItem(), "themeCard_builtin/ocean");
       QVERIFY(ocean->isVisible());

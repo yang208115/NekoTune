@@ -114,7 +114,10 @@ ApplicationWindow {
         return loader ? loader.item : null
     }
     function queuePage() {
-        return pageItem("queue")
+        const host = nativeShell.item ? nativeShell.item.loaderForId("queue") : null
+        // Home and sidebar actions can open the playlist editor before visiting its page.
+        if (host) host.activate()
+        return host ? host.item : null
     }
     // Navigation closes temporary playback surfaces before changing browse state.
     // The queue page also represents saved playlists, keyed by currentPlaylist.

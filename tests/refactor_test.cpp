@@ -1356,16 +1356,18 @@ class RefactorTest final : public QObject {
         QTRY_COMPARE(controllers.lyrics->sources().size(), 2);
         QVERIFY(controllers.extensions->browserSources().isEmpty());
         QVERIFY(!visualItem(window->contentItem(), "nav_music_sources"));
-        auto *button = visualItem(window->contentItem(), "nav_test.dedicated-source/music");
-        QVERIFY(QMetaObject::invokeMethod(button, "clicked"));
-        QCOMPARE(window->property("viewMode").toString(), QString("test.dedicated-source/music"));
         auto pluginPage = [&]() -> QObject * {
             QVariant result;
             QMetaObject::invokeMethod(window, "pageItem", Q_RETURN_ARG(QVariant, result),
                                       Q_ARG(QVariant, QVariant("test.dedicated-source/music")));
             return result.value<QObject *>();
         };
+        QVERIFY(!pluginPage());
+        auto *button = visualItem(window->contentItem(), "nav_test.dedicated-source/music");
+        QVERIFY(QMetaObject::invokeMethod(button, "clicked"));
+        QCOMPARE(window->property("viewMode").toString(), QString("test.dedicated-source/music"));
         QTRY_VERIFY_WITH_TIMEOUT(pluginPage(), 5000);
+        QPointer<QObject> retainedPluginPage = pluginPage();
         QCOMPARE(pluginPage()->objectName(), QString("fixturePluginPage"));
         QVERIFY(pluginPage()->findChild<QObject *>("fixturePluginPanel"));
         const auto screenshotDirectory = qEnvironmentVariable("NEKOTUNE_TEST_SCREENSHOT_DIR");
@@ -1382,6 +1384,7 @@ class RefactorTest final : public QObject {
         QVERIFY(settingsNav);
         QVERIFY(QMetaObject::invokeMethod(settingsNav, "clicked"));
         QCOMPARE(window->property("viewMode").toString(), QString("settings"));
+        QCOMPARE(pluginPage(), retainedPluginPage.data());
         auto entry = [&] { return visualItem(window->contentItem(), "settings_entry_test.dedicated-source/settings"); };
         QTRY_VERIFY(entry() && entry()->isVisible());
         for (const QString language : {"zh", "en"}) {
@@ -1411,6 +1414,7 @@ class RefactorTest final : public QObject {
             QVERIFY(entry()->isVisible());
         }
         QVERIFY(QMetaObject::invokeMethod(button, "clicked"));
+        QCOMPARE(pluginPage(), retainedPluginPage.data());
         auto *shortcut = visualItem(window->contentItem(), "fixtureOpenSettingsButton");
         QVERIFY(shortcut && shortcut->isVisible());
         QVERIFY(QMetaObject::invokeMethod(shortcut, "clicked"));
@@ -1466,6 +1470,18 @@ class RefactorTest final : public QObject {
                                           Q_ARG(QVariant, QVariant("home"))));
         auto *home = homeValue.value<QObject *>();
         QVERIFY(home);
+        // Cold startup only constructs the landing page, even when debug is enabled.
+        for (const QString page : {"extensions", "history", "library", "music_sources", "queue",
+                                   "lyrics", "settings", "lyrics_debug"}) {
+            QVariant item, status;
+            QVERIFY(QMetaObject::invokeMethod(root, "pageItem", Q_RETURN_ARG(QVariant, item),
+                                              Q_ARG(QVariant, QVariant(page))));
+            QVERIFY(!item.value<QObject *>());
+            QVERIFY(QMetaObject::invokeMethod(root, "pageStatus", Q_RETURN_ARG(QVariant, status),
+                                              Q_ARG(QVariant, QVariant(page))));
+            QCOMPARE(status.toInt(), 0); // Loader.Null
+        }
+        home->setProperty("recentView", "played");
         root->setProperty("viewMode", "library");
 
         controllers.library->toggleSelection(songId);
@@ -1495,6 +1511,12 @@ class RefactorTest final : public QObject {
         }
         QCOMPARE(controllers.library->selectedSongIds().size(), 1);
         root->setProperty("viewMode", "home");
+        QVariant retainedHome;
+        QVERIFY(QMetaObject::invokeMethod(root, "pageItem", Q_RETURN_ARG(QVariant, retainedHome),
+                                          Q_ARG(QVariant, QVariant("home"))));
+        QCOMPARE(retainedHome.value<QObject *>(), home);
+        QCOMPARE(home->property("recentView").toString(), QString("played"));
+        home->setProperty("recentView", "added");
         root->setProperty("width", 1000);
         root->setProperty("height", 640);
         QTest::qWait(50);
@@ -1507,6 +1529,7 @@ class RefactorTest final : public QObject {
         QCOMPARE(home->property("contentY").toInt(), 40);
         QVERIFY(QMetaObject::invokeMethod(home, "newPlaylist"));
         QTRY_VERIFY(root->property("popupActive").toBool());
+        QCOMPARE(root->property("viewMode").toString(), QString("home"));
         QVariant queuePageValue;
         QVERIFY(QMetaObject::invokeMethod(root, "queuePage", Q_RETURN_ARG(QVariant, queuePageValue)));
         auto *newPlaylistPopup = queuePageValue.value<QObject *>()->findChild<QObject *>("playlistNamePopup");
@@ -1603,7 +1626,12 @@ class RefactorTest final : public QObject {
         QVariant extraStatus;
         QVERIFY(QMetaObject::invokeMethod(root, "pageStatus", Q_RETURN_ARG(QVariant, extraStatus),
                                           Q_ARG(QVariant, QVariant("extra"))));
+        QCOMPARE(extraStatus.toInt(), 0);
+        root->setProperty("viewMode", "extra");
+        QVERIFY(QMetaObject::invokeMethod(root, "pageStatus", Q_RETURN_ARG(QVariant, extraStatus),
+                                          Q_ARG(QVariant, QVariant("extra"))));
         QCOMPARE(extraStatus.toInt(), 1);
+        root->setProperty("viewMode", "home");
         pages.removeLast();
         root->setProperty("pages", pages);
         auto tag = peer.call("tag.create", {{"name", "Regression"}})
